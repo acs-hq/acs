@@ -6,10 +6,14 @@
 //! [`schema`]). Nothing here touches the filesystem, network, processes or the clock: time is
 //! always passed in.
 
+mod decision;
 mod error;
+mod event;
 mod ids;
 mod values;
 
+pub use decision::{Decision, Outcome, ReasonCode};
 pub use error::ParseError;
+pub use event::{EditInfo, Phase, Tool, ToolEvent, ToolKind, ToolResult};
 pub use ids::{ClaimId, LoreId, NoticeId, SeatId, SessionId, pilot_id};
 pub use values::{ContentHash, RepoPath, SPEC_VERSION, SpecVersion, SymbolPath};
