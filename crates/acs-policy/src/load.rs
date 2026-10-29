@@ -256,7 +256,13 @@ fn locate(root: &Spanned<DeTable<'_>>, at: &At) -> Option<Range<usize>> {
     };
     match at {
         At::TargetBranch => key("default_target_branch").map(Spanned::span),
-        At::Sealed(i) => Some(element_of(key("sealed")?, *i)),
+        At::Sealed(glob) => {
+            let sealed = key("sealed")?;
+            let position = (0..)
+                .map_while(|i| sealed.get_ref().get(i))
+                .position(|item| item.get_ref().as_str() == Some(glob.as_str()))?;
+            Some(element_of(sealed, position))
+        }
         At::Protected(i) => Some(element_of(key("protected_branches")?, *i)),
         At::Ban(i) => element(key("destructive")?, "ban", *i),
         At::ZoneKind(i) => zone_field(*i, "kind"),

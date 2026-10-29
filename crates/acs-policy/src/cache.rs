@@ -14,11 +14,11 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use acs_core::ContentHash;
 use serde::{Deserialize, Serialize};
 
+use crate::LoadOptions;
 use crate::compiled::CompiledPolicy;
 use crate::error::PolicyError;
 use crate::files::PolicyFiles;
 use crate::load::RawFiles;
-use crate::LoadOptions;
 
 /// The cache file's name inside the cache directory.
 pub const CACHE_FILE: &str = "policy.json";
@@ -154,7 +154,14 @@ fn read_entry(cache_dir: &Path) -> (Option<Entry>, Vec<String>) {
     let path = cache_dir.join(CACHE_FILE);
     let bytes = match fs::read(&path) {
         Ok(bytes) => bytes,
-        Err(err) if err.kind() == io::ErrorKind::NotFound => return (None, Vec::new()),
+        Err(err)
+            if matches!(
+                err.kind(),
+                io::ErrorKind::NotFound | io::ErrorKind::NotADirectory
+            ) =>
+        {
+            return (None, Vec::new());
+        }
         Err(err) => return (None, vec![ignoring(&path, &err.to_string())]),
     };
     match serde_json::from_slice::<Entry>(&bytes) {

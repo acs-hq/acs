@@ -3,9 +3,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use acs_core::gate::{PolicyView, ZoneMatch};
-use acs_core::{
-    Config, ContentHash, Destructive, Guards, Owner, RepoPath, Territory, ZoneKind,
-};
+use acs_core::{Config, ContentHash, Destructive, Guards, Owner, RepoPath, Territory, ZoneKind};
 
 use crate::error::{PolicyError, PolicyFile, Problem, ProblemKind};
 use crate::files::{PolicyFiles, effective_sealed};
@@ -16,8 +14,9 @@ use crate::glob::{Alt, BanPattern, Glob, with_segments};
 pub(crate) enum At {
     /// `default_target_branch`
     TargetBranch,
-    /// `sealed[i]`
-    Sealed(usize),
+    /// The `sealed` entry with this text (the built-in defaults are not in the file, so an
+    /// index would not line up).
+    Sealed(String),
     /// `protected_branches[i]`
     Protected(usize),
     /// `destructive.ban[i]`
@@ -165,17 +164,32 @@ impl CompiledPolicy {
             ));
         }
 
-        let globs = |patterns: &[String], at: fn(usize) -> At, found: &mut Vec<Found>| {
-            patterns
-                .iter()
-                .enumerate()
-                .filter_map(|(i, pattern)| {
-                    compile_glob(pattern, case_insensitive, PolicyFile::Guards, at(i), found)
-                })
-                .collect::<Vec<_>>()
-        };
-        let sealed = globs(&files.guards.sealed, At::Sealed, &mut found);
-        let protected = globs(&files.guards.protected_branches, At::Protected, &mut found);
+        let globs =
+            |patterns: &[String], at: &dyn Fn(usize, &str) -> At, found: &mut Vec<Found>| {
+                patterns
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(i, pattern)| {
+                        compile_glob(
+                            pattern,
+                            case_insensitive,
+                            PolicyFile::Guards,
+                            at(i, pattern),
+                            found,
+                        )
+                    })
+                    .collect::<Vec<_>>()
+            };
+        let sealed = globs(
+            &files.guards.sealed,
+            &|_, glob| At::Sealed(glob.to_owned()),
+            &mut found,
+        );
+        let protected = globs(
+            &files.guards.protected_branches,
+            &|i, _| At::Protected(i),
+            &mut found,
+        );
         let bans = compile_bans(&files.guards.destructive.ban, &mut found);
 
         let teams = check_teams(&files.territory.teams, &mut found);
@@ -193,9 +207,13 @@ impl CompiledPolicy {
             }
             for (pi, pattern) in zone.paths.iter().enumerate() {
                 let at = At::ZonePath(zi, pi);
-                if let Some(glob) =
-                    compile_glob(pattern, case_insensitive, PolicyFile::Territory, at, &mut found)
-                {
+                if let Some(glob) = compile_glob(
+                    pattern,
+                    case_insensitive,
+                    PolicyFile::Territory,
+                    at,
+                    &mut found,
+                ) {
                     zones.extend(glob.into_alts().into_iter().map(|alt| ZoneEntry {
                         alt,
                         zone: zi,
@@ -428,24 +446,26 @@ fn expand_owners(
             Owner::Pilot(email) => {
                 emails.insert(email.to_lowercase());
             }
-            Owner::Team(name) => match teams.get(name) {
-                Some(members) => emails.extend(members.iter().cloned()),
-                None => {
-                    let defined: Vec<&str> = teams.keys().map(String::as_str).collect();
-                    let known = if defined.is_empty() {
-                        "no teams are defined".to_owned()
-                    } else {
-                        format!("defined teams: {}", defined.join(", "))
-                    };
-                    found.push(Found::new(
+            Owner::Team(name) => {
+                match teams.get(name) {
+                    Some(members) => emails.extend(members.iter().cloned()),
+                    None => {
+                        let defined: Vec<&str> = teams.keys().map(String::as_str).collect();
+                        let known = if defined.is_empty() {
+                            "no teams are defined".to_owned()
+                        } else {
+                            format!("defined teams: {}", defined.join(", "))
+                        };
+                        found.push(Found::new(
                         PolicyFile::Territory,
                         At::ZoneOwner(zone, j),
                         ProblemKind::UndefinedTeam,
                         format!("owner \"team:{name}\" refers to a team that is not defined ({known})"),
                         format!("add `{name} = [\"member@example.com\"]` under [teams], or fix the name"),
                     ));
+                    }
                 }
-            },
+            }
         }
     }
     emails.into_iter().collect()

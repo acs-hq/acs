@@ -201,19 +201,15 @@ impl Alt {
                 .map(|s| match s {
                     Seg::Globstar => 0,
                     Seg::Literal(text) => text.chars().count(),
-                    Seg::Pattern(toks) => toks
-                        .iter()
-                        .filter(|t| matches!(t, Tok::Char(_)))
-                        .count(),
+                    Seg::Pattern(toks) => toks.iter().filter(|t| matches!(t, Tok::Char(_))).count(),
                 })
                 .sum(),
             fewer_wildcards: Reverse(
                 segs.iter()
                     .map(|s| match s {
-                        Seg::Pattern(toks) => toks
-                            .iter()
-                            .filter(|t| !matches!(t, Tok::Char(_)))
-                            .count(),
+                        Seg::Pattern(toks) => {
+                            toks.iter().filter(|t| !matches!(t, Tok::Char(_))).count()
+                        }
                         Seg::Globstar | Seg::Literal(_) => 0,
                     })
                     .sum(),
@@ -313,7 +309,9 @@ fn parse_segment(raw: &str) -> Result<Seg, GlobError> {
         "**" => return Ok(Seg::Globstar),
         "." | ".." => {
             return Err(GlobError::new(
-                format!("the pattern has a \"{raw}\" segment, which never matches a normalized path"),
+                format!(
+                    "the pattern has a \"{raw}\" segment, which never matches a normalized path"
+                ),
                 "write the path relative to the repository root without \"./\" or \"../\"",
             ));
         }
@@ -568,7 +566,11 @@ mod tests {
             ("a*b*c", "aXbYc", true),
             ("a*b*c", "abc", true),
             ("a*b*c", "aXbY", false),
-            ("*a*a*a*a*b", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", false),
+            (
+                "*a*a*a*a*b",
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                false,
+            ),
             ("é?", "éa", true),
             // `**` as a segment
             ("**", "a", true),
@@ -592,7 +594,11 @@ mod tests {
             ("**/.env*", "app/env", false),
             (".git/**", ".git/config", true),
             (".git/**", ".github/workflows/x", false),
-            (".claude/settings*.json", ".claude/settings.local.json", true),
+            (
+                ".claude/settings*.json",
+                ".claude/settings.local.json",
+                true,
+            ),
             (".claude/settings*.json", ".claude/sub/settings.json", false),
             (".agents/**/hooks*.json", ".agents/x/y/hooks.json", true),
             (".agents/**/hooks*.json", ".agents/hooks-a.json", true),
@@ -623,7 +629,11 @@ mod tests {
             ("{**,x}/y", "q/y", true),
         ];
         for &(pattern, path, expected) in cases {
-            assert_eq!(glob(pattern).is_match(path), expected, "{pattern:?} vs {path:?}");
+            assert_eq!(
+                glob(pattern).is_match(path),
+                expected,
+                "{pattern:?} vs {path:?}"
+            );
         }
     }
 
@@ -699,7 +709,10 @@ mod tests {
     fn ban_patterns() {
         let ban = |p: &str, c: &str| BanPattern::new(p).is_match(c);
         assert!(ban("git push --force*", "git push --force"));
-        assert!(ban("git push --force*", "git push --force-with-lease origin main"));
+        assert!(ban(
+            "git push --force*",
+            "git push --force-with-lease origin main"
+        ));
         assert!(!ban("git push --force*", "git push origin main --force"));
         assert!(!ban("git push --force*", "echo git push --force"));
         assert!(ban("git reset --hard*", "git reset --hard HEAD~1"));
