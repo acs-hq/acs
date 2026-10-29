@@ -8,6 +8,8 @@
 //! - [`db`], [`seats`], [`claims`], [`events`], [`notices`]: the SQLite state database
 //!   (`repos/<repo-id>/state.db`): seats, atomic claims with lazy expiry, the remote-claims view,
 //!   the event log, notices and counters. Start at [`StateDb`].
+//! - [`snapshots`]: content-addressed, zstd-compressed pre- and post-images with their own index
+//!   (`repos/<repo-id>/snapshots/index.db`) and LRU eviction. Start at [`SnapshotStore`].
 
 pub mod claims;
 pub mod db;
@@ -17,6 +19,7 @@ pub mod home;
 pub mod notices;
 pub mod repo_id;
 pub mod seats;
+pub mod snapshots;
 
 pub use claims::{AcquireOutcome, Acquired, Conflict, SyncStatus};
 pub use db::{DEFAULT_BUSY_TIMEOUT, DbConfig, SCHEMA_VERSION, StateDb, StoreError};
@@ -27,3 +30,6 @@ pub use repo_id::{
     find_common_dir,
 };
 pub use seats::NewSeat;
+pub use snapshots::{
+    CaptureResult, FileState, GcReport, SnapshotEntry, SnapshotError, SnapshotKind, SnapshotStore,
+};
