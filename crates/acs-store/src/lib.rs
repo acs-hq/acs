@@ -11,9 +11,13 @@
 pub mod fsutil;
 pub mod home;
 pub mod repo_id;
+pub mod snapshots;
 
 pub use home::{AcsHome, HomeError, Migration, RepoHome};
 pub use repo_id::{
     GitCli, IdKind, IdSource, InvalidRepoId, RepoId, RepoIdError, RepoIdentity, RootFinder,
     find_common_dir,
+};
+pub use snapshots::{
+    CaptureResult, FileState, GcReport, SnapshotEntry, SnapshotError, SnapshotKind, SnapshotStore,
 };
