@@ -335,11 +335,23 @@ impl PathResolver {
         }
 
         // Windows: let the OS fix drive and name case (and expand 8.3 names) of what exists.
-        if cfg!(windows)
-            && resolved != self.root
-            && let Ok(canonical) = canonical(&resolved)
-        {
-            resolved = canonical;
+        // `canonicalize` follows a link in the last component, so when that link must not be
+        // followed, canonicalize its parent and keep the link's own name.
+        if cfg!(windows) && resolved != self.root {
+            let keep_last_link = !follow_last
+                && tail.is_empty()
+                && fs::symlink_metadata(&resolved).is_ok_and(|m| m.file_type().is_symlink());
+            let fixed = if keep_last_link {
+                match (resolved.parent(), resolved.file_name()) {
+                    (Some(parent), Some(name)) => canonical(parent).ok().map(|p| p.join(name)),
+                    _ => None,
+                }
+            } else {
+                canonical(&resolved).ok()
+            };
+            if let Some(fixed) = fixed {
+                resolved = fixed;
+            }
         }
         resolved.extend(tail);
         Ok(Walked {
