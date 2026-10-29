@@ -7,6 +7,7 @@
 //! always passed in.
 
 mod decision;
+pub mod engine;
 mod error;
 mod event;
 pub mod gate;
