@@ -1,0 +1,12 @@
+[package]
+name = "acs-git"
+description = "ACS git: gix reads, git CLI network and signing, refs, trailers and hooks."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[lints]
+workspace = true

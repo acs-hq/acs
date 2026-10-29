@@ -1,0 +1,15 @@
+[package]
+name = "acs-cli"
+description = "The `acs` binary: commands and hook entrypoints."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "acs"
+path = "src/main.rs"
+
+[lints]
+workspace = true

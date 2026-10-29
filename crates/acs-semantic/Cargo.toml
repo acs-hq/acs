@@ -1,0 +1,12 @@
+[package]
+name = "acs-semantic"
+description = "ACS semantic: tree-sitter symbol extraction and interface diffing."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[lints]
+workspace = true
