@@ -10,3 +10,12 @@ publish = false
 
 [lints]
 workspace = true
+
+[dependencies]
+acs-core = { path = "../acs-core" }
+dunce.workspace = true
+globset.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
