@@ -1,9 +1,15 @@
 //! ACS core: pure types and the decision engine; performs no I/O.
+//!
+//! This crate defines the contracts of the Agent Control System (spec `acs/0.1`): the canonical
+//! [`ToolEvent`] adapters produce, the [`Decision`] the engine returns, the stored records, and the
+//! policy-file types. The JSON Schemas under `spec/schemas/` are generated from these types (see
+//! [`schema`]). Nothing here touches the filesystem, network, processes or the clock: time is
+//! always passed in.
 
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn placeholder() {
-        assert_eq!(2 + 2, 4);
-    }
-}
+mod error;
+mod ids;
+mod values;
+
+pub use error::ParseError;
+pub use ids::{ClaimId, LoreId, NoticeId, SeatId, SessionId, pilot_id};
+pub use values::{ContentHash, RepoPath, SPEC_VERSION, SpecVersion, SymbolPath};
