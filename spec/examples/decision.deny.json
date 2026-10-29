@@ -1,0 +1,7 @@
+{
+  "outcome": "deny",
+  "reason_code": "claim_conflict",
+  "message": "src/payments/refund.ts is claimed by sara@example.com (Claude Code, active 4 min). Work on other files, or ask your pilot to override.",
+  "claims_acquired": [],
+  "context": []
+}

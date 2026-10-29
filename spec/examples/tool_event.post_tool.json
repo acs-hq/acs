@@ -1,0 +1,10 @@
+{
+  "spec": "acs/0.1",
+  "harness": "antigravity",
+  "harness_session_id": "run-20261029-0042",
+  "phase": "post_tool",
+  "cwd": "/home/lina/work/shop",
+  "tool": { "name": "run_command", "kind": "shell" },
+  "command": "rm -rf build/ && npm run build",
+  "result": { "success": false, "exit_code": 1 }
+}

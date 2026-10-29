@@ -1,0 +1,14 @@
+sealed = [
+  ".git/**",
+  ".acs/**",
+  ".github/workflows/**",
+  "**/.env*",
+  ".claude/settings*.json",
+  ".agents/**/hooks*.json",
+]
+protected_branches = ["main", "release/*"]
+
+[destructive]
+max_files_deleted_outside_claims = 0
+max_files_deleted_per_command = 50
+ban = ["git push --force*", "git reset --hard", "git clean -f*"]

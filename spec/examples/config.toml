@@ -1,0 +1,7 @@
+spec = "acs/0.1"
+default_target_branch = "main"
+claim_ttl_secs = 900
+sync_interval_secs = 30
+
+[ledger]
+store_prompts = false

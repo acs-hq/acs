@@ -1,0 +1,12 @@
+[[zone]]
+paths = ["payments/**"]
+kind = "owned"
+owners = ["sara@example.com"]
+
+[[zone]]
+paths = ["lib/**"]
+kind = "shared"
+owners = ["team:platform"]
+
+[teams]
+platform = ["omar@example.com", "lina@example.com"]

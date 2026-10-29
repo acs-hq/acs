@@ -1,0 +1,67 @@
+{
+  "spec": "acs/0.1",
+  "session_id": "ses_2m8q5t1v",
+  "seat": {
+    "seat_id": "seat_4d7f1a20",
+    "pilot": "sara@example.com",
+    "harness": "claude-code",
+    "harness_session_id": "3f9c1e52-7a40-4b8e-9d1f-0c6a5b2e8d41",
+    "worktree": "/home/sara/work/shop",
+    "branch": "feat/refund-rounding",
+    "target_branch": "main",
+    "started_at": "2026-10-29T14:02:11Z",
+    "last_seen_at": "2026-10-29T14:31:02Z"
+  },
+  "intent": "Round refund fees to whole cents",
+  "claims": [
+    {
+      "claim_id": "clm_8h2k4m9q",
+      "scope": { "file": "src/payments/refund.ts" },
+      "acquired_at": "2026-10-29T14:05:11Z",
+      "released_at": "2026-10-29T14:31:02Z",
+      "release_reason": "session_end"
+    },
+    {
+      "claim_id": "clm_e50w7r2n",
+      "scope": { "symbol": "src/payments/money.ts", "symbol_path": "roundCents" },
+      "acquired_at": "2026-10-29T14:12:40Z",
+      "released_at": "2026-10-29T14:27:40Z",
+      "release_reason": "expired"
+    }
+  ],
+  "files_changed": [
+    {
+      "path": "src/payments/refund.ts",
+      "pre_hash": "cdb75ec00a7ce77d4ce2bf316c259ff5abe100161d3d7754eaded4255ad191b9",
+      "post_hash": "7c55162252ade168b05bf296a065d1ec70831d8779d8b494688f6e037320936d"
+    },
+    {
+      "path": "src/payments/refund.test.ts",
+      "pre_hash": null,
+      "post_hash": "0bedfbb8b3807c0da7df15095806a6b846e306ce9e48465fe7c1cc0a2b314c29"
+    }
+  ],
+  "guard_decisions": {
+    "counts": { "ok": 41, "claim_conflict": 2, "sealed_path": 1 },
+    "notable": [
+      {
+        "at": "2026-10-29T14:18:03Z",
+        "reason_code": "sealed_path",
+        "outcome": "deny",
+        "path_or_command": ".github/workflows/ci.yml"
+      },
+      {
+        "at": "2026-10-29T14:21:45Z",
+        "reason_code": "claim_conflict",
+        "outcome": "deny",
+        "path_or_command": "src/payments/gateway.ts"
+      }
+    ]
+  },
+  "commits": ["9f2c4b1d7a3e58606b1c0d4e2f7a9b3c5d8e1f20"],
+  "lore_loaded": ["lore_7f3a"],
+  "started_at": "2026-10-29T14:02:11Z",
+  "ended_at": "2026-10-29T14:31:02Z",
+  "ended_reason": "clean",
+  "acs_version": "0.1.0"
+}

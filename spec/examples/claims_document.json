@@ -1,0 +1,29 @@
+{
+  "spec": "acs/0.1",
+  "pilot": "sara@example.com",
+  "updated_at": "2026-10-29T14:09:47Z",
+  "claims": [
+    {
+      "claim_id": "clm_8h2k4m9q",
+      "seat_id": "seat_4d7f1a20",
+      "pilot": "sara@example.com",
+      "scope": { "file": "src/payments/refund.ts" },
+      "target_branch": "main",
+      "acquired_at": "2026-10-29T14:05:11Z",
+      "heartbeat_at": "2026-10-29T14:09:47Z",
+      "ttl_secs": 900,
+      "origin": "agent"
+    },
+    {
+      "claim_id": "clm_f93b2y6d",
+      "seat_id": "seat_4d7f1a20",
+      "pilot": "sara@example.com",
+      "scope": { "symbol": "src/payments/money.ts", "symbol_path": "roundCents" },
+      "target_branch": "main",
+      "acquired_at": "2026-10-29T14:08:02Z",
+      "heartbeat_at": "2026-10-29T14:09:47Z",
+      "ttl_secs": 900,
+      "origin": "agent"
+    }
+  ]
+}

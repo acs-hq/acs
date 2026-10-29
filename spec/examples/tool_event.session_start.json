@@ -1,0 +1,7 @@
+{
+  "spec": "acs/0.1",
+  "harness": "canonical",
+  "harness_session_id": "sim-seat-a",
+  "phase": "session_start",
+  "cwd": "/tmp/shop"
+}

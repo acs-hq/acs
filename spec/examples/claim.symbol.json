@@ -1,0 +1,11 @@
+{
+  "claim_id": "clm_c71p0x3e",
+  "seat_id": "seat_9b3e5c68",
+  "pilot": "lina@example.com",
+  "scope": { "symbol": "src/payments/refund.ts", "symbol_path": "RefundService.apply" },
+  "target_branch": "main",
+  "acquired_at": "2026-10-29T14:06:30Z",
+  "heartbeat_at": "2026-10-29T14:06:30Z",
+  "ttl_secs": 900,
+  "origin": "human"
+}

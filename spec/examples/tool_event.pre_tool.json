@@ -1,0 +1,24 @@
+{
+  "spec": "acs/0.1",
+  "harness": "claude-code",
+  "harness_session_id": "3f9c1e52-7a40-4b8e-9d1f-0c6a5b2e8d41",
+  "phase": "pre_tool",
+  "cwd": "/home/sara/work/shop",
+  "tool": { "name": "Edit", "kind": "edit" },
+  "paths": ["src/payments/refund.ts"],
+  "edit": {
+    "old_text": "const fee = amount * 0.029;",
+    "new_text": "const fee = Math.round(amount * 0.029);"
+  },
+  "command": null,
+  "result": null,
+  "raw": {
+    "hook_event_name": "PreToolUse",
+    "tool_name": "Edit",
+    "tool_input": {
+      "file_path": "src/payments/refund.ts",
+      "old_string": "const fee = amount * 0.029;",
+      "new_string": "const fee = Math.round(amount * 0.029);"
+    }
+  }
+}

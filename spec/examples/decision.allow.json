@@ -1,0 +1,12 @@
+{
+  "outcome": "allow",
+  "reason_code": "ok",
+  "message": "",
+  "claims_acquired": ["clm_8h2k4m9q"],
+  "context": [
+    "Lore for payments/**: Amounts are integer cents. Never call Stripe directly; go through `PaymentGateway`."
+  ],
+  "warnings": [
+    "Remote claims are stale (last fetch 7 min ago); only local claims were checked."
+  ]
+}

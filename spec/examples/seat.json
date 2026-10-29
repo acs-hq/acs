@@ -1,0 +1,11 @@
+{
+  "seat_id": "seat_4d7f1a20",
+  "pilot": "sara@example.com",
+  "harness": "claude-code",
+  "harness_session_id": "3f9c1e52-7a40-4b8e-9d1f-0c6a5b2e8d41",
+  "worktree": "/home/sara/work/shop",
+  "branch": "feat/refund-rounding",
+  "target_branch": "main",
+  "started_at": "2026-10-29T14:02:11Z",
+  "last_seen_at": "2026-10-29T14:09:47Z"
+}
