@@ -11,7 +11,7 @@ WP0.2 freezes the wire contracts of plan section 4 as Rust types in `acs-core`, 
 **Crates** (versions from crates.io on 2026-10-29, declared in root `[workspace.dependencies]`):
 
 - `schemars 1.2.3` with the `jiff02` feature; emits JSON Schema draft 2020-12. Derive honors `#[serde(try_from)]`/`into` by using the wire type's schema, and `#[schemars(extend(...))]` adds `pattern`, `const` and `minLength`, which is how the newtypes carry their validation into the schemas.
-- `jiff 0.2.38` (`default-features = false`, features `std` and `serde`) for timestamps: it is the one time crate with a schemars integration that needs no feature juggling, serializes `Timestamp` as RFC 3339 with `Z`, and avoids pulling in tzdb. `jiff::Timestamp` is re-exported as `acs_core::Timestamp`.
+- `jiff 0.2.38` (`default-features = false`, features `std` and `serde`) for timestamps: the brief prefers it; it has a first-class schemars integration, serializes `Timestamp` as RFC 3339 with `Z`, and avoids pulling in tzdb. `jiff::Timestamp` is re-exported as `acs_core::Timestamp`.
 - `serde 1.0.229`, `serde_json 1.0.154`, `sha2 0.11.1` (pilot id, content hashes).
 - Dev only: `jsonschema 0.60.2` (`default-features = false`; supports draft 2020-12 and `format: date-time`) and `toml 1.1.8`. `toml` is deliberately not a runtime dependency: policy loading is WP1.1's job, and `acs-core` only splits lore front matter as a string.
 - `cargo deny check` passes with no change to `deny.toml`.
