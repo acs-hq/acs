@@ -10,6 +10,7 @@ mod decision;
 mod error;
 mod event;
 mod ids;
+mod policy_types;
 mod records;
 mod values;
 
@@ -18,6 +19,10 @@ pub use error::ParseError;
 pub use event::{EditInfo, Phase, Tool, ToolEvent, ToolKind, ToolResult};
 pub use ids::{ClaimId, LoreId, NoticeId, SeatId, SessionId, pilot_id};
 pub use jiff::Timestamp;
+pub use policy_types::{
+    Config, DEFAULT_SEALED, Destructive, Guards, LedgerConfig, LoreFrontMatter, Owner, Territory,
+    Zone, ZoneKind, split_front_matter,
+};
 pub use records::{
     Claim, ClaimHistoryEntry, ClaimOrigin, ClaimScope, ClaimsDocument, EndedReason, FileChange,
     GuardDecisions, NotableDecision, Notice, NoticeKind, ReleaseReason, Seat, SessionRecord,
