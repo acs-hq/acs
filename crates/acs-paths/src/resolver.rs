@@ -10,7 +10,9 @@ use std::path::{Component, Path, PathBuf};
 use acs_core::RepoPath;
 use acs_core::gate::{PathLocation, ResolvedPath};
 
-use crate::names::{flip_case, is_windows_device, names_eq, on_disk_name, windows_name};
+use crate::names::{
+    canonical, flip_case, is_windows_device, names_eq, on_disk_name, unverbatim, windows_name,
+};
 
 /// How many links one resolution may follow before it is declared a loop (Linux allows 40).
 const MAX_LINK_HOPS: usize = 40;
@@ -82,7 +84,7 @@ impl PathResolver {
     ///
     /// Fails when the root does not exist or is not a directory.
     pub fn new(repo_root: &Path) -> Result<Self, PathsError> {
-        let root = dunce::canonicalize(repo_root).map_err(|source| PathsError::Root {
+        let root = canonical(repo_root).map_err(|source| PathsError::Root {
             path: repo_root.to_path_buf(),
             source,
         })?;
@@ -335,7 +337,7 @@ impl PathResolver {
         // Windows: let the OS fix drive and name case (and expand 8.3 names) of what exists.
         if cfg!(windows)
             && resolved != self.root
-            && let Ok(canonical) = dunce::canonicalize(&resolved)
+            && let Ok(canonical) = canonical(&resolved)
         {
             resolved = canonical;
         }
@@ -371,7 +373,7 @@ impl PathResolver {
         if self.strip(link, &self.root).is_some() {
             return true;
         }
-        match dunce::canonicalize(link) {
+        match canonical(link) {
             Ok(target) => !(target != self.root && self.strip(&self.root, &target).is_some()),
             Err(_) => true,
         }
@@ -407,11 +409,11 @@ pub(crate) fn split(path: &Path) -> (PathBuf, Vec<Comp>) {
 
 /// Make `raw` absolute against `cwd` without touching the filesystem.
 pub(crate) fn absolutize(raw: &Path, cwd: &Path) -> Result<PathBuf, String> {
-    let raw = dunce::simplified(raw);
+    let raw = unverbatim(raw);
     if raw.is_absolute() {
-        return Ok(raw.to_path_buf());
+        return Ok(raw);
     }
-    let cwd = dunce::simplified(cwd);
+    let cwd = unverbatim(cwd);
     if !cwd.is_absolute() {
         return Err(format!(
             "the working directory {} is not absolute; the event must carry an absolute cwd",
@@ -419,22 +421,24 @@ pub(crate) fn absolutize(raw: &Path, cwd: &Path) -> Result<PathBuf, String> {
         ));
     }
     #[cfg(windows)]
-    if let Some(Component::Prefix(drive)) = raw.components().next() {
-        // `C:name` is relative to the current directory of drive C.
-        return match cwd.components().next() {
-            Some(Component::Prefix(have))
-                if names_eq(have.as_os_str(), drive.as_os_str(), true) =>
-            {
-                Ok(cwd.join(raw.components().skip(1).collect::<PathBuf>()))
-            }
-            _ => Err(format!(
-                "{} is relative to the current directory of another drive; use a full path",
-                raw.display()
-            )),
-        };
+    {
+        if let Some(Component::Prefix(drive)) = raw.components().next() {
+            // `C:name` is relative to the current directory of drive C.
+            return match cwd.components().next() {
+                Some(Component::Prefix(have))
+                    if names_eq(have.as_os_str(), drive.as_os_str(), true) =>
+                {
+                    Ok(cwd.join(raw.components().skip(1).collect::<PathBuf>()))
+                }
+                _ => Err(format!(
+                    "{} is relative to the current directory of another drive; use a full path",
+                    raw.display()
+                )),
+            };
+        }
     }
     // On Windows `\name` keeps the drive of `cwd`; `join` does exactly that.
-    Ok(cwd.join(raw))
+    Ok(cwd.join(&raw))
 }
 
 /// Turn a rooted link target without a drive (`\name` on Windows) into one on the drive of the
@@ -455,7 +459,7 @@ fn anchor_rooted(target_base: PathBuf, link_dir: &Path) -> PathBuf {
 fn simplify_link_target(target: &Path) -> PathBuf {
     let text = target.to_string_lossy();
     let text = text.strip_prefix(r"\??\").unwrap_or(&text);
-    dunce::simplified(Path::new(text)).to_path_buf()
+    unverbatim(Path::new(text))
 }
 
 /// Find the worktree's git directory and the ones outside the root that must be reported as
@@ -471,7 +475,7 @@ fn find_git_dirs(root: &Path) -> (Option<PathBuf>, Vec<PathBuf>) {
         return (None, Vec::new());
     };
     if meta.is_dir() {
-        let canonical = dunce::canonicalize(&dotgit).ok();
+        let canonical = canonical(&dotgit).ok();
         return (canonical.clone(), outside(canonical.into_iter().collect()));
     }
     // A linked worktree or submodule: `.git` is a file reading `gitdir: <path>`.
@@ -481,12 +485,12 @@ fn find_git_dirs(root: &Path) -> (Option<PathBuf>, Vec<PathBuf>) {
     let Some(line) = text.lines().find_map(|l| l.strip_prefix("gitdir:")) else {
         return (None, Vec::new());
     };
-    let Ok(git_dir) = dunce::canonicalize(root.join(line.trim())) else {
+    let Ok(git_dir) = canonical(root.join(line.trim())) else {
         return (None, Vec::new());
     };
     let mut dirs = vec![git_dir.clone()];
     if let Ok(common) = fs::read_to_string(git_dir.join("commondir"))
-        && let Ok(common) = dunce::canonicalize(git_dir.join(common.trim()))
+        && let Ok(common) = canonical(git_dir.join(common.trim()))
     {
         dirs.push(common);
     }
@@ -519,5 +523,22 @@ fn same_entry(a: &Path, b: &Path) -> bool {
 #[cfg(not(unix))]
 fn same_entry(a: &Path, b: &Path) -> bool {
     // `canonicalize` reports the on-disk case on Windows, so equal results are one entry.
-    matches!((dunce::canonicalize(a), dunce::canonicalize(b)), (Ok(x), Ok(y)) if x == y)
+    matches!((canonical(a), canonical(b)), (Ok(x), Ok(y)) if x == y)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn nt_namespace_prefixes_are_stripped_from_link_targets() {
+        assert_eq!(
+            simplify_link_target(Path::new(r"\??\C:\work\repo")),
+            PathBuf::from(r"C:\work\repo")
+        );
+        assert_eq!(
+            simplify_link_target(Path::new("plain/rel")),
+            PathBuf::from("plain/rel")
+        );
+    }
 }

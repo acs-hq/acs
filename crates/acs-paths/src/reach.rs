@@ -8,6 +8,7 @@ use std::path::Path;
 use acs_core::RepoPath;
 use acs_core::gate::{Expansion, PathLocation, ResolvedPath};
 
+use crate::names::canonical;
 use crate::resolver::PathResolver;
 
 /// A [`ResolvedPath`] for a directory a recursive operation would enter, plus whether the walk
@@ -209,7 +210,7 @@ impl PathResolver {
     /// Record where the link at `link` leads when that is inside the repository and not inside
     /// the subtree rooted at `walk_root` (a link back into its own directory adds nothing).
     fn note_link(&self, link: &Path, walk_root: Option<&str>, reach: &mut Reach) {
-        let Ok(target) = dunce::canonicalize(link) else {
+        let Ok(target) = canonical(link) else {
             return;
         };
         let PathLocation::InRepo(target) = self.classify(&target) else {

@@ -1,6 +1,6 @@
 //! Shared fixtures for the path tests.
 
-#![allow(dead_code)]
+#![allow(dead_code, clippy::unwrap_used, clippy::expect_used)]
 
 use std::fs;
 use std::path::{Path, PathBuf};

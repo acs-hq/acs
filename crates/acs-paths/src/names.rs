@@ -4,7 +4,8 @@
 use std::borrow::Cow;
 use std::ffi::{OsStr, OsString};
 use std::fs;
-use std::path::Path;
+use std::io;
+use std::path::{Path, PathBuf};
 
 /// Fold a component for case-insensitive comparison.
 pub(crate) fn fold(name: &OsStr) -> String {
@@ -44,6 +45,36 @@ pub(crate) fn is_windows_device(name: &str) -> bool {
         && (upper.starts_with("COM") || upper.starts_with("LPT"))
         && upper.as_bytes()[3].is_ascii_digit()
         && upper.as_bytes()[3] != b'0')
+}
+
+/// Turn a verbatim path into the ordinary form: `\\?\C:\x` becomes `C:\x` and
+/// `\\?\UNC\server\share` becomes `\\server\share`. Other paths are returned unchanged.
+///
+/// Windows APIs reached through `std` handle paths longer than 260 characters without the
+/// verbatim prefix, and comparing paths needs one spelling.
+pub(crate) fn unverbatim(path: &Path) -> PathBuf {
+    let Some(text) = path.to_str() else {
+        return path.to_path_buf();
+    };
+    if let Some(rest) = text.strip_prefix(r"\\?\UNC\") {
+        return PathBuf::from(format!(r"\\{rest}"));
+    }
+    if let Some(rest) = text.strip_prefix(r"\\?\") {
+        let bytes = rest.as_bytes();
+        if bytes.len() >= 3
+            && bytes[0].is_ascii_alphabetic()
+            && bytes[1] == b':'
+            && bytes[2] == b'\\'
+        {
+            return PathBuf::from(rest);
+        }
+    }
+    path.to_path_buf()
+}
+
+/// Canonicalize an existing path: links resolved, on-disk case on Windows, no verbatim prefix.
+pub(crate) fn canonical(path: impl AsRef<Path>) -> io::Result<PathBuf> {
+    dunce::canonicalize(path).map(|p| unverbatim(&p))
 }
 
 /// Find the name `name` has in `dir` on disk, ignoring case: the exact spelling when it exists
@@ -99,6 +130,21 @@ mod tests {
             (":$DATA", ":$DATA"),
         ] {
             assert_eq!(windows_name(given), want, "{given:?}");
+        }
+    }
+
+    #[test]
+    fn verbatim_prefixes_are_removed() {
+        for (given, want) in [
+            (r"\\?\C:\work\repo", r"C:\work\repo"),
+            (r"\\?\c:\", r"c:\"),
+            (r"\\?\UNC\srv\share\dir", r"\\srv\share\dir"),
+            (r"\\?\Volume{1234}\x", r"\\?\Volume{1234}\x"),
+            (r"\\.\NUL", r"\\.\NUL"),
+            (r"C:\plain", r"C:\plain"),
+            ("/unix/path", "/unix/path"),
+        ] {
+            assert_eq!(unverbatim(Path::new(given)), PathBuf::from(want), "{given}");
         }
     }
 

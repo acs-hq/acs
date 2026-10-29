@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use acs_core::gate::{Expansion, PathLocation};
 use globset::{GlobBuilder, GlobMatcher};
 
+use crate::names::{on_disk_name, unverbatim};
 use crate::reach::into_expansion_parts;
 use crate::resolver::{Comp, PathResolver, absolutize, split};
 
@@ -38,9 +39,9 @@ impl PathResolver {
             files: Vec::new(),
             truncated: true,
         };
-        let pat = dunce::simplified(Path::new(pattern));
+        let pat = unverbatim(Path::new(pattern));
         let (start, comps) = if pat.has_root() || pat.components().next().is_some_and(is_prefix) {
-            match absolutize(pat, cwd) {
+            match absolutize(&pat, cwd) {
                 Ok(abs) => {
                     let (base, comps) = split(&abs);
                     (base, comps)
@@ -48,7 +49,7 @@ impl PathResolver {
                 Err(_) => return unreadable,
             }
         } else if cwd.is_absolute() {
-            (cwd.to_path_buf(), split(pat).1)
+            (cwd.to_path_buf(), split(&pat).1)
         } else {
             return unreadable;
         };
@@ -99,7 +100,14 @@ impl PathResolver {
                     }
                 }
             } else {
-                next = candidates.into_iter().map(|c| c.join(&name)).collect();
+                let fix_case = self.case_insensitive() && !cfg!(windows);
+                next = candidates
+                    .into_iter()
+                    .map(|c| {
+                        let on_disk = fix_case.then(|| on_disk_name(&c, &name)).flatten();
+                        c.join(on_disk.as_deref().unwrap_or(&name))
+                    })
+                    .collect();
             }
             candidates = next;
         }
@@ -114,10 +122,11 @@ impl PathResolver {
             }
             let raw = matched.to_string_lossy().into_owned();
             let entry = self.build(&raw, &matched, cwd, dirs_only);
-            if is_link && !dirs_only {
-                if let PathLocation::InRepo(rel) = &entry.location {
-                    files.insert(rel.as_str().to_owned());
-                }
+            if is_link
+                && !dirs_only
+                && let PathLocation::InRepo(rel) = &entry.location
+            {
+                files.insert(rel.as_str().to_owned());
             }
             let left = cap.saturating_sub(files.len());
             if recursive {
