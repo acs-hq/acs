@@ -178,7 +178,7 @@ Policy is committed under `.acs/policy/` and is the same for every clone. All po
   lore/            mirrors the source tree, for example lore/payments/money.md
 ```
 
-All four types reject unknown fields. Globs use `/` separators; `**` matches any number of path segments. The exact glob dialect is specified in a later draft.
+All four types reject unknown fields. **Glob dialect.** Path globs (`sealed`, zone `paths`, lore `scope`) are matched against repository-relative, `/`-separated paths and are anchored at the repository root. `*` and `?` match within one path segment and never match `/`; `**` as a whole segment matches zero or more segments; `[abc]` and `{a,b}` are supported; there is no negation. A pattern that should match at any depth MUST say so (`**/.env*`). Matching is case-insensitive on case-insensitive filesystems and case-sensitive otherwise. `protected_branches` uses the same dialect against branch names (so `release/*` does not match `release/a/b`). `destructive.ban` patterns are matched against each simple shell command, its words joined by single spaces, where `*` matches any run of characters including `/` and spaces.
 
 ### 5.1 `config.toml`
 
@@ -321,7 +321,7 @@ For every event the engine proceeds as follows. A step that denies ends evaluati
 
 **Post-tool.** Determine what actually changed (the event's paths, or a working-tree diff for shell commands), attribute it to the session, store post-images, update heartbeats, and spawn a detached sync when the interval has elapsed.
 
-*Draft note:* the precedence between a step that would `ask` and a later step that would `deny` is not yet specified; the reference engine defines it with its decision tests, and the next draft will state it.
+**Precedence.** Steps 3–6 are all evaluated; their results combine as deny > ask > allow. If any step denies, the outcome is `deny` with the `reason_code` of the first denying step in the order above. Otherwise, if any step asks, the outcome is `ask` with the first asking step's code. A `deny` acquires no claims and takes no snapshots; on `ask`, claims are acquired and pre-images snapshotted as for `allow` (if the human declines, the claims simply expire or are released at session end). Warnings from every step are collected into `warnings` regardless of outcome.
 
 ## 10. Local state layout
 
@@ -352,4 +352,4 @@ ACS_HOME/repos/<repo-id>/
 
 ## 12. Not yet specified
 
-These are known gaps in this draft: the glob dialect; the `ask`/`deny` precedence (section 9); the conformance suite and its runner (planned for 1.0); the adapter support tiers; the exact message templates per reason code; and the behavior of `queue`.
+These are known gaps in this draft: the conformance suite and its runner (planned for 1.0); the adapter support tiers; the exact message templates per reason code; and the behavior of `queue`.

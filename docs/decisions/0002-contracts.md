@@ -37,6 +37,16 @@ WP0.2 freezes the wire contracts of plan section 4 as Rust types in `acs-core`, 
 
 - Any change to a public type changes a schema and fails the drift test until the schemas are regenerated and committed; this is the intended freeze mechanism.
 - `Config` rejects unknown keys, so later WPs that add settings (for example a lore injection cap) must add the field to `acs-core` and regenerate the schema.
-- The `ask` versus `deny` precedence between pipeline steps, the glob dialect and message templates are left open in `SPEC.md` (section 12) for WP1.1 and WP1.5 to settle.
+- Message templates per reason code are left open in `SPEC.md` (section 12) for WP1.5.
 - `path_or_command` in notable guard decisions can contain command text that gets pushed to the remote; recorders must redact (WP4.1). The type cannot enforce it.
 - Reason codes are a closed enum: a record containing a code from a newer draft fails to deserialize here, which is consistent with the exact `spec` version check.
+
+## Orchestrator review (2026-10-29)
+
+Reviewed and **frozen** as the Phase 0 contract. From here on only the orchestrator changes `acs-core` public types, `spec/schemas/` or `SPEC.md`; a work package that needs a change stops and asks. All extensions above are accepted. Open questions resolved:
+
+- **Sealed zones** return `sealed_path`, same as sealed globs. No separate code.
+- **Precedence** is deny > ask > allow; the first denying (or asking) step supplies the reason code; `deny` acquires no claims; `ask` acquires claims and snapshots as `allow` does. Written into SPEC.md section 9.
+- **Glob dialect** is globset-style, anchored, `*` does not cross `/`, `**` spans segments, case follows the filesystem; ban patterns match per simple command with `*` matching anything. Written into SPEC.md section 5. WP1.1 implements it with `globset` (`literal_separator(true)`).
+- **New config keys** (lore cap in WP6.1, staleness threshold in WP6.2, init thresholds in WP5.3) are added by the orchestrator as optional fields with defaults when those WPs start; that is a backward-compatible change within `acs/0.1`.
+- **Redaction** of `path_or_command` stays a MUST on recorders (WP4.1).
