@@ -10,10 +10,16 @@ mod decision;
 mod error;
 mod event;
 mod ids;
+mod records;
 mod values;
 
 pub use decision::{Decision, Outcome, ReasonCode};
 pub use error::ParseError;
 pub use event::{EditInfo, Phase, Tool, ToolEvent, ToolKind, ToolResult};
 pub use ids::{ClaimId, LoreId, NoticeId, SeatId, SessionId, pilot_id};
+pub use jiff::Timestamp;
+pub use records::{
+    Claim, ClaimHistoryEntry, ClaimOrigin, ClaimScope, ClaimsDocument, EndedReason, FileChange,
+    GuardDecisions, NotableDecision, Notice, NoticeKind, ReleaseReason, Seat, SessionRecord,
+};
 pub use values::{ContentHash, RepoPath, SPEC_VERSION, SpecVersion, SymbolPath};
