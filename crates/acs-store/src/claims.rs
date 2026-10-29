@@ -205,9 +205,14 @@ pub(crate) fn archive_claims(
 ) -> Result<Vec<ClaimId>, StoreError> {
     let reason = enum_to_db(&reason)?;
     let now = to_db(now);
-    let mut bound: Vec<(&str, &dyn ToSql)> = extra.to_vec();
-    bound.push((":now", &now));
-    bound.push((":reason", &reason));
+    // SQLite rejects a bound name the statement does not use, so each statement gets its own set.
+    let mut delete_args: Vec<(&str, &dyn ToSql)> = extra.to_vec();
+    if filter.contains(":now") {
+        delete_args.push((":now", &now));
+    }
+    let mut insert_args = extra.to_vec();
+    insert_args.push((":now", &now));
+    insert_args.push((":reason", &reason));
     conn.prepare_cached(&format!(
         "INSERT INTO claim_history (claim_id, seat_id, pilot, path, symbol_path, target_branch, \
          origin, acquired_at, released_at, release_reason) \
@@ -216,12 +221,12 @@ pub(crate) fn archive_claims(
                 CASE WHEN expires_at <= :now THEN 'expired' ELSE :reason END \
          FROM claims WHERE {filter}"
     ))?
-    .execute(&bound[..])?;
+    .execute(&insert_args[..])?;
     let ids: Vec<String> = conn
         .prepare_cached(&format!(
             "DELETE FROM claims WHERE {filter} RETURNING claim_id"
         ))?
-        .query_map(&bound[..], |row| row.get(0))?
+        .query_map(&delete_args[..], |row| row.get(0))?
         .collect::<Result<_, _>>()?;
     ids.into_iter().map(id_from_db).collect()
 }

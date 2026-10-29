@@ -19,7 +19,7 @@
 use std::fmt::Write as _;
 use std::io;
 use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use acs_core::{ParseError, Timestamp};
 use rusqlite::{Connection, ErrorCode, OpenFlags, Transaction, TransactionBehavior};
@@ -123,7 +123,9 @@ impl From<rusqlite::Error> for StoreError {
     fn from(err: rusqlite::Error) -> Self {
         if let rusqlite::Error::SqliteFailure(failure, message) = &err {
             match failure.code {
-                ErrorCode::DatabaseBusy | ErrorCode::DatabaseLocked => return Self::Locked,
+                ErrorCode::DatabaseBusy
+                | ErrorCode::DatabaseLocked
+                | ErrorCode::FileLockingProtocolFailed => return Self::Locked,
                 ErrorCode::NotADatabase | ErrorCode::DatabaseCorrupt => {
                     return Self::Corrupt {
                         detail: message.clone().unwrap_or_else(|| failure.to_string()),
@@ -270,7 +272,30 @@ impl StateDb {
         }
     }
 
+    /// Sets the connection up and migrates the schema, retrying while another process is doing
+    /// the same.
+    ///
+    /// SQLite's busy handler does not cover everything the first opener does: switching a new
+    /// file to WAL mode, or reading it while another connection does, can fail at once with
+    /// "locked" instead of waiting. Several hooks starting together on a new repository is a
+    /// real situation, so the whole (idempotent) sequence is retried with a short backoff until
+    /// the busy timeout is used up. This is waiting, not domain time: it uses the monotonic
+    /// clock, never the injected one.
     fn configure(&self, config: &DbConfig) -> Result<(), StoreError> {
+        let started = Instant::now();
+        let mut pause = Duration::from_millis(1);
+        loop {
+            match self.configure_once(config) {
+                Err(StoreError::Locked) if started.elapsed() < config.busy_timeout => {
+                    std::thread::sleep(pause);
+                    pause = (pause * 2).min(Duration::from_millis(50));
+                }
+                other => return other,
+            }
+        }
+    }
+
+    fn configure_once(&self, config: &DbConfig) -> Result<(), StoreError> {
         let conn = &self.conn;
         conn.busy_timeout(config.busy_timeout)?;
         // The first read of the file: a non-database file fails here, as `Corrupt`.
