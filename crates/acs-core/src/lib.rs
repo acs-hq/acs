@@ -9,6 +9,7 @@
 mod decision;
 mod error;
 mod event;
+pub mod gate;
 mod ids;
 mod policy_types;
 mod records;
