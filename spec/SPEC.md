@@ -328,14 +328,22 @@ For every event the engine proceeds as follows. A step that denies ends evaluati
 State is per machine, not per clone: all worktrees and clones of a repository share it. It lives under `ACS_HOME` (default `~/.acs`, overridden by the `ACS_HOME` environment variable), never inside the working tree, so an agent deleting files in the tree or in `.git` cannot reach snapshots.
 
 ```
-ACS_HOME/repos/<repo-id>/
-  state.db      SQLite: seats, claims, events, notices, stats, remote-claims view
-  snapshots/    content-addressed blobs
-  cache/        compiled policy, keyed by the hash of .acs/policy/
-  pending/      pending-commit markers and proposed lore
+ACS_HOME/
+  index/<key>.json  identity cache: canonical common git dir -> repo-id
+  repos/<repo-id>/
+    state.db        SQLite: seats, claims, events, notices, stats, remote-claims view
+    snapshots/      content-addressed blobs
+    cache/          compiled policy, keyed by the hash of .acs/policy/
+    pending/        pending-commit markers and proposed lore
 ```
 
-`repo-id` is the SHA-256 (lowercase hex) of the repository's root-commit hashes, sorted ascending and joined with `\n`; it is stable across clones and worktrees. For a repository with no commits yet, the implementation falls back to an identifier derived from the canonical repository path and migrates on the first commit. Directories and files under `ACS_HOME` are readable only by their owner.
+**Repository id.** `repo-id` is the SHA-256 (lowercase hex) of the repository's root-commit hashes: the parentless commits reachable from `refs/heads/*` and `refs/remotes/*`, excluding `refs/remotes/*/acs/*` (ACS's own ledger and claims chains are unrelated histories and MUST NOT affect the id). Tags, notes and replace refs are ignored. The hashes are lowercased, de-duplicated, sorted ascending and joined with `\n` (no trailing newline). The id is stable across clones and every worktree of a repository. Clones that track different branch sets of a multi-root repository can disagree; this is accepted.
+
+- **No commits yet:** the id is SHA-256 of `path:` followed by the canonical common git directory (not the work tree), lowercased on case-insensitive platforms. When a later resolution finds commits, `repos/<path-id>/` is moved to `repos/<commit-id>/`; if the target exists, the directories are merged without overwriting anything and conflicts are left in place and reported.
+- **Shallow clones:** the shallow boundary commits stand in for the roots. The resulting id is provisional and is not migrated when the clone is deepened.
+- **Caching:** implementations SHOULD cache the id per common git directory outside the working tree and `.git` (`ACS_HOME/index/`), so the hot path neither spawns processes nor walks history. Once cached, an id stays fixed on that machine even if new roots appear.
+
+**Permissions.** Directories and files under `ACS_HOME` are readable only by their owner (Unix: `0700` directories, `0600` files). On Windows they inherit the ACL of their parent, which is owner-only for the default location under the user profile.
 
 ## 11. Failure modes and privacy
 
