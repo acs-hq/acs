@@ -1,0 +1,3113 @@
+# Corpus of shell command lines with their expected analysis.
+#
+# Format. A case starts with `$ <command>` (bash), `$ps <command>` (PowerShell) or
+# `$cmd <command>` (cmd.exe). Lines starting with `| ` continue the command on a new line.
+# Each following `> {json}` line is one expected simple command, in order (see
+# tests/common/mod.rs for the fields); `> !incomplete` expects `complete = false`; `> (none)` expects no commands. A case
+# without any `>` line is new: run the test with ACS_SHELL_BLESS=1 to fill in what the analysis
+# produces, then review it before committing. Lines starting with `#` are comments.
+
+# ---- rm and friends ----------------------------------------------------------------------
+$ rm file.txt
+> {"w":"rm file.txt","c":"delete","t":["delete file.txt"]}
+$ rm -rf build
+> {"w":"rm -rf build","c":"delete","t":["delete+rec build"]}
+$ rm -rf build/ dist/
+> {"w":"rm -rf build/ dist/","c":"delete","t":["delete+rec build/","delete+rec dist/"]}
+$ rm -f *.log
+> {"w":"rm -f *.log","c":"delete","t":["delete+glob *.log"]}
+$ rm -rf build/*
+> {"w":"rm -rf build/*","c":"delete","t":["delete+rec+glob build/*"]}
+$ rm -rf "$VAR"/
+> {"w":"rm -rf $VAR/","c":"delete","t":["delete+rec+partial $VAR/"]}
+$ rm -rf "${BUILD_DIR}/out"
+> {"w":"rm -rf ${BUILD_DIR}/out","c":"delete","t":["delete+rec+partial ${BUILD_DIR}/out"]}
+$ rm -rf $(git rev-parse --show-toplevel)/tmp
+> {"w":"rm -rf \"$(git rev-parse --show-toplevel)/tmp\"","c":"delete","t":["delete+rec+partial $(git rev-parse --show-toplevel)/tmp"]}
+> {"w":"git rev-parse --show-toplevel","c":"read","g":"rev-parse"}
+$ rm -- -weird-file
+> {"w":"rm -- -weird-file","c":"delete","t":["delete -weird-file"]}
+$ rm -rf -- "$dir"
+> {"w":"rm -rf -- $dir","c":"delete","t":["delete+rec+partial $dir"]}
+$ rm -r --force target
+> {"w":"rm -r --force target","c":"delete","t":["delete+rec target"]}
+$ rmdir empty_dir
+> {"w":"rmdir empty_dir","c":"delete","t":["delete empty_dir"]}
+$ unlink link
+> {"w":"unlink link","c":"delete","t":["delete link"]}
+$ shred -u secret.key
+> {"w":"shred -u secret.key","c":"delete","t":["delete secret.key"]}
+$ rm -rf /
+> {"w":"rm -rf /","c":"delete","t":["delete+rec /"]}
+$ rm -rf ~/projects/old
+> {"w":"rm -rf ~/projects/old","c":"delete","t":["delete+rec+partial ~/projects/old"]}
+$ rm -rf node_modules .next
+> {"w":"rm -rf node_modules .next","c":"delete","t":["delete+rec node_modules","delete+rec .next"]}
+$ rm "file with spaces.txt"
+> {"w":"rm \"file with spaces.txt\"","c":"delete","t":["delete file with spaces.txt"]}
+$ rm 'it'\''s.txt'
+> {"w":"rm it's.txt","c":"delete","t":["delete it's.txt"]}
+$ rm \*.txt
+> {"w":"rm *.txt","c":"delete","t":["delete *.txt"]}
+$ rm "*.txt"
+> {"w":"rm *.txt","c":"delete","t":["delete *.txt"]}
+$ rm file{1,2,3}.txt
+> {"w":"rm file{1,2,3}.txt","c":"delete","t":["delete+glob file{1,2,3}.txt"]}
+$ rm -rf ./build/../dist
+> {"w":"rm -rf ./build/../dist","c":"delete","t":["delete+rec ./build/../dist"]}
+$ rm $HOME/x
+> {"w":"rm $HOME/x","c":"delete","t":["delete+partial $HOME/x"]}
+$ rm ~/x
+> {"w":"rm ~/x","c":"delete","t":["delete+partial ~/x"]}
+$ rm "$(pwd)/x"
+> {"w":"rm $(pwd)/x","c":"delete","t":["delete+partial $(pwd)/x"]}
+> {"w":"pwd","c":"read"}
+$ rm -rf ${TMPDIR:-/tmp}/acs
+> {"w":"rm -rf ${TMPDIR:-/tmp}/acs","c":"delete","t":["delete+rec+partial ${TMPDIR:-/tmp}/acs"]}
+$ rm -rf /tmp/acs-*
+> {"w":"rm -rf /tmp/acs-*","c":"delete","t":["delete+rec+glob /tmp/acs-*"]}
+$ rm *.o
+> {"w":"rm *.o","c":"delete","t":["delete+glob *.o"]}
+$ rm file[0-9].txt
+> {"w":"rm file[0-9].txt","c":"delete","t":["delete+glob file[0-9].txt"]}
+$ rm ??.log
+> {"w":"rm ??.log","c":"delete","t":["delete+glob ??.log"]}
+$ rm -rf
+> {"w":"rm -rf","c":"delete"}
+$ ! rm x
+> {"w":"rm x","c":"delete","t":["delete x"]}
+
+# ---- find --------------------------------------------------------------------------------
+$ find . -name '*.tmp' -delete
+> {"w":"find . -name *.tmp -delete","c":"delete","t":["delete+rec ."]}
+$ find /tmp -type f -mtime +7 -delete
+> {"w":"find /tmp -type f -mtime +7 -delete","c":"delete","t":["delete+rec /tmp"]}
+$ find . -name '*.pyc' -exec rm {} \;
+> {"w":"find . -name *.pyc -exec rm {} ;","c":"delete","t":["delete+rec ."]}
+$ find . -type f -name '*.orig' -exec rm -f {} +
+> {"w":"find . -type f -name *.orig -exec rm -f {} +","c":"delete","t":["delete+rec ."]}
+$ find src -name '*.rs' | xargs grep TODO
+> {"w":"find src -name *.rs","c":"read","t":["read+rec src"]}
+> {"w":"xargs grep TODO","c":"unknown","u":true}
+$ find . -name node_modules -type d -prune -exec rm -rf {} +
+> {"w":"find . -name node_modules -type d -prune -exec rm -rf {} +","c":"delete","t":["delete+rec ."]}
+$ find . -type f
+> {"w":"find . -type f","c":"read","t":["read+rec ."]}
+$ find . -name '*.log' -print0 | xargs -0 rm -f
+> {"w":"find . -name *.log -print0","c":"read","t":["read+rec ."]}
+> {"w":"xargs -0 rm -f","c":"delete,unknown","u":true}
+$ find . -name '-delete' -print
+> {"w":"find . -name -delete -print","c":"read","t":["read+rec ."]}
+$ find . -exec chmod 644 {} \;
+> {"w":"find . -exec chmod 644 {} ;","c":"write","t":["write+rec ."]}
+$ find . -exec sh -c 'rm -f "$1"' _ {} \;
+> {"w":"find . -exec sh -c \"rm -f \\\"$1\\\"\" _ {} ;","c":"unknown","u":true}
+> {"w":"rm -f $1","c":"delete","t":["delete+partial $1"]}
+$ find build -mindepth 1 -delete
+> {"w":"find build -mindepth 1 -delete","c":"delete","t":["delete+rec build"]}
+$ find . -name '*.txt' -fprint list.txt
+> {"w":"find . -name *.txt -fprint list.txt","c":"write","t":["write list.txt"]}
+$ find $DIR -delete
+> {"w":"find $DIR -delete","c":"delete","t":["delete+rec+partial $DIR"]}
+$ find
+> {"w":"find","c":"read","t":["read+rec ."]}
+
+# ---- xargs -------------------------------------------------------------------------------
+$ git ls-files | xargs rm
+> {"w":"git ls-files","c":"read","g":"ls-files"}
+> {"w":"xargs rm","c":"delete,unknown","u":true}
+$ ls *.tmp | xargs -n1 rm -f
+> {"w":"ls *.tmp","c":"read","t":["read+glob *.tmp"]}
+> {"w":"xargs -n1 rm -f","c":"delete,unknown","u":true}
+$ ls | xargs -I{} cp {} backup/
+> {"w":"ls","c":"read"}
+> {"w":"xargs -I{} cp {} backup/","c":"write,unknown","t":["write+rec backup/"],"u":true}
+$ cat files.txt | xargs -I% mv % archive/
+> {"w":"cat files.txt","c":"read","t":["read files.txt"]}
+> {"w":"xargs -I% mv % archive/","c":"move,unknown","t":["write+rec archive/"],"u":true}
+$ echo foo | xargs
+> {"w":"echo foo","c":"read"}
+> {"w":"xargs","c":"read"}
+$ git diff --name-only | xargs sed -i 's/a/b/'
+> {"w":"git diff --name-only","c":"read","g":"diff"}
+> {"w":"xargs sed -i s/a/b/","c":"write,unknown","u":true}
+$ xargs -0 -P4 -n1 shred
+> {"w":"xargs -0 -P4 -n1 shred","c":"delete,unknown","u":true}
+$ fd -e tmp -x rm
+> {"w":"fd -e tmp -x rm","c":"delete,unknown","u":true}
+$ ls | xargs -I{} sh -c 'rm -rf {}'
+> {"w":"ls","c":"read"}
+> {"w":"xargs -I{} sh -c \"rm -rf {}\"","c":"unknown","u":true}
+> {"w":"rm -rf $__ARG__","c":"delete","t":["delete+rec+partial $__ARG__"]}
+
+# ---- mv, cp, ln, mkdir, touch ------------------------------------------------------------
+$ mv a.txt b.txt
+> {"w":"mv a.txt b.txt","c":"move","t":["delete+rec a.txt","write+rec b.txt"]}
+$ mv src/old.rs src/new.rs
+> {"w":"mv src/old.rs src/new.rs","c":"move","t":["delete+rec src/old.rs","write+rec src/new.rs"]}
+$ mv *.log logs/
+> {"w":"mv *.log logs/","c":"move","t":["delete+rec+glob *.log","write+rec logs/"]}
+$ mv -t dest a b
+> {"w":"mv -t dest a b","c":"move","t":["delete+rec a","delete+rec b","write+rec dest"]}
+$ cp a b
+> {"w":"cp a b","c":"write","t":["read a","write+rec b"]}
+$ cp -r src backup
+> {"w":"cp -r src backup","c":"write","t":["read+rec src","write+rec backup"]}
+$ cp -a src/. dest/
+> {"w":"cp -a src/. dest/","c":"write","t":["read+rec src/.","write+rec dest/"]}
+$ cp file1 file2 dir/
+> {"w":"cp file1 file2 dir/","c":"write","t":["read file1","read file2","write+rec dir/"]}
+$ cp -t dir a b
+> {"w":"cp -t dir a b","c":"write","t":["read a","read b","write+rec dir"]}
+$ ln -s target link
+> {"w":"ln -s target link","c":"write","t":["write+rec link"]}
+$ ln -sf ../shared/config.json config.json
+> {"w":"ln -sf ../shared/config.json config.json","c":"write","t":["write+rec config.json"]}
+$ install -m 755 target/release/acs /usr/local/bin/acs
+> {"w":"install -m 755 target/release/acs /usr/local/bin/acs","c":"write","t":["read target/release/acs","write+rec /usr/local/bin/acs"]}
+$ install -d out/bin
+> {"w":"install -d out/bin","c":"write","t":["write out/bin"]}
+$ touch a b
+> {"w":"touch a b","c":"write","t":["write a","write b"]}
+$ mkdir -p build/out
+> {"w":"mkdir -p build/out","c":"write","t":["write build/out"]}
+$ mkdir -p "$HOME/.cache/acs"
+> {"w":"mkdir -p $HOME/.cache/acs","c":"write","t":["write+partial $HOME/.cache/acs"]}
+$ truncate -s 0 app.log
+> {"w":"truncate -s 0 app.log","c":"write","t":["write app.log"]}
+$ tee out.log
+> {"w":"tee out.log","c":"write","t":["write out.log"]}
+$ echo hi | tee -a a.log b.log
+> {"w":"echo hi","c":"read"}
+> {"w":"tee -a a.log b.log","c":"write","t":["write a.log","write b.log"]}
+$ dd if=/dev/zero of=disk.img bs=1M count=10
+> {"w":"dd if=/dev/zero of=disk.img bs=1M count=10","c":"write","t":["read /dev/zero","write disk.img"]}
+$ dd if=a.iso of=/dev/sdb
+> {"w":"dd if=a.iso of=/dev/sdb","c":"write","t":["read a.iso","write /dev/sdb"]}
+$ chmod +x script.sh
+> {"w":"chmod +x script.sh","c":"write","t":["write script.sh"]}
+$ chmod -R 755 dist
+> {"w":"chmod -R 755 dist","c":"write","t":["write+rec dist"]}
+$ chmod -x file
+> {"w":"chmod -x file","c":"write","t":["write file"]}
+$ chown -R user:group data
+> {"w":"chown -R user:group data","c":"write","t":["write+rec data"]}
+$ mktemp -d
+> {"w":"mktemp -d","c":"write"}
+$ mktemp /tmp/foo.XXXXXX
+> {"w":"mktemp /tmp/foo.XXXXXX","c":"write","t":["write /tmp/foo.XXXXXX"]}
+
+# ---- sed, awk, perl, sort ----------------------------------------------------------------
+$ sed -i 's/foo/bar/g' src/main.rs
+> {"w":"sed -i s/foo/bar/g src/main.rs","c":"write","t":["write src/main.rs"]}
+$ sed -i.bak 's/foo/bar/' a.txt b.txt
+> {"w":"sed -i.bak s/foo/bar/ a.txt b.txt","c":"write","t":["write a.txt","write b.txt"]}
+$ sed -n '1,10p' file.txt
+> {"w":"sed -n 1,10p file.txt","c":"read","t":["read file.txt"]}
+$ sed -i '' -e 's/a/b/' file
+> {"w":"sed -i \"\" -e s/a/b/ file","c":"write","t":["write file"]}
+$ sed -e 's/x/y/' -e 's/a/b/' < in > out
+> {"w":"sed -e s/x/y/ -e s/a/b/","c":"write","t":["read in","write out"]}
+$ awk '{print $1}' data.csv
+> {"w":"awk \"{print $1}\" data.csv","c":"read","t":["read data.csv"]}
+$ awk -F, '{print $2 > "out.txt"}' data.csv
+> {"w":"awk -F, \"{print $2 > \\\"out.txt\\\"}\" data.csv","c":"write,unknown","t":["read data.csv"],"u":true}
+$ awk 'BEGIN { system("rm -rf x") }'
+> {"w":"awk \"BEGIN { system(\\\"rm -rf x\\\") }\"","c":"write,unknown","u":true}
+$ awk '$3 > 100' data
+> {"w":"awk \"$3 > 100\" data","c":"read","t":["read data"]}
+$ perl -pi -e 's/a/b/' a.txt b.txt
+> {"w":"perl -pi -e s/a/b/ a.txt b.txt","c":"write","t":["write a.txt","write b.txt"]}
+$ perl -i.bak -pe 's/a/b/' file
+> {"w":"perl -i.bak -pe s/a/b/ file","c":"write","t":["write file"]}
+$ perl -e 'print 1'
+> {"w":"perl -e \"print 1\"","c":"unknown","u":true}
+$ sort -o sorted.txt unsorted.txt
+> {"w":"sort -o sorted.txt unsorted.txt","c":"write","t":["read unsorted.txt","write sorted.txt"]}
+$ sort file | uniq -c | sort -rn | head
+> {"w":"sort file","c":"read","t":["read file"]}
+> {"w":"uniq -c","c":"read"}
+> {"w":"sort -rn","c":"read"}
+> {"w":"head","c":"read"}
+
+# ---- reading and redirection -------------------------------------------------------------
+$ cat README.md
+> {"w":"cat README.md","c":"read","t":["read README.md"]}
+$ cat a b | wc -l
+> {"w":"cat a b","c":"read","t":["read a","read b"]}
+> {"w":"wc -l","c":"read"}
+$ ls -la
+> {"w":"ls -la","c":"read"}
+$ ls -R src
+> {"w":"ls -R src","c":"read","t":["read+rec src"]}
+$ head -n 20 log.txt
+> {"w":"head -n 20 log.txt","c":"read","t":["read log.txt"]}
+$ tail -f app.log
+> {"w":"tail -f app.log","c":"read","t":["read app.log"]}
+$ grep -rn TODO src/
+> {"w":"grep -rn TODO src/","c":"read","t":["read+rec src/"]}
+$ grep -r --include='*.rs' foo .
+> {"w":"grep -r --include=*.rs foo .","c":"read","t":["read+rec ."]}
+$ grep -e foo -e bar file
+> {"w":"grep -e foo -e bar file","c":"read","t":["read file"]}
+$ rg 'fn main' src
+> {"w":"rg \"fn main\" src","c":"read","t":["read+rec src"]}
+$ rg -n --type rust unsafe
+> {"w":"rg -n --type rust unsafe","c":"read"}
+$ diff a.txt b.txt
+> {"w":"diff a.txt b.txt","c":"read","t":["read a.txt","read b.txt"]}
+$ wc -l src/*.rs
+> {"w":"wc -l src/*.rs","c":"read","t":["read+glob src/*.rs"]}
+$ jq '.name' package.json
+> {"w":"jq .name package.json","c":"read","t":["read package.json"]}
+$ jq -r '.[]' data.json > out.json
+> {"w":"jq -r .[] data.json","c":"write","t":["read data.json","write out.json"]}
+$ du -sh *
+> {"w":"du -sh *","c":"read","t":["read+glob *"]}
+$ stat file
+> {"w":"stat file","c":"read","t":["read file"]}
+$ echo $PATH
+> {"w":"echo $PATH","c":"read"}
+$ echo "hello" > greeting.txt
+> {"w":"echo hello","c":"write","t":["write greeting.txt"]}
+$ echo hi >> log.txt
+> {"w":"echo hi","c":"write","t":["write log.txt"]}
+$ cat a > b
+> {"w":"cat a","c":"write","t":["read a","write b"]}
+$ cmd &> all.log
+> {"w":"cmd","c":"unknown,write","t":["write all.log"],"u":true}
+$ cmd > out.log 2>&1
+> {"w":"cmd","c":"unknown,write","t":["write out.log"],"u":true}
+$ cmd 2> err.log
+> {"w":"cmd","c":"unknown,write","t":["write err.log"],"u":true}
+$ cmd < input.txt
+> {"w":"cmd","c":"unknown","t":["read input.txt"],"u":true}
+$ cmd > /dev/null 2>&1
+> {"w":"cmd","c":"unknown","u":true}
+$ echo x >| force.txt
+> {"w":"echo x","c":"write","t":["write force.txt"]}
+$ printf '%s\n' a b > list.txt
+> {"w":"printf \"%s\\\\n\" a b","c":"write","t":["write list.txt"]}
+$ cat <<EOF > config.toml
+| key = "value"
+| EOF
+> {"w":"cat","c":"write","t":["write config.toml"]}
+$ cat <<'EOF'
+| rm -rf /
+| EOF
+> {"w":"cat","c":"read"}
+$ cat <<EOF
+| $(rm -rf x)
+| EOF
+> {"w":"cat","c":"read"}
+> {"w":"rm -rf x","c":"delete","t":["delete+rec x"]}
+$ cat <<< "text" > f
+> {"w":"cat","c":"write","t":["write f"]}
+$ exec > log.txt
+> {"w":"exec","c":"write","t":["write log.txt"]}
+$ cat file | tee out.txt | wc -l
+> {"w":"cat file","c":"read","t":["read file"]}
+> {"w":"tee out.txt","c":"write","t":["write out.txt"]}
+> {"w":"wc -l","c":"read"}
+$ echo $'a\tb' > $'tab\tname'
+> {"w":"echo \"a\\tb\"","c":"write","t":["write tab\tname"]}
+
+# ---- substitutions, wrappers, shells -----------------------------------------------------
+$ echo $(date)
+> {"w":"echo $(date)","c":"read"}
+> {"w":"date","c":"read"}
+$ echo `whoami`
+> {"w":"echo `whoami`","c":"read"}
+> {"w":"whoami","c":"read"}
+$ rm -rf $(find . -name '*.o')
+> {"w":"rm -rf \"$(find . -name '*.o')\"","c":"delete","t":["delete+rec+partial $(find . -name '*.o')"]}
+> {"w":"find . -name *.o","c":"read","t":["read+rec ."]}
+$ diff <(sort a) <(sort b)
+> {"w":"diff \"<(sort a)\" \"<(sort b)\"","c":"read"}
+> {"w":"sort a","c":"read","t":["read a"]}
+> {"w":"sort b","c":"read","t":["read b"]}
+$ cd $(mktemp -d) && rm -rf x
+> {"w":"cd \"$(mktemp -d)\"","c":"read"}
+> {"w":"mktemp -d","c":"write"}
+> {"w":"rm -rf x","c":"delete","t":["delete+rec+partial x"]}
+$ FOO=1 BAR=2 make test
+> {"w":"make test","c":"unknown","u":true}
+$ env FOO=1 rm -rf x
+> {"w":"rm -rf x","c":"delete","t":["delete+rec x"]}
+$ nice -n 10 rm -rf cache
+> {"w":"rm -rf cache","c":"delete","t":["delete+rec cache"]}
+$ time cargo build
+> {"w":"cargo build","c":"write","t":["write+rec target"]}
+$ command rm -rf x
+> {"w":"rm -rf x","c":"delete","t":["delete+rec x"]}
+$ \rm -rf x
+> {"w":"rm -rf x","c":"delete","t":["delete+rec x"]}
+$ exec rm x
+> {"w":"rm x","c":"delete","t":["delete x"]}
+$ nohup rm -rf big &
+> {"w":"rm -rf big","c":"delete","t":["delete+rec big"]}
+$ timeout 30 rm -rf x
+> {"w":"rm -rf x","c":"delete","t":["delete+rec x"]}
+$ sudo -u deploy rm -rf /srv/old
+> {"w":"rm -rf /srv/old","c":"delete","t":["delete+rec /srv/old"]}
+$ sudo rm -rf "$VAR"/
+> {"w":"rm -rf $VAR/","c":"delete","t":["delete+rec+partial $VAR/"]}
+$ sudo apt-get install -y curl
+> {"w":"apt-get install -y curl","c":"network,write"}
+$ /bin/rm -rf x
+> {"w":"rm -rf x","c":"delete","t":["delete+rec x"]}
+$ /usr/bin/env python3 -c 'print(1)'
+> {"w":"python3 -c print(1)","c":"unknown","u":true}
+$ ./cleanup.sh
+> {"w":"./cleanup.sh","c":"unknown","u":true}
+$ bash cleanup.sh
+> {"w":"bash cleanup.sh","c":"unknown","u":true}
+$ sh -c 'rm -rf build'
+> {"w":"sh -c \"rm -rf build\"","c":"unknown","u":true}
+> {"w":"rm -rf build","c":"delete","t":["delete+rec build"]}
+$ bash -c "cd sub && rm -rf out"
+> {"w":"bash -c \"cd sub && rm -rf out\"","c":"unknown","u":true}
+> {"w":"cd sub","c":"read"}
+> {"w":"rm -rf out","c":"delete","t":["delete+rec sub/out"]}
+$ zsh -c 'echo hi'
+> {"w":"zsh -c \"echo hi\"","c":"unknown","u":true}
+> {"w":"echo hi","c":"read"}
+$ bash -lc 'rm $X'
+> {"w":"bash -lc \"rm $X\"","c":"unknown","u":true}
+> {"w":"rm $X","c":"delete","t":["delete+partial $X"]}
+$ eval "rm -rf $DIR"
+> {"w":"eval \"rm -rf $DIR\"","c":"unknown","u":true}
+> {"w":"rm -rf $DIR","c":"delete","t":["delete+rec+partial $DIR"]}
+$ eval rm -rf build
+> {"w":"eval rm -rf build","c":"unknown","u":true}
+> {"w":"rm -rf build","c":"delete","t":["delete+rec build"]}
+$ source venv/bin/activate
+> {"w":"source venv/bin/activate","c":"unknown","u":true}
+$ . ./env.sh
+> {"w":". ./env.sh","c":"unknown","u":true}
+$ python -c 'import os; os.remove("x")'
+> {"w":"python -c \"import os; os.remove(\\\"x\\\")\"","c":"unknown","u":true}
+$ python3 script.py --flag
+> {"w":"python3 script.py --flag","c":"unknown","u":true}
+$ node -e 'require("fs").rmSync("x")'
+> {"w":"node -e \"require(\\\"fs\\\").rmSync(\\\"x\\\")\"","c":"unknown","u":true}
+$ ruby -e 'puts 1'
+> {"w":"ruby -e \"puts 1\"","c":"unknown","u":true}
+$ echo hi | sh
+> {"w":"echo hi","c":"read"}
+> {"w":"sh","c":"unknown","u":true}
+$ cat script.sh | bash
+> {"w":"cat script.sh","c":"read","t":["read script.sh"]}
+> {"w":"bash","c":"unknown","u":true}
+$ bash <(curl -s https://x.sh)
+> {"w":"bash \"<(curl -s https://x.sh)\"","c":"unknown","u":true}
+> {"w":"curl -s https://x.sh","c":"network"}
+$ sudo su
+> {"w":"su","c":"unknown","u":true}
+$ sudo -i
+> {"w":"sudo -i","c":"unknown","u":true}
+$ sudo
+> {"w":"sudo","c":"read"}
+$ time
+> {"w":"time","c":"read"}
+$ env
+> {"w":"env","c":"read"}
+$ env FOO=1
+> {"w":"env FOO=1","c":"read"}
+$ command -v git
+> {"w":"command -v git","c":"read"}
+$ sleep 5 && echo done
+> {"w":"sleep 5","c":"read"}
+> {"w":"echo done","c":"read"}
+$ which python
+> {"w":"which python","c":"read"}
+$ true
+> {"w":"true","c":"read"}
+$ export PATH="$HOME/bin:$PATH"
+> {"w":"export \"PATH=\\\"$HOME/bin:$PATH\\\"\"","c":"read"}
+$ alias ll='ls -l'
+> {"w":"alias \"ll=ls -l\"","c":"read"}
+$ read -r line
+> {"w":"read -r line","c":"read"}
+$ kill -9 1234
+> {"w":"kill -9 1234","c":"read"}
+$ date +%s
+> {"w":"date +%s","c":"read"}
+$ set -euo pipefail
+> {"w":"set -euo pipefail","c":"read"}
+$ trap 'rm -rf $TMP' EXIT
+> {"w":"trap \"rm -rf $TMP\" EXIT","c":"read"}
+> {"w":"rm -rf $TMP","c":"delete","t":["delete+rec+partial $TMP"]}
+$ export FOO=$(rm -rf x)
+> {"w":"export \"FOO=$(rm -rf x)\"","c":"read"}
+> {"w":"rm -rf x","c":"delete","t":["delete+rec x"]}
+$ a=$(cat f)
+> {"w":"cat f","c":"read","t":["read f"]}
+$ x=1; rm $x
+> {"w":"rm $x","c":"delete","t":["delete+partial $x"]}
+
+# ---- build tools, package managers, interpreters -----------------------------------------
+$ python -m pytest tests/ -x
+> {"w":"python -m pytest tests/ -x","c":"unknown","u":true}
+$ python -m venv .venv
+> {"w":"python -m venv .venv","c":"write","t":["write+rec .venv"]}
+$ python3 -m pip install -r requirements.txt
+> {"w":"python3 -m pip install -r requirements.txt","c":"network,write"}
+$ make clean
+> {"w":"make clean","c":"unknown","u":true}
+$ make -j4 test
+> {"w":"make -j4 test","c":"unknown","u":true}
+$ npm run build
+> {"w":"npm run build","c":"unknown","u":true}
+$ npm test
+> {"w":"npm test","c":"unknown","u":true}
+$ npm install
+> {"w":"npm install","c":"network,write","t":["write+rec node_modules","write package.json","write package-lock.json"]}
+$ npm install -g typescript
+> {"w":"npm install -g typescript","c":"network,write"}
+$ npm ci
+> {"w":"npm ci","c":"network,write","t":["write+rec node_modules","write package.json","write package-lock.json"]}
+$ npm install lodash --save
+> {"w":"npm install lodash --save","c":"network,write","t":["write+rec node_modules","write package.json","write package-lock.json"]}
+$ npx prettier --write .
+> {"w":"npx prettier --write .","c":"network,unknown","u":true}
+$ yarn
+> {"w":"yarn","c":"network,write","t":["write+rec node_modules","write package.json","write yarn.lock"]}
+$ yarn add react
+> {"w":"yarn add react","c":"network,write","t":["write+rec node_modules","write package.json","write yarn.lock"]}
+$ pnpm install
+> {"w":"pnpm install","c":"network,write","t":["write+rec node_modules","write package.json","write pnpm-lock.yaml"]}
+$ pnpm run dev
+> {"w":"pnpm run dev","c":"unknown","u":true}
+$ cargo build --release
+> {"w":"cargo build --release","c":"write","t":["write+rec target"]}
+$ cargo test -p acs-core
+> {"w":"cargo test -p acs-core","c":"write,unknown","t":["write+rec target"],"u":true}
+$ cargo clean
+> {"w":"cargo clean","c":"delete","t":["delete+rec target"]}
+$ cargo fmt --all
+> {"w":"cargo fmt --all","c":"write","t":["write+rec ."]}
+$ cargo fmt --all -- --check
+> {"w":"cargo fmt --all -- --check","c":"read"}
+$ cargo clippy --workspace --all-targets -- -D warnings
+> {"w":"cargo clippy --workspace --all-targets -- -D warnings","c":"write","t":["write+rec target"]}
+$ cargo add serde
+> {"w":"cargo add serde","c":"write,network","t":["write Cargo.toml","write Cargo.lock"]}
+$ cargo run --bin acs -- hook
+> {"w":"cargo run --bin acs -- hook","c":"write,unknown","t":["write+rec target"],"u":true}
+$ cargo +nightly fmt
+> {"w":"cargo +nightly fmt","c":"write","t":["write+rec ."]}
+$ cargo build --target-dir /tmp/t
+> {"w":"cargo build --target-dir /tmp/t","c":"write","t":["write+rec /tmp/t"]}
+$ go build ./...
+> {"w":"go build ./...","c":"write","u":true}
+$ go test ./...
+> {"w":"go test ./...","c":"unknown","u":true}
+$ go mod tidy
+> {"w":"go mod tidy","c":"network,write","t":["write go.mod","write go.sum"]}
+$ pip install -e .
+> {"w":"pip install -e .","c":"network,write"}
+$ pytest -q
+> {"w":"pytest -q","c":"unknown","u":true}
+$ docker build -t app .
+> {"w":"docker build -t app .","c":"unknown","u":true}
+$ docker ps
+> {"w":"docker ps","c":"read"}
+$ docker run --rm -v "$PWD":/app image
+> {"w":"docker run --rm -v $PWD:/app image","c":"unknown","u":true}
+$ docker compose up -d
+> {"w":"docker compose up -d","c":"unknown","u":true}
+$ docker compose ps
+> {"w":"docker compose ps","c":"read"}
+$ docker image ls
+> {"w":"docker image ls","c":"read"}
+$ kubectl get pods -n prod
+> {"w":"kubectl get pods -n prod","c":"read"}
+$ kubectl apply -f k8s/
+> {"w":"kubectl apply -f k8s/","c":"unknown","u":true}
+$ terraform plan
+> {"w":"terraform plan","c":"read"}
+$ terraform apply -auto-approve
+> {"w":"terraform apply -auto-approve","c":"unknown","u":true}
+$ gcc -o app main.c
+> {"w":"gcc -o app main.c","c":"write","t":["write app"]}
+$ gcc -c main.c
+> {"w":"gcc -c main.c","c":"write","u":true}
+$ rustc main.rs
+> {"w":"rustc main.rs","c":"write","u":true}
+$ prettier --write src
+> {"w":"prettier --write src","c":"write","t":["write+rec src"]}
+$ prettier --check src
+> {"w":"prettier --check src","c":"read"}
+$ black .
+> {"w":"black .","c":"write","t":["write+rec ."]}
+$ black --check .
+> {"w":"black --check .","c":"read"}
+$ eslint --fix src
+> {"w":"eslint --fix src","c":"write","t":["write+rec src"]}
+$ ruff check .
+> {"w":"ruff check .","c":"read"}
+$ ruff format .
+> {"w":"ruff format .","c":"write","t":["write+rec ."]}
+$ ruff check --fix .
+> {"w":"ruff check --fix .","c":"write","t":["write+rec ."]}
+$ gofmt -l .
+> {"w":"gofmt -l .","c":"read"}
+$ gofmt -w main.go
+> {"w":"gofmt -w main.go","c":"write","t":["write+rec main.go"]}
+$ brew install jq
+> {"w":"brew install jq","c":"network,write"}
+$ apt-get update
+> {"w":"apt-get update","c":"network,write"}
+$ pip install requests
+> {"w":"pip install requests","c":"network,write"}
+$ uv pip install x
+> {"w":"uv pip install x","c":"network,write","t":["write+rec .venv"]}
+$ gh pr create --fill
+> {"w":"gh pr create --fill","c":"network"}
+$ gh pr checkout 12
+> {"w":"gh pr checkout 12","c":"network"}
+$ aws s3 sync . s3://bucket
+> {"w":"aws s3 sync . s3://bucket","c":"network"}
+$ open file
+> {"w":"open file","c":"unknown","u":true}
+$ xdg-open .
+> {"w":"xdg-open .","c":"unknown","u":true}
+
+# ---- network and archives ----------------------------------------------------------------
+$ curl -sS https://example.com/install.sh | sh
+> {"w":"curl -sS https://example.com/install.sh","c":"network"}
+> {"w":"sh","c":"unknown","u":true}
+$ curl -o out.tgz https://x.com/a.tgz
+> {"w":"curl -o out.tgz https://x.com/a.tgz","c":"network,write","t":["write out.tgz"]}
+$ curl -O https://x.com/a/b/file.zip
+> {"w":"curl -O https://x.com/a/b/file.zip","c":"network,write","t":["write file.zip"]}
+$ curl -fsSL https://example.com | bash
+> {"w":"curl -fsSL https://example.com","c":"network"}
+> {"w":"bash","c":"unknown","u":true}
+$ curl -X POST -d @payload.json https://api.example.com
+> {"w":"curl -X POST -d @payload.json https://api.example.com","c":"network","t":["read payload.json"]}
+$ wget https://x.com/file.tar.gz
+> {"w":"wget https://x.com/file.tar.gz","c":"network,write","t":["write file.tar.gz"]}
+$ wget -O - https://x.com | tar xz
+> {"w":"wget -O - https://x.com","c":"network"}
+> {"w":"tar xz","c":"write","t":["write+rec ."]}
+$ wget -r -np https://x.com/docs/
+> {"w":"wget -r -np https://x.com/docs/","c":"network,write","t":["write+rec ."]}
+$ tar xzf archive.tar.gz
+> {"w":"tar xzf archive.tar.gz","c":"write","t":["read archive.tar.gz","write+rec ."]}
+$ tar -xf a.tar -C /opt/app
+> {"w":"tar -xf a.tar -C /opt/app","c":"write","t":["read a.tar","write+rec /opt/app"]}
+$ tar czf backup.tgz src/ docs/
+> {"w":"tar czf backup.tgz src/ docs/","c":"write","t":["write backup.tgz","read+rec src/","read+rec docs/"]}
+$ tar -tf a.tar
+> {"w":"tar -tf a.tar","c":"read","t":["read a.tar"]}
+$ unzip -o a.zip -d out
+> {"w":"unzip -o a.zip -d out","c":"write","t":["read a.zip","write+rec out"]}
+$ unzip -l a.zip
+> {"w":"unzip -l a.zip","c":"read"}
+$ zip -r out.zip dir
+> {"w":"zip -r out.zip dir","c":"write","t":["write out.zip","read+rec dir"]}
+$ gzip -k file
+> {"w":"gzip -k file","c":"write","t":["write file"]}
+$ rsync -av src/ dest/
+> {"w":"rsync -av src/ dest/","c":"write","t":["write+rec dest/","read+rec src/"]}
+$ rsync -av --delete src/ dest/
+> {"w":"rsync -av --delete src/ dest/","c":"write,delete","t":["write+rec dest/","delete+rec dest/","read+rec src/"]}
+$ rsync -av src/ user@host:/srv/app/
+> {"w":"rsync -av src/ user@host:/srv/app/","c":"network","t":["read+rec src/"]}
+$ rsync -av user@host:/srv/app/ ./local/
+> {"w":"rsync -av user@host:/srv/app/ ./local/","c":"network,write","t":["write+rec ./local/"]}
+$ scp file user@host:/tmp/
+> {"w":"scp file user@host:/tmp/","c":"network","t":["read file"]}
+$ scp user@host:/tmp/x ./x
+> {"w":"scp user@host:/tmp/x ./x","c":"network,write","t":["write+rec ./x"]}
+$ ssh host 'rm -rf /tmp/x'
+> {"w":"ssh host \"rm -rf /tmp/x\"","c":"network"}
+$ ssh -i key user@host
+> {"w":"ssh -i key user@host","c":"network"}
+
+# ---- git ---------------------------------------------------------------------------------
+$ git status
+> {"w":"git status","c":"read","g":"status"}
+$ git status --short
+> {"w":"git status --short","c":"read","g":"status"}
+$ git log --oneline -n 10
+> {"w":"git log --oneline -n 10","c":"read","g":"log"}
+$ git diff HEAD~1
+> {"w":"git diff HEAD~1","c":"read","g":"diff"}
+$ git add -A
+> {"w":"git add -A","c":"write","g":"add"}
+$ git add .
+> {"w":"git add .","c":"write","g":"add"}
+$ git commit -m "fix"
+> {"w":"git commit -m fix","c":"write","g":"commit +commit"}
+$ git commit --amend --no-edit
+> {"w":"git commit --amend --no-edit","c":"write,git_history_rewrite","g":"commit +rewrite +commit"}
+$ git commit -am "wip"
+> {"w":"git commit -am wip","c":"write","g":"commit +commit"}
+$ git push
+> {"w":"git push","c":"network","g":"push"}
+$ git push origin main
+> {"w":"git push origin main","c":"network","g":"push refs=main"}
+$ git push -u origin feature/x
+> {"w":"git push -u origin feature/x","c":"network","g":"push refs=feature/x"}
+$ git push --force origin main
+> {"w":"git push --force origin main","c":"network,git_history_rewrite","g":"push +rewrite +force refs=main"}
+$ git push -f
+> {"w":"git push -f","c":"network,git_history_rewrite","g":"push +rewrite +force"}
+$ git push --force-with-lease
+> {"w":"git push --force-with-lease","c":"network,git_history_rewrite","g":"push +rewrite +force"}
+$ git push --force-with-lease=main:abc123 origin main
+> {"w":"git push --force-with-lease=main:abc123 origin main","c":"network,git_history_rewrite","g":"push +rewrite +force refs=main"}
+$ git push --force-if-includes origin dev
+> {"w":"git push --force-if-includes origin dev","c":"network,git_history_rewrite","g":"push +rewrite +force refs=dev"}
+$ git push origin +main
+> {"w":"git push origin +main","c":"network,git_history_rewrite","g":"push +rewrite +force refs=main"}
+$ git push origin +HEAD:main
+> {"w":"git push origin +HEAD:main","c":"network,git_history_rewrite","g":"push +rewrite +force refs=main"}
+$ git push origin HEAD:refs/heads/release/1.0
+> {"w":"git push origin HEAD:refs/heads/release/1.0","c":"network","g":"push refs=release/1.0"}
+$ git push origin --delete old-branch
+> {"w":"git push origin --delete old-branch","c":"network,git_history_rewrite","g":"push +rewrite refs=old-branch"}
+$ git push origin :old-branch
+> {"w":"git push origin :old-branch","c":"network,git_history_rewrite","g":"push +rewrite refs=old-branch"}
+$ git push origin v1.0.0
+> {"w":"git push origin v1.0.0","c":"network","g":"push refs=v1.0.0"}
+$ git push --tags
+> {"w":"git push --tags","c":"network","g":"push"}
+$ git push --mirror
+> {"w":"git push --mirror","c":"network,git_history_rewrite","g":"push +rewrite +force"}
+$ git pull
+> {"w":"git pull","c":"network,write","u":true,"g":"pull +commit"}
+$ git pull --rebase origin main
+> {"w":"git pull --rebase origin main","c":"network,write,git_history_rewrite","u":true,"g":"pull +rewrite +commit refs=main"}
+$ git pull --ff-only
+> {"w":"git pull --ff-only","c":"network,write","u":true,"g":"pull"}
+$ git fetch --all --prune
+> {"w":"git fetch --all --prune","c":"network","g":"fetch"}
+$ git clone https://github.com/a/b.git
+> {"w":"git clone https://github.com/a/b.git","c":"network,write","t":["write+rec b"],"g":"clone"}
+$ git clone git@github.com:a/b.git mydir
+> {"w":"git clone git@github.com:a/b.git mydir","c":"network,write","t":["write+rec mydir"],"g":"clone"}
+$ git checkout main
+> {"w":"git checkout main","c":"write","u":true,"g":"checkout refs=main"}
+$ git checkout -b feature/x
+> {"w":"git checkout -b feature/x","c":"write","u":true,"g":"checkout refs=feature/x"}
+$ git checkout -- .
+> {"w":"git checkout -- .","c":"write,git_history_rewrite","t":["write+rec ."],"g":"checkout +rewrite"}
+$ git checkout -- src/main.rs
+> {"w":"git checkout -- src/main.rs","c":"write,git_history_rewrite","t":["write+rec src/main.rs"],"g":"checkout +rewrite"}
+$ git checkout .
+> {"w":"git checkout .","c":"write,git_history_rewrite","t":["write+rec ."],"g":"checkout +rewrite"}
+$ git checkout HEAD -- file
+> {"w":"git checkout HEAD -- file","c":"write,git_history_rewrite","t":["write+rec file"],"g":"checkout +rewrite refs=HEAD"}
+$ git checkout -f main
+> {"w":"git checkout -f main","c":"write,git_history_rewrite","u":true,"g":"checkout +rewrite refs=main"}
+$ git restore .
+> {"w":"git restore .","c":"write,git_history_rewrite","t":["write+rec ."],"g":"restore +rewrite"}
+$ git restore --staged file
+> {"w":"git restore --staged file","c":"write","g":"restore"}
+$ git restore --source=HEAD~2 src/lib.rs
+> {"w":"git restore --source=HEAD~2 src/lib.rs","c":"write,git_history_rewrite","t":["write+rec src/lib.rs"],"g":"restore +rewrite"}
+$ git reset
+> {"w":"git reset","c":"write","g":"reset"}
+$ git reset HEAD file
+> {"w":"git reset HEAD file","c":"write","g":"reset refs=HEAD"}
+$ git reset --soft HEAD~1
+> {"w":"git reset --soft HEAD~1","c":"write,git_history_rewrite","g":"reset +rewrite refs=HEAD~1"}
+$ git reset --hard
+> {"w":"git reset --hard","c":"write,git_history_rewrite","u":true,"g":"reset +rewrite"}
+$ git reset --hard origin/main
+> {"w":"git reset --hard origin/main","c":"write,git_history_rewrite","u":true,"g":"reset +rewrite refs=origin/main"}
+$ git reset HEAD~3
+> {"w":"git reset HEAD~3","c":"write,git_history_rewrite","g":"reset +rewrite refs=HEAD~3"}
+$ git clean -n
+> {"w":"git clean -n","c":"read","g":"clean"}
+$ git clean -fd
+> {"w":"git clean -fd","c":"delete,git_history_rewrite","t":["delete+rec ."],"g":"clean +rewrite"}
+$ git clean -fdx
+> {"w":"git clean -fdx","c":"delete,git_history_rewrite","t":["delete+rec ."],"g":"clean +rewrite"}
+$ git clean -f src/tmp
+> {"w":"git clean -f src/tmp","c":"delete,git_history_rewrite","t":["delete+rec src/tmp"],"g":"clean +rewrite"}
+$ git rebase main
+> {"w":"git rebase main","c":"write,git_history_rewrite","u":true,"g":"rebase +rewrite +commit refs=main"}
+$ git rebase -i HEAD~3
+> {"w":"git rebase -i HEAD~3","c":"write,git_history_rewrite","u":true,"g":"rebase +rewrite +commit refs=HEAD~3"}
+$ git rebase --abort
+> {"w":"git rebase --abort","c":"write,git_history_rewrite","u":true,"g":"rebase +rewrite +commit"}
+$ git merge feature
+> {"w":"git merge feature","c":"write","u":true,"g":"merge +commit refs=feature"}
+$ git merge --squash feature
+> {"w":"git merge --squash feature","c":"write","u":true,"g":"merge refs=feature"}
+$ git cherry-pick abc123
+> {"w":"git cherry-pick abc123","c":"write","u":true,"g":"cherry-pick +commit"}
+$ git revert HEAD
+> {"w":"git revert HEAD","c":"write","u":true,"g":"revert +commit"}
+$ git stash
+> {"w":"git stash","c":"write","u":true,"g":"stash"}
+$ git stash pop
+> {"w":"git stash pop","c":"write","u":true,"g":"stash"}
+$ git stash drop
+> {"w":"git stash drop","c":"write,git_history_rewrite","g":"stash +rewrite"}
+$ git stash clear
+> {"w":"git stash clear","c":"write,git_history_rewrite","g":"stash +rewrite"}
+$ git stash list
+> {"w":"git stash list","c":"read","g":"stash"}
+$ git branch
+> {"w":"git branch","c":"read","g":"branch"}
+$ git branch -a
+> {"w":"git branch -a","c":"read","g":"branch"}
+$ git branch new-feature
+> {"w":"git branch new-feature","c":"write","g":"branch refs=new-feature"}
+$ git branch -d old
+> {"w":"git branch -d old","c":"write","g":"branch refs=old"}
+$ git branch -D old
+> {"w":"git branch -D old","c":"write,git_history_rewrite","g":"branch +rewrite refs=old"}
+$ git branch -m new-name
+> {"w":"git branch -m new-name","c":"write","g":"branch refs=new-name"}
+$ git tag v1.0
+> {"w":"git tag v1.0","c":"write","g":"tag refs=v1.0"}
+$ git tag -d v1.0
+> {"w":"git tag -d v1.0","c":"write","g":"tag refs=v1.0"}
+$ git update-ref -d refs/heads/x
+> {"w":"git update-ref -d refs/heads/x","c":"write,git_history_rewrite","g":"update-ref +rewrite refs=refs/heads/x"}
+$ git filter-branch --tree-filter 'rm -f secrets' HEAD
+> {"w":"git filter-branch --tree-filter \"rm -f secrets\" HEAD","c":"write,git_history_rewrite","u":true,"g":"filter-branch +rewrite"}
+$ git filter-repo --path src
+> {"w":"git filter-repo --path src","c":"write,git_history_rewrite","u":true,"g":"filter-repo +rewrite"}
+$ git rm file
+> {"w":"git rm file","c":"delete","t":["delete file"],"g":"rm"}
+$ git rm -r --cached dir
+> {"w":"git rm -r --cached dir","c":"write","g":"rm"}
+$ git rm -rf build
+> {"w":"git rm -rf build","c":"delete","t":["delete+rec build"],"g":"rm"}
+$ git mv old new
+> {"w":"git mv old new","c":"move","t":["delete+rec old","write+rec new"],"g":"mv"}
+$ git -C sub status
+> {"w":"git -C sub status","c":"read","g":"status"}
+$ git -C sub clean -fd
+> {"w":"git -C sub clean -fd","c":"delete,git_history_rewrite","t":["delete+rec sub"],"g":"clean +rewrite"}
+$ git -c user.name=x commit -m y
+> {"w":"git -c user.name=x commit -m y","c":"write","g":"commit +commit"}
+$ git --no-pager log
+> {"w":"git --no-pager log","c":"read","g":"log"}
+$ git gc --prune=now
+> {"w":"git gc --prune=now","c":"write,git_history_rewrite","g":"gc +rewrite"}
+$ git reflog expire --expire=now --all
+> {"w":"git reflog expire --expire=now --all","c":"write,git_history_rewrite","g":"reflog +rewrite"}
+$ git worktree add ../wt feature
+> {"w":"git worktree add ../wt feature","c":"write","t":["write+rec ../wt"],"g":"worktree"}
+$ git submodule update --init
+> {"w":"git submodule update --init","c":"write,network","u":true,"g":"submodule"}
+$ git config user.name "x"
+> {"w":"git config user.name x","c":"write","g":"config"}
+$ git config --get remote.origin.url
+> {"w":"git config --get remote.origin.url","c":"read","g":"config"}
+$ git lfs pull
+> {"w":"git lfs pull","c":"network,write","u":true,"g":"lfs"}
+$ git co main
+> {"w":"git co main","c":"unknown","u":true,"g":"co"}
+$ git apply fix.patch
+> {"w":"git apply fix.patch","c":"write","u":true,"g":"apply"}
+$ git bisect start
+> {"w":"git bisect start","c":"write","u":true,"g":"bisect"}
+$ git init
+> {"w":"git init","c":"write","t":["write+rec .git"],"g":"init"}
+$ git remote add origin url
+> {"w":"git remote add origin url","c":"write","g":"remote"}
+$ git show HEAD:file
+> {"w":"git show HEAD:file","c":"read","g":"show"}
+$ git ls-remote origin
+> {"w":"git ls-remote origin","c":"network","g":"ls-remote"}
+$ git commit -m "x" && git push origin main
+> {"w":"git commit -m x","c":"write","g":"commit +commit"}
+> {"w":"git push origin main","c":"network","g":"push refs=main"}
+$ git add -A && git commit -m wip && git push --force
+> {"w":"git add -A","c":"write","g":"add"}
+> {"w":"git commit -m wip","c":"write","g":"commit +commit"}
+> {"w":"git push --force","c":"network,git_history_rewrite","g":"push +rewrite +force"}
+$ GIT_DIR=.git git push --force
+> {"w":"git push --force","c":"network,git_history_rewrite","g":"push +rewrite +force"}
+
+# ---- chains, directories, control flow ---------------------------------------------------
+$ cd sub && rm -rf build
+> {"w":"cd sub","c":"read"}
+> {"w":"rm -rf build","c":"delete","t":["delete+rec sub/build"]}
+$ cd sub; rm -rf build
+> {"w":"cd sub","c":"read"}
+> {"w":"rm -rf build","c":"delete","t":["delete+rec sub/build"]}
+$ cd .. && rm -rf x
+> {"w":"cd ..","c":"read"}
+> {"w":"rm -rf x","c":"delete","t":["delete+rec ../x"]}
+$ cd sub && cd .. && rm -rf x
+> {"w":"cd sub","c":"read"}
+> {"w":"cd ..","c":"read"}
+> {"w":"rm -rf x","c":"delete","t":["delete+rec x"]}
+$ cd /tmp && rm -rf x
+> {"w":"cd /tmp","c":"read"}
+> {"w":"rm -rf x","c":"delete","t":["delete+rec /tmp/x"]}
+$ cd && rm -rf x
+> {"w":"cd","c":"read"}
+> {"w":"rm -rf x","c":"delete","t":["delete+rec+partial x"]}
+$ cd - && rm x
+> {"w":"cd -","c":"read"}
+> {"w":"rm x","c":"delete","t":["delete+partial x"]}
+$ (cd sub && rm -rf out); rm -rf out2
+> {"w":"cd sub","c":"read"}
+> {"w":"rm -rf out","c":"delete","t":["delete+rec sub/out"]}
+> {"w":"rm -rf out2","c":"delete","t":["delete+rec out2"]}
+$ { cd sub; rm x; }; rm y
+> {"w":"cd sub","c":"read"}
+> {"w":"rm x","c":"delete","t":["delete sub/x"]}
+> {"w":"rm y","c":"delete","t":["delete sub/y"]}
+$ cd sub || exit 1; rm -rf out
+> {"w":"cd sub","c":"read"}
+> {"w":"exit 1","c":"read"}
+> {"w":"rm -rf out","c":"delete","t":["delete+rec sub/out"]}
+$ mkdir out && cd out && touch a
+> {"w":"mkdir out","c":"write","t":["write out"]}
+> {"w":"cd out","c":"read"}
+> {"w":"touch a","c":"write","t":["write out/a"]}
+$ cd "$DIR" && rm -rf *
+> {"w":"cd $DIR","c":"read"}
+> {"w":"rm -rf *","c":"delete","t":["delete+rec+partial *"]}
+$ for f in *.tmp; do rm "$f"; done
+> {"w":"rm $f","c":"delete","t":["delete+partial $f"]}
+$ for d in a b c; do rm -rf $d/build; done
+> {"w":"rm -rf $d/build","c":"delete","t":["delete+rec+partial $d/build"]}
+$ for d in */; do (cd "$d" && make clean); done
+> {"w":"cd $d","c":"read"}
+> {"w":"make clean","c":"unknown","u":true}
+$ while read f; do rm "$f"; done < files.txt
+> {"w":"read f","c":"read","t":["read files.txt"]}
+> {"w":"rm $f","c":"delete","t":["delete+partial $f"]}
+$ if [ -f x ]; then rm x; fi
+> {"w":"rm x","c":"delete","t":["delete x"]}
+$ [ -d build ] && rm -rf build
+> {"w":"rm -rf build","c":"delete","t":["delete+rec build"]}
+$ test -f x || touch x
+> {"w":"test -f x","c":"read"}
+> {"w":"touch x","c":"write","t":["write x"]}
+$ cmd1 && cmd2 || cmd3
+> {"w":"cmd1","c":"unknown","u":true}
+> {"w":"cmd2","c":"unknown","u":true}
+> {"w":"cmd3","c":"unknown","u":true}
+$ a; b; c
+> {"w":"a","c":"unknown","u":true}
+> {"w":"b","c":"unknown","u":true}
+> {"w":"c","c":"unknown","u":true}
+$ a | b | c
+> {"w":"a","c":"unknown","u":true}
+> {"w":"b","c":"unknown","u":true}
+> {"w":"c","c":"unknown","u":true}
+$ ls & rm x
+> {"w":"ls","c":"read"}
+> {"w":"rm x","c":"delete","t":["delete x"]}
+$ f() { rm -rf "$1"; }; f build
+> {"w":"rm -rf $1","c":"delete","t":["delete+rec+partial $1"]}
+> {"w":"f build","c":"unknown","u":true}
+$ function cleanup { rm -rf tmp; }
+> {"w":"rm -rf tmp","c":"delete","t":["delete+rec tmp"]}
+$ case $x in a) rm b;; *) ls;; esac
+> {"w":"rm b","c":"delete","t":["delete b"]}
+> {"w":"ls","c":"read"}
+$ until false; do sleep 1; done
+> {"w":"false","c":"read"}
+> {"w":"sleep 1","c":"read"}
+$ echo "a;b" ; echo 'c && d'
+> {"w":"echo a;b","c":"read"}
+> {"w":"echo \"c && d\"","c":"read"}
+$ echo # rm -rf /
+> {"w":"echo","c":"read"}
+$ ls # comment
+> {"w":"ls","c":"read"}
+$ # only a comment
+> (none)
+$
+> (none)
+$ echo "unterminated
+> !incomplete
+> {"w":"echo","c":"read"}
+$ rm -rf build &&
+> !incomplete
+> {"w":"rm -rf build","c":"delete","t":["delete+rec build"]}
+$ ((x++))
+> (none)
+$ ls -l | grep foo | xargs rm -f
+> {"w":"ls -l","c":"read"}
+> {"w":"grep foo","c":"read"}
+> {"w":"xargs rm -f","c":"delete,unknown","u":true}
+$ pushd sub && rm x && popd
+> {"w":"pushd sub","c":"read"}
+> {"w":"rm x","c":"delete","t":["delete+partial x"]}
+> {"w":"popd","c":"read"}
+$ rm -rf dist && mkdir dist && cp -r src/* dist/
+> {"w":"rm -rf dist","c":"delete","t":["delete+rec dist"]}
+> {"w":"mkdir dist","c":"write","t":["write dist"]}
+> {"w":"cp -r src/* dist/","c":"write","t":["read+rec+glob src/*","write+rec dist/"]}
+$ if cd sub; then rm x; fi; rm y
+> {"w":"cd sub","c":"read"}
+> {"w":"rm x","c":"delete","t":["delete sub/x"]}
+> {"w":"rm y","c":"delete","t":["delete+partial y"]}
+
+# ---- PowerShell --------------------------------------------------------------------------
+$ps Remove-Item -Recurse -Force build
+> {"w":"Remove-Item -Recurse -Force build","c":"delete","t":["delete+rec build"]}
+$ps Remove-Item -Path .\build -Recurse
+> {"w":"Remove-Item -Path \".\\\\build\" -Recurse","c":"delete","t":["delete+rec .\\build"]}
+$ps Remove-Item -LiteralPath "C:\temp\x" -Force
+> {"w":"Remove-Item -LiteralPath \"C:\\\\temp\\\\x\" -Force","c":"delete","t":["delete C:\\temp\\x"]}
+$ps rm -r -fo node_modules
+> {"w":"rm -r -fo node_modules","c":"delete","t":["delete+rec node_modules"]}
+$ps del *.tmp
+> {"w":"del *.tmp","c":"delete","t":["delete+glob *.tmp"]}
+$ps ri foo.txt, bar.txt
+> {"w":"ri foo.txt, bar.txt","c":"delete","t":["delete foo.txt","delete bar.txt"]}
+$ps Remove-Item $env:TEMP\acs -Recurse -Force
+> {"w":"Remove-Item \"$env:TEMP\\\\acs\" -Recurse -Force","c":"delete","t":["delete+rec+partial $env:TEMP\\acs"]}
+$ps Get-ChildItem *.log | Remove-Item
+> {"w":"Get-ChildItem *.log","c":"read","t":["read+glob *.log"]}
+> {"w":"Remove-Item","c":"delete","u":true}
+$ps Get-ChildItem -Recurse -Filter *.tmp | ForEach-Object { Remove-Item $_.FullName }
+> {"w":"Get-ChildItem -Recurse -Filter *.tmp","c":"read"}
+> {"w":"ForEach-Object {...}","c":"read"}
+> {"w":"Remove-Item $_.FullName","c":"delete","t":["delete+partial $_.FullName"]}
+$ps Move-Item old.txt new.txt
+> {"w":"Move-Item old.txt new.txt","c":"move","t":["delete+rec old.txt","write+rec new.txt"]}
+$ps Move-Item -Path a -Destination b
+> {"w":"Move-Item -Path a -Destination b","c":"move","t":["delete+rec a","write+rec b"]}
+$ps Copy-Item src dest -Recurse
+> {"w":"Copy-Item src dest -Recurse","c":"write","t":["read+rec src","write+rec dest"]}
+$ps Set-Content -Path out.txt -Value hello
+> {"w":"Set-Content -Path out.txt -Value hello","c":"write","t":["write out.txt"]}
+$ps "hello" | Out-File out.txt
+> {"w":"Out-File out.txt","c":"write","t":["write out.txt"]}
+$ps echo hello > out.txt
+> {"w":"echo hello","c":"write","t":["write out.txt"]}
+$ps Add-Content log.txt "x"
+> {"w":"Add-Content log.txt x","c":"write","t":["write log.txt"]}
+$ps New-Item -ItemType Directory -Path out
+> {"w":"New-Item -ItemType Directory -Path out","c":"write","t":["write out"]}
+$ps Rename-Item old.txt new.txt
+> {"w":"Rename-Item old.txt new.txt","c":"move","t":["delete+rec old.txt","write+rec new.txt"]}
+$ps Get-Content file.txt
+> {"w":"Get-Content file.txt","c":"read","t":["read file.txt"]}
+$ps cd sub; Remove-Item -Recurse build
+> {"w":"cd sub","c":"read"}
+> {"w":"Remove-Item -Recurse build","c":"delete","t":["delete+rec sub/build"]}
+$ps Set-Location C:\proj; Remove-Item x
+> {"w":"Set-Location \"C:\\\\proj\"","c":"read"}
+> {"w":"Remove-Item x","c":"delete","t":["delete C:/proj/x"]}
+$ps git push --force origin main
+> {"w":"git push --force origin main","c":"network,git_history_rewrite","g":"push +rewrite +force refs=main"}
+$ps Invoke-Expression $cmd
+> {"w":"Invoke-Expression $cmd","c":"unknown","u":true}
+$ps iex "rm -rf /"
+> {"w":"iex \"rm -rf /\"","c":"unknown","u":true}
+$ps Start-Process notepad
+> {"w":"Start-Process notepad","c":"unknown","u":true}
+$ps Remove-Item -Recurse -Force -WhatIf build
+> {"w":"Remove-Item -Recurse -Force -WhatIf build","c":"read"}
+$ps Remove-Item
+> {"w":"Remove-Item","c":"delete","u":true}
+$ps rm -Recurse -Force "$dir\out"
+> {"w":"rm -Recurse -Force \"$dir\\\\out\"","c":"delete","t":["delete+rec+partial $dir\\out"]}
+$ps npm install; npm test
+> {"w":"npm install","c":"network,write","t":["write+rec node_modules","write package.json","write package-lock.json"]}
+> {"w":"npm test","c":"unknown","u":true}
+$ps Invoke-WebRequest https://x.com/a.zip -OutFile a.zip
+> {"w":"Invoke-WebRequest https://x.com/a.zip -OutFile a.zip","c":"network,write","t":["write a.zip"]}
+$ps Write-Host "done"
+> {"w":"Write-Host done","c":"read"}
+$ps Get-Process | Where-Object { $_.CPU -gt 100 } | Stop-Process
+> {"w":"Get-Process","c":"read"}
+> {"w":"Where-Object {...}","c":"read"}
+> {"w":"Stop-Process","c":"unknown","u":true}
+$ps powershell -Command "Remove-Item -Recurse x"
+> {"w":"powershell -Command \"Remove-Item -Recurse x\"","c":"unknown","u":true}
+> {"w":"Remove-Item -Recurse x","c":"delete","t":["delete+rec x"]}
+$ps cmd /c "del /s /q *.tmp"
+> {"w":"cmd /c \"del /s /q *.tmp\"","c":"unknown","u":true}
+> {"w":"del /s /q *.tmp","c":"delete","t":["delete+rec+glob *.tmp"]}
+$ps Remove-Item 'C:\Users\me\My Documents\x.txt'
+> {"w":"Remove-Item \"C:\\\\Users\\\\me\\\\My Documents\\\\x.txt\"","c":"delete","t":["delete C:\\Users\\me\\My Documents\\x.txt"]}
+$ps Remove-Item x.txt; Remove-Item y.txt
+> {"w":"Remove-Item x.txt","c":"delete","t":["delete x.txt"]}
+> {"w":"Remove-Item y.txt","c":"delete","t":["delete y.txt"]}
+$ps if (Test-Path build) { Remove-Item -Recurse build }
+> {"w":"Remove-Item -Recurse build","c":"delete","t":["delete+rec build"]}
+$ps Remove-Item "unterminated
+> !incomplete
+> {"w":"Remove-Item unterminated","c":"delete","t":["delete unterminated"]}
+
+# ---- cmd.exe -----------------------------------------------------------------------------
+$cmd del /s /q *.tmp
+> {"w":"del /s /q *.tmp","c":"delete","t":["delete+rec+glob *.tmp"]}
+$cmd del file.txt
+> {"w":"del file.txt","c":"delete","t":["delete file.txt"]}
+$cmd rd /s /q build
+> {"w":"rd /s /q build","c":"delete","t":["delete+rec build"]}
+$cmd rmdir /s /q "C:\Program Files\x"
+> {"w":"rmdir /s /q \"C:\\\\Program Files\\\\x\"","c":"delete","t":["delete+rec C:\\Program Files\\x"]}
+$cmd erase foo.txt
+> {"w":"erase foo.txt","c":"delete","t":["delete foo.txt"]}
+$cmd move a.txt b.txt
+> {"w":"move a.txt b.txt","c":"move","t":["delete+rec a.txt","write+rec b.txt"]}
+$cmd copy a.txt b.txt
+> {"w":"copy a.txt b.txt","c":"write","t":["read a.txt","write+rec b.txt"]}
+$cmd xcopy src dest /e /i
+> {"w":"xcopy src dest /e /i","c":"write","t":["read+rec src","write+rec dest"]}
+$cmd robocopy src dest /mir
+> {"w":"robocopy src dest /mir","c":"write,delete","t":["read+rec src","write+rec dest","delete+rec dest"]}
+$cmd ren old.txt new.txt
+> {"w":"ren old.txt new.txt","c":"move","t":["delete+rec old.txt","write+rec new.txt"]}
+$cmd mkdir out
+> {"w":"mkdir out","c":"write","t":["write out"]}
+$cmd del %TEMP%\x.tmp
+> {"w":"del \"%TEMP%\\\\x.tmp\"","c":"delete","t":["delete+partial %TEMP%\\x.tmp"]}
+$cmd cd build && del *.o
+> {"w":"cd build","c":"read"}
+> {"w":"del *.o","c":"delete","t":["delete+glob build/*.o"]}
+$cmd cd /d C:\proj & del x
+> {"w":"cd /d \"C:\\\\proj\"","c":"read"}
+> {"w":"del x","c":"delete","t":["delete C:/proj/x"]}
+$cmd echo hi > out.txt
+> {"w":"echo hi","c":"write","t":["write out.txt"]}
+$cmd if exist build rd /s /q build
+> {"w":"rd /s /q build","c":"delete","t":["delete+rec build"]}
+$cmd for %f in (*.tmp) do del %f
+> {"w":"del %f","c":"delete","t":["delete+partial %f"]}
+$cmd @echo off
+> {"w":"echo off","c":"read"}
+$cmd type file.txt
+> {"w":"type file.txt","c":"read","t":["read file.txt"]}
+$cmd git push --force
+> {"w":"git push --force","c":"network,git_history_rewrite","g":"push +rewrite +force"}
+$cmd npm run build
+> {"w":"npm run build","c":"unknown","u":true}
+$cmd del /f /q "%USERPROFILE%\x"
+> {"w":"del /f /q \"%USERPROFILE%\\\\x\"","c":"delete","t":["delete+partial %USERPROFILE%\\x"]}
+$cmd rmdir build
+> {"w":"rmdir build","c":"delete","t":["delete build"]}
+$cmd start notepad
+> {"w":"start notepad","c":"unknown","u":true}
+$cmd call build.bat
+> {"w":"build.bat","c":"unknown","u":true}
+$cmd rem hello
+> {"w":"rem hello","c":"read"}
+$cmd powershell -Command "Remove-Item -Recurse x"
+> {"w":"powershell -Command \"Remove-Item -Recurse x\"","c":"unknown","u":true}
+> {"w":"Remove-Item -Recurse x","c":"delete","t":["delete+rec x"]}
+
+# ---- more tricky cases -------------------------------------------------------------------
+$ git stash push -m "wip" -- src
+> {"w":"git stash push -m wip -- src","c":"write","u":true,"g":"stash"}
+$ git push origin HEAD
+> {"w":"git push origin HEAD","c":"network","g":"push refs=HEAD"}
+$ git push --force-with-lease origin HEAD:refs/heads/main
+> {"w":"git push --force-with-lease origin HEAD:refs/heads/main","c":"network,git_history_rewrite","g":"push +rewrite +force refs=main"}
+$ git push -fu origin feature
+> {"w":"git push -fu origin feature","c":"network,git_history_rewrite","g":"push +rewrite +force refs=feature"}
+$ git push origin feature:main
+> {"w":"git push origin feature:main","c":"network","g":"push refs=main"}
+$ git push origin refs/tags/v1
+> {"w":"git push origin refs/tags/v1","c":"network","g":"push refs=refs/tags/v1"}
+$ git commit --amend -m "new message"
+> {"w":"git commit --amend -m \"new message\"","c":"write,git_history_rewrite","g":"commit +rewrite +commit"}
+$ git commit --fixup HEAD~2
+> {"w":"git commit --fixup HEAD~2","c":"write","g":"commit +commit"}
+$ git rebase --onto main old-base feature
+> {"w":"git rebase --onto main old-base feature","c":"write,git_history_rewrite","u":true,"g":"rebase +rewrite +commit refs=old-base,feature,main"}
+$ git reset --merge
+> {"w":"git reset --merge","c":"write,git_history_rewrite","u":true,"g":"reset +rewrite"}
+$ git reset --keep HEAD~1
+> {"w":"git reset --keep HEAD~1","c":"write,git_history_rewrite","u":true,"g":"reset +rewrite refs=HEAD~1"}
+$ git reset HEAD -- src/lib.rs
+> {"w":"git reset HEAD -- src/lib.rs","c":"write","g":"reset refs=HEAD"}
+$ git checkout -B reset-branch origin/main
+> {"w":"git checkout -B reset-branch origin/main","c":"write,git_history_rewrite","u":true,"g":"checkout +rewrite refs=reset-branch"}
+$ git checkout feature -- src/lib.rs
+> {"w":"git checkout feature -- src/lib.rs","c":"write,git_history_rewrite","t":["write+rec src/lib.rs"],"g":"checkout +rewrite refs=feature"}
+$ git switch main
+> {"w":"git switch main","c":"write","u":true,"g":"switch refs=main"}
+$ git switch -c new-branch
+> {"w":"git switch -c new-branch","c":"write","u":true,"g":"switch refs=new-branch"}
+$ git switch --discard-changes main
+> {"w":"git switch --discard-changes main","c":"write,git_history_rewrite","u":true,"g":"switch +rewrite refs=main"}
+$ git restore --worktree --staged .
+> {"w":"git restore --worktree --staged .","c":"write,git_history_rewrite","t":["write+rec ."],"g":"restore +rewrite"}
+$ git restore -s HEAD~1 -- a.txt b.txt
+> {"w":"git restore -s HEAD~1 -- a.txt b.txt","c":"write,git_history_rewrite","t":["write+rec a.txt","write+rec b.txt"],"g":"restore +rewrite"}
+$ git clean -fdxn
+> {"w":"git clean -fdxn","c":"read","g":"clean"}
+$ git clean -ffdx -e keep.txt
+> {"w":"git clean -ffdx -e keep.txt","c":"delete,git_history_rewrite","t":["delete+rec ."],"g":"clean +rewrite"}
+$ git branch -d -f old
+> {"w":"git branch -d -f old","c":"write,git_history_rewrite","g":"branch +rewrite refs=old"}
+$ git branch --delete --force old
+> {"w":"git branch --delete --force old","c":"write,git_history_rewrite","g":"branch +rewrite refs=old"}
+$ git branch -f main HEAD~3
+> {"w":"git branch -f main HEAD~3","c":"write,git_history_rewrite","g":"branch +rewrite refs=main"}
+$ git tag -f v1 abc123
+> {"w":"git tag -f v1 abc123","c":"write,git_history_rewrite","g":"tag +rewrite refs=v1"}
+$ git tag -a v2 -m "release"
+> {"w":"git tag -a v2 -m release","c":"write","g":"tag refs=v2"}
+$ git update-ref refs/heads/main abc123
+> {"w":"git update-ref refs/heads/main abc123","c":"write,git_history_rewrite","g":"update-ref +rewrite refs=refs/heads/main"}
+$ git reflog
+> {"w":"git reflog","c":"read","g":"reflog"}
+$ git reflog delete HEAD@{2}
+> {"w":"git reflog delete HEAD@{2}","c":"write,git_history_rewrite","g":"reflog +rewrite"}
+$ git gc
+> {"w":"git gc","c":"write","g":"gc"}
+$ git prune
+> {"w":"git prune","c":"write,git_history_rewrite","g":"prune +rewrite"}
+$ git remote -v
+> {"w":"git remote -v","c":"read","g":"remote"}
+$ git remote prune origin
+> {"w":"git remote prune origin","c":"write,network","g":"remote"}
+$ git worktree remove ../wt
+> {"w":"git worktree remove ../wt","c":"delete","t":["delete+rec ../wt"],"g":"worktree"}
+$ git worktree list
+> {"w":"git worktree list","c":"read","g":"worktree"}
+$ git rm --cached secrets.env
+> {"w":"git rm --cached secrets.env","c":"write","g":"rm"}
+$ git rm -f -- "*.log"
+> {"w":"git rm -f -- *.log","c":"delete","t":["delete *.log"],"g":"rm"}
+$ git mv -f a b
+> {"w":"git mv -f a b","c":"move","t":["delete+rec a","write+rec b"],"g":"mv"}
+$ git clone --depth 1 https://github.com/a/b
+> {"w":"git clone --depth 1 https://github.com/a/b","c":"network,write","t":["write+rec b"],"g":"clone"}
+$ git clone https://github.com/a/b.git ../elsewhere
+> {"w":"git clone https://github.com/a/b.git ../elsewhere","c":"network,write","t":["write+rec ../elsewhere"],"g":"clone"}
+$ git archive -o out.zip HEAD
+> {"w":"git archive -o out.zip HEAD","c":"write","t":["write out.zip"],"g":"archive"}
+$ git format-patch -o patches main
+> {"w":"git format-patch -o patches main","c":"write","t":["write+rec patches"],"g":"format-patch"}
+$ git notes add -m x
+> {"w":"git notes add -m x","c":"write","g":"notes"}
+$ git difftool HEAD
+> {"w":"git difftool HEAD","c":"read","g":"difftool"}
+$ git -C "$DIR" reset --hard
+> {"w":"git -C $DIR reset --hard","c":"write,git_history_rewrite","u":true,"g":"reset +rewrite"}
+$ git --git-dir=/x/.git --work-tree=/x reset --hard
+> {"w":"git --git-dir=/x/.git --work-tree=/x reset --hard","c":"write,git_history_rewrite","u":true,"g":"reset +rewrite"}
+$ git "$SUBCMD" --force
+> {"w":"git $SUBCMD --force","c":"unknown","u":true,"g":"$SUBCMD"}
+$ git
+> {"w":"git","c":"read"}
+$ git --version
+> {"w":"git --version","c":"read","g":"version"}
+$ cd sub && git clean -fdx
+> {"w":"cd sub","c":"read"}
+> {"w":"git clean -fdx","c":"delete,git_history_rewrite","t":["delete+rec sub"],"g":"clean +rewrite"}
+$ cd sub && git checkout -- .
+> {"w":"cd sub","c":"read"}
+> {"w":"git checkout -- .","c":"write,git_history_rewrite","t":["write+rec sub"],"g":"checkout +rewrite"}
+$ cd sub && echo hi > out.txt
+> {"w":"cd sub","c":"read"}
+> {"w":"echo hi","c":"write","t":["write sub/out.txt"]}
+$ cd sub && cp a ../b
+> {"w":"cd sub","c":"read"}
+> {"w":"cp a ../b","c":"write","t":["read sub/a","write+rec b"]}
+$ cd sub && rm ../x
+> {"w":"cd sub","c":"read"}
+> {"w":"rm ../x","c":"delete","t":["delete x"]}
+$ cd sub && rm ../../x
+> {"w":"cd sub","c":"read"}
+> {"w":"rm ../../x","c":"delete","t":["delete ../x"]}
+$ cd sub/.. && rm x
+> {"w":"cd sub/..","c":"read"}
+> {"w":"rm x","c":"delete","t":["delete x"]}
+$ cd "sub dir" && rm x
+> {"w":"cd \"sub dir\"","c":"read"}
+> {"w":"rm x","c":"delete","t":["delete sub dir/x"]}
+$ cd ./sub && rm x
+> {"w":"cd ./sub","c":"read"}
+> {"w":"rm x","c":"delete","t":["delete sub/x"]}
+$ cd sub/ && rm *.log
+> {"w":"cd sub/","c":"read"}
+> {"w":"rm *.log","c":"delete","t":["delete+glob sub/*.log"]}
+$ cd sub; (cd inner; rm a); rm b
+> {"w":"cd sub","c":"read"}
+> {"w":"cd inner","c":"read"}
+> {"w":"rm a","c":"delete","t":["delete sub/inner/a"]}
+> {"w":"rm b","c":"delete","t":["delete sub/b"]}
+$ bash -c 'cd sub' && rm x
+> {"w":"bash -c \"cd sub\"","c":"unknown","u":true}
+> {"w":"cd sub","c":"read"}
+> {"w":"rm x","c":"delete","t":["delete x"]}
+$ (cd sub; ls) && rm x
+> {"w":"cd sub","c":"read"}
+> {"w":"ls","c":"read"}
+> {"w":"rm x","c":"delete","t":["delete x"]}
+$ cd a && cd b && rm -rf c
+> {"w":"cd a","c":"read"}
+> {"w":"cd b","c":"read"}
+> {"w":"rm -rf c","c":"delete","t":["delete+rec a/b/c"]}
+$ cd /abs/dir && cd rel && rm x
+> {"w":"cd /abs/dir","c":"read"}
+> {"w":"cd rel","c":"read"}
+> {"w":"rm x","c":"delete","t":["delete /abs/dir/rel/x"]}
+$ cd ~ && rm x
+> {"w":"cd ~","c":"read"}
+> {"w":"rm x","c":"delete","t":["delete+partial x"]}
+$ cd ~/proj && rm x
+> {"w":"cd ~/proj","c":"read"}
+> {"w":"rm x","c":"delete","t":["delete+partial x"]}
+$ cd $HOME/proj && rm -rf build
+> {"w":"cd $HOME/proj","c":"read"}
+> {"w":"rm -rf build","c":"delete","t":["delete+rec+partial build"]}
+$ cd .. && cd .. && rm x
+> {"w":"cd ..","c":"read"}
+> {"w":"cd ..","c":"read"}
+> {"w":"rm x","c":"delete","t":["delete ../../x"]}
+$ cd sub && find . -name '*.tmp' -delete
+> {"w":"cd sub","c":"read"}
+> {"w":"find . -name *.tmp -delete","c":"delete","t":["delete+rec sub"]}
+$ cd sub && sed -i 's/a/b/' f.txt
+> {"w":"cd sub","c":"read"}
+> {"w":"sed -i s/a/b/ f.txt","c":"write","t":["write sub/f.txt"]}
+$ cd sub && mv a b
+> {"w":"cd sub","c":"read"}
+> {"w":"mv a b","c":"move","t":["delete+rec sub/a","write+rec sub/b"]}
+$ cd sub && git -C inner clean -fd
+> {"w":"cd sub","c":"read"}
+> {"w":"git -C inner clean -fd","c":"delete,git_history_rewrite","t":["delete+rec sub/inner"],"g":"clean +rewrite"}
+$ cd sub && tar xzf ../a.tgz
+> {"w":"cd sub","c":"read"}
+> {"w":"tar xzf ../a.tgz","c":"write","t":["read a.tgz","write+rec sub"]}
+$ cd sub && unzip ../a.zip
+> {"w":"cd sub","c":"read"}
+> {"w":"unzip ../a.zip","c":"write","t":["read a.zip","write+rec sub"]}
+$ cd sub && curl -O https://x.com/f.zip
+> {"w":"cd sub","c":"read"}
+> {"w":"curl -O https://x.com/f.zip","c":"network,write","t":["write sub/f.zip"]}
+$ cd sub && tee out.txt
+> {"w":"cd sub","c":"read"}
+> {"w":"tee out.txt","c":"write","t":["write sub/out.txt"]}
+$ cd sub && xargs rm
+> {"w":"cd sub","c":"read"}
+> {"w":"xargs rm","c":"delete,unknown","u":true}
+$ cd sub && sh -c 'rm -rf build'
+> {"w":"cd sub","c":"read"}
+> {"w":"sh -c \"rm -rf build\"","c":"unknown","u":true}
+> {"w":"rm -rf build","c":"delete","t":["delete+rec sub/build"]}
+$ cd sub && sh -c 'cd inner && rm x'
+> {"w":"cd sub","c":"read"}
+> {"w":"sh -c \"cd inner && rm x\"","c":"unknown","u":true}
+> {"w":"cd inner","c":"read"}
+> {"w":"rm x","c":"delete","t":["delete sub/inner/x"]}
+$ find . -name x -exec mv {} /tmp/ \;
+> {"w":"find . -name x -exec mv {} /tmp/ ;","c":"move","t":["delete+rec .","write+rec /tmp/"]}
+$ find src -type f -exec sed -i 's/a/b/' {} +
+> {"w":"find src -type f -exec sed -i s/a/b/ {} +","c":"write","t":["write+rec src"]}
+$ find . -type f -print0 | xargs -0 sed -i 's/a/b/'
+> {"w":"find . -type f -print0","c":"read","t":["read+rec ."]}
+> {"w":"xargs -0 sed -i s/a/b/","c":"write,unknown","u":true}
+$ find . ! -name keep -delete
+> {"w":"find . ! -name keep -delete","c":"delete","t":["delete+rec ."]}
+$ find . \( -name a -o -name b \) -delete
+> {"w":"find . ( -name a -o -name b ) -delete","c":"delete","t":["delete+rec ."]}
+$ find -L . -name '*.bak' -delete
+> {"w":"find -L . -name *.bak -delete","c":"delete","t":["delete+rec ."]}
+$ find . -name '*.log' -exec rm -f {} \; -print
+> {"w":"find . -name *.log -exec rm -f {} ; -print","c":"delete","t":["delete+rec ."]}
+$ find . -name '*.c' -exec cp {} /tmp/ \;
+> {"w":"find . -name *.c -exec cp {} /tmp/ ;","c":"write","t":["read+rec .","write+rec /tmp/"]}
+$ find . -ok rm {} \;
+> {"w":"find . -ok rm {} ;","c":"delete","t":["delete+rec ."]}
+$ sudo -E env PATH=$PATH rm -rf x
+> {"w":"rm -rf x","c":"delete","t":["delete+rec x"]}
+$ sudo bash -c 'rm -rf x'
+> {"w":"bash -c \"rm -rf x\"","c":"unknown","u":true}
+> {"w":"rm -rf x","c":"delete","t":["delete+rec x"]}
+$ sudo -- rm x
+> {"w":"rm x","c":"delete","t":["delete x"]}
+$ timeout -s KILL 5 rm x
+> {"w":"rm x","c":"delete","t":["delete x"]}
+$ nice -n 5 ionice -c 3 rm -rf cache
+> {"w":"rm -rf cache","c":"delete","t":["delete+rec cache"]}
+$ time -p rm x
+> {"w":"rm x","c":"delete","t":["delete x"]}
+$ stdbuf -oL rm x
+> {"w":"rm x","c":"delete","t":["delete x"]}
+$ nohup sh -c 'rm -rf x' &
+> {"w":"sh -c \"rm -rf x\"","c":"unknown","u":true}
+> {"w":"rm -rf x","c":"delete","t":["delete+rec x"]}
+$ env -i rm x
+> {"w":"rm x","c":"delete","t":["delete x"]}
+$ env -u FOO rm x
+> {"w":"rm x","c":"delete","t":["delete x"]}
+$ builtin cd sub
+> {"w":"cd sub","c":"read"}
+$ command -p rm x
+> {"w":"rm x","c":"delete","t":["delete x"]}
+$ doas rm x
+> {"w":"rm x","c":"delete","t":["delete x"]}
+$ setsid rm x
+> {"w":"rm x","c":"delete","t":["delete x"]}
+$ ionice rm x
+> {"w":"rm x","c":"delete","t":["delete x"]}
+$ exec -a name rm x
+> {"w":"rm x","c":"delete","t":["delete x"]}
+$ rm -rf "$HOME"/.cache
+> {"w":"rm -rf $HOME/.cache","c":"delete","t":["delete+rec+partial $HOME/.cache"]}
+$ rm -rf "${HOME}/.cache/acs"
+> {"w":"rm -rf ${HOME}/.cache/acs","c":"delete","t":["delete+rec+partial ${HOME}/.cache/acs"]}
+$ rm -rf $TMP/*
+> {"w":"rm -rf $TMP/*","c":"delete","t":["delete+rec+partial $TMP/*"]}
+$ rm -rf "$TMP"/*
+> {"w":"rm -rf $TMP/*","c":"delete","t":["delete+rec+partial $TMP/*"]}
+$ rm -rf `pwd`/x
+> {"w":"rm -rf `pwd`/x","c":"delete","t":["delete+rec+partial `pwd`/x"]}
+> {"w":"pwd","c":"read"}
+$ rm -i x
+> {"w":"rm -i x","c":"delete","t":["delete x"]}
+$ rm -v -- a b
+> {"w":"rm -v -- a b","c":"delete","t":["delete a","delete b"]}
+$ rm --recursive --force dir
+> {"w":"rm --recursive --force dir","c":"delete","t":["delete+rec dir"]}
+$ rm -R dir
+> {"w":"rm -R dir","c":"delete","t":["delete+rec dir"]}
+$ rm -d emptydir
+> {"w":"rm -d emptydir","c":"delete","t":["delete emptydir"]}
+$ rm -rf a b c d e
+> {"w":"rm -rf a b c d e","c":"delete","t":["delete+rec a","delete+rec b","delete+rec c","delete+rec d","delete+rec e"]}
+$ rm a;rm b
+> {"w":"rm a","c":"delete","t":["delete a"]}
+> {"w":"rm b","c":"delete","t":["delete b"]}
+$ rm a&&rm b
+> {"w":"rm a","c":"delete","t":["delete a"]}
+> {"w":"rm b","c":"delete","t":["delete b"]}
+$ rm   a   b
+> {"w":"rm a b","c":"delete","t":["delete a","delete b"]}
+$ rm 'a b' "c d"
+> {"w":"rm \"a b\" \"c d\"","c":"delete","t":["delete a b","delete c d"]}
+$ rm a\ b
+> {"w":"rm \"a b\"","c":"delete","t":["delete a b"]}
+$ rm -rf "x"y'z'
+> {"w":"rm -rf xyz","c":"delete","t":["delete+rec xyz"]}
+$ rm $'a\nb'
+> {"w":"rm \"a\\nb\"","c":"delete","t":["delete a\nb"]}
+$ rm "$x$y"
+> {"w":"rm $x$y","c":"delete","t":["delete+partial $x$y"]}
+$ rm ~
+> {"w":"rm ~","c":"delete","t":["delete+partial ~"]}
+$ rm ~user/x
+> {"w":"rm ~user/x","c":"delete","t":["delete+partial ~user/x"]}
+$ rm '~/x'
+> {"w":"rm ~/x","c":"delete","t":["delete ~/x"]}
+$ rm *
+> {"w":"rm *","c":"delete","t":["delete+glob *"]}
+$ rm .*
+> {"w":"rm .*","c":"delete","t":["delete+glob .*"]}
+$ rm -rf /*
+> {"w":"rm -rf /*","c":"delete","t":["delete+rec+glob /*"]}
+$ rm -rf $PWD
+> {"w":"rm -rf $PWD","c":"delete","t":["delete+rec+partial $PWD"]}
+$ rm -rf "$(dirname "$0")/build"
+> {"w":"rm -rf \"$(dirname \\\"$0\\\")/build\"","c":"delete","t":["delete+rec+partial $(dirname \"$0\")/build"]}
+> {"w":"dirname $0","c":"read"}
+$ rm -rf $(ls)
+> {"w":"rm -rf $(ls)","c":"delete","t":["delete+rec+partial $(ls)"]}
+> {"w":"ls","c":"read"}
+$ rm $(echo a b)
+> {"w":"rm \"$(echo a b)\"","c":"delete","t":["delete+partial $(echo a b)"]}
+> {"w":"echo a b","c":"read"}
+$ rm -rf "${dir:?}/"*
+> {"w":"rm -rf ${dir:?}/*","c":"delete","t":["delete+rec+partial ${dir:?}/*"]}
+$ rm -- "$file"
+> {"w":"rm -- $file","c":"delete","t":["delete+partial $file"]}
+$ rm {a,b}/x
+> {"w":"rm {a,b}/x","c":"delete","t":["delete+glob {a,b}/x"]}
+$ rm a/{b,c}
+> {"w":"rm a/{b,c}","c":"delete","t":["delete+glob a/{b,c}"]}
+$ rm a{1..3}
+> {"w":"rm a{1..3}","c":"delete","t":["delete+glob a{1..3}"]}
+$ echo a > b > c
+> {"w":"echo a","c":"write","t":["write b","write c"]}
+$ echo a > "$OUT"
+> {"w":"echo a","c":"write","t":["write+partial $OUT"]}
+$ echo a > ~/out
+> {"w":"echo a","c":"write","t":["write+partial ~/out"]}
+$ echo a 1> out
+> {"w":"echo a","c":"write","t":["write out"]}
+$ echo a >&2
+> {"w":"echo a","c":"read"}
+$ echo a 2>&1 | tee log
+> {"w":"echo a","c":"read"}
+> {"w":"tee log","c":"write","t":["write log"]}
+$ echo a &>/dev/null
+> {"w":"echo a","c":"read"}
+$ echo a > /dev/stderr
+> {"w":"echo a","c":"read"}
+$ cat < in.txt > out.txt
+> {"w":"cat","c":"write","t":["read in.txt","write out.txt"]}
+$ cat <in.txt
+> {"w":"cat","c":"read","t":["read in.txt"]}
+$ ls >out.txt 2>err.txt
+> {"w":"ls","c":"write","t":["write out.txt","write err.txt"]}
+$ { echo a; echo b; } > out.txt
+> {"w":"echo a","c":"write","t":["write out.txt"]}
+> {"w":"echo b","c":"read"}
+$ (echo a; echo b) >> out.txt
+> {"w":"echo a","c":"write","t":["write out.txt"]}
+> {"w":"echo b","c":"read"}
+$ while read l; do echo $l; done < in.txt > out.txt
+> {"w":"read l","c":"write","t":["read in.txt","write out.txt"]}
+> {"w":"echo $l","c":"read"}
+$ if true; then echo a; fi > out.txt
+> {"w":"true","c":"write","t":["write out.txt"]}
+> {"w":"echo a","c":"read"}
+$ for i in 1 2; do echo $i; done > nums.txt
+> {"w":"echo $i","c":"write","t":["write nums.txt"]}
+$ cat file > $(mktemp)
+> {"w":"cat file","c":"write","t":["read file","write+partial $(mktemp)"]}
+> {"w":"mktemp","c":"write"}
+$ cat file > >(tee out.txt)
+> {"w":"cat file","c":"read","t":["read file"]}
+> {"w":"tee out.txt","c":"write","t":["write out.txt"]}
+$ exec 3> out.txt
+> {"w":"exec","c":"write","t":["write out.txt"]}
+$ exec 2>&1
+> {"w":"exec","c":"read"}
+$ : > file.txt
+> {"w":":","c":"write","t":["write file.txt"]}
+$ > file.txt
+> {"w":":","c":"write","t":["write file.txt"]}
+$ true > file
+> {"w":"true","c":"write","t":["write file"]}
+$ read x < in.txt
+> {"w":"read x","c":"read","t":["read in.txt"]}
+$ tee < in.txt > out.txt
+> {"w":"tee","c":"write","t":["read in.txt","write out.txt"]}
+$ x=$(cat in.txt) && echo "$x" > out.txt
+> {"w":"cat in.txt","c":"read","t":["read in.txt"]}
+> {"w":"echo $x","c":"write","t":["write out.txt"]}
+$ printf 'a\nb\n' | tee out.txt > /dev/null
+> {"w":"printf \"a\\\\nb\\\\n\"","c":"read"}
+> {"w":"tee out.txt","c":"write","t":["write out.txt"]}
+$ echo "$(cat <<EOF
+| hi
+| EOF
+| )" > out.txt
+> {"w":"echo \"$(cat <<EOF\\nhi\\nEOF\\n)\"","c":"write","t":["write out.txt"]}
+> {"w":"cat","c":"read"}
+$ cat <<EOF | tee out.txt
+| data
+| EOF
+> {"w":"cat","c":"read"}
+> {"w":"tee out.txt","c":"write","t":["write out.txt"]}
+$ cat <<-EOF
+| 	indented $(rm -rf y)
+| 	EOF
+> {"w":"cat","c":"read"}
+> {"w":"rm -rf y","c":"delete","t":["delete+rec y"]}
+$ python - <<EOF
+| import os
+| os.remove("x")
+| EOF
+> {"w":"python","c":"unknown","u":true}
+$ bash <<EOF
+| rm -rf x
+| EOF
+> {"w":"bash","c":"unknown","u":true}
+$ ssh host <<EOF
+| rm -rf x
+| EOF
+> {"w":"ssh host","c":"network"}
+$ sed -i -e 's/a/b/' -- file
+> {"w":"sed -i -e s/a/b/ -- file","c":"write","t":["write file"]}
+$ sed -ni '1p' file
+> {"w":"sed -ni 1p file","c":"write","t":["write file"]}
+$ sed --in-place=.bak 's/a/b/' file
+> {"w":"sed --in-place=.bak s/a/b/ file","c":"write","t":["write file"]}
+$ sed -s -n '$p' a b
+> {"w":"sed -s -n $p a b","c":"read","t":["read a","read b"]}
+$ sed 's/a/b/' file > file.new
+> {"w":"sed s/a/b/ file","c":"write","t":["read file","write file.new"]}
+$ sed -f script.sed input
+> {"w":"sed -f script.sed input","c":"read","t":["read input"]}
+$ awk -i inplace '{print}' file
+> {"w":"awk -i inplace {print} file","c":"write","t":["write file"]}
+$ awk -f prog.awk data
+> {"w":"awk -f prog.awk data","c":"read","t":["read data"]}
+$ awk 'END{print NR}' a b
+> {"w":"awk \"END{print NR}\" a b","c":"read","t":["read a","read b"]}
+$ gawk '{ print > "out" }' file
+> {"w":"gawk \"{ print > \\\"out\\\" }\" file","c":"write,unknown","t":["read file"],"u":true}
+$ perl -ne 'print if /x/' file
+> {"w":"perl -ne \"print if /x/\" file","c":"unknown","u":true}
+$ perl -v
+> {"w":"perl -v","c":"read"}
+$ perl script.pl
+> {"w":"perl script.pl","c":"unknown","u":true}
+$ perl -pi.bak -e 's/a/b/' a b
+> {"w":"perl -pi.bak -e s/a/b/ a b","c":"write","t":["write a","write b"]}
+$ ruby script.rb
+> {"w":"ruby script.rb","c":"unknown","u":true}
+$ python3 -m http.server
+> {"w":"python3 -m http.server","c":"unknown","u":true}
+$ python3 -m json.tool data.json
+> {"w":"python3 -m json.tool data.json","c":"unknown","u":true}
+$ python --version
+> {"w":"python --version","c":"read"}
+$ python
+> {"w":"python","c":"unknown","u":true}
+$ python3 -c 'import sys' && rm x
+> {"w":"python3 -c \"import sys\"","c":"unknown","u":true}
+> {"w":"rm x","c":"delete","t":["delete x"]}
+$ node script.js
+> {"w":"node script.js","c":"unknown","u":true}
+$ node --version
+> {"w":"node --version","c":"read"}
+$ deno run main.ts
+> {"w":"deno run main.ts","c":"unknown","u":true}
+$ npm run lint -- --fix
+> {"w":"npm run lint -- --fix","c":"unknown","u":true}
+$ npm start
+> {"w":"npm start","c":"unknown","u":true}
+$ npm publish
+> {"w":"npm publish","c":"network"}
+$ npm view react version
+> {"w":"npm view react version","c":"read"}
+$ npm list
+> {"w":"npm list","c":"read"}
+$ npm uninstall left-pad
+> {"w":"npm uninstall left-pad","c":"network,write","t":["write+rec node_modules","write package.json","write package-lock.json"]}
+$ npm update
+> {"w":"npm update","c":"network,write","t":["write+rec node_modules","write package.json","write package-lock.json"]}
+$ npm init -y
+> {"w":"npm init -y","c":"write","t":["write package.json"]}
+$ npm --prefix web install
+> {"w":"npm --prefix web install","c":"network,write","t":["write+rec node_modules","write package.json","write package-lock.json"]}
+$ yarn install --frozen-lockfile
+> {"w":"yarn install --frozen-lockfile","c":"network,write","t":["write+rec node_modules","write package.json","write yarn.lock"]}
+$ yarn test
+> {"w":"yarn test","c":"unknown","u":true}
+$ yarn build
+> {"w":"yarn build","c":"unknown","u":true}
+$ pnpm add -D vitest
+> {"w":"pnpm add -D vitest","c":"network,write","t":["write+rec node_modules","write package.json","write pnpm-lock.yaml"]}
+$ pnpm exec tsc
+> {"w":"pnpm exec tsc","c":"unknown","u":true}
+$ bun install
+> {"w":"bun install","c":"network,write","t":["write+rec node_modules","write package.json","write bun.lockb"]}
+$ bun run dev
+> {"w":"bun run dev","c":"unknown","u":true}
+$ npx tsc --noEmit
+> {"w":"npx tsc --noEmit","c":"network,unknown","u":true}
+$ cargo update
+> {"w":"cargo update","c":"write,network","t":["write Cargo.lock"]}
+$ cargo remove serde
+> {"w":"cargo remove serde","c":"write,network","t":["write Cargo.toml","write Cargo.lock"]}
+$ cargo new demo
+> {"w":"cargo new demo","c":"write","t":["write+rec demo"]}
+$ cargo init
+> {"w":"cargo init","c":"write","t":["write Cargo.toml","write+rec src"]}
+$ cargo install ripgrep
+> {"w":"cargo install ripgrep","c":"network,write"}
+$ cargo publish
+> {"w":"cargo publish","c":"network"}
+$ cargo doc --no-deps
+> {"w":"cargo doc --no-deps","c":"write","t":["write+rec target"]}
+$ cargo bench
+> {"w":"cargo bench","c":"write,unknown","t":["write+rec target"],"u":true}
+$ cargo check --workspace
+> {"w":"cargo check --workspace","c":"write","t":["write+rec target"]}
+$ cargo fix --allow-dirty
+> {"w":"cargo fix --allow-dirty","c":"write","t":["write+rec target","write+rec ."]}
+$ cargo tree
+> {"w":"cargo tree","c":"read"}
+$ cargo metadata --format-version 1
+> {"w":"cargo metadata --format-version 1","c":"read"}
+$ cargo nextest run
+> {"w":"cargo nextest run","c":"write,unknown","t":["write+rec target"],"u":true}
+$ cargo --version
+> {"w":"cargo --version","c":"read"}
+$ cargo
+> {"w":"cargo","c":"read"}
+$ cargo my-custom-tool
+> {"w":"cargo my-custom-tool","c":"unknown","u":true}
+$ cargo clean -p acs-core
+> {"w":"cargo clean -p acs-core","c":"delete","t":["delete+rec target"]}
+$ cargo clean --target-dir out
+> {"w":"cargo clean --target-dir out","c":"delete","t":["delete+rec out"]}
+$ go run main.go
+> {"w":"go run main.go","c":"unknown","u":true}
+$ go vet ./...
+> {"w":"go vet ./...","c":"read"}
+$ go fmt ./...
+> {"w":"go fmt ./...","c":"write","t":["write+rec ."]}
+$ go get github.com/x/y
+> {"w":"go get github.com/x/y","c":"network,write","t":["write go.mod","write go.sum"]}
+$ go build -o bin/app ./cmd/app
+> {"w":"go build -o bin/app ./cmd/app","c":"write","t":["write bin/app"]}
+$ go clean -cache
+> {"w":"go clean -cache","c":"delete","u":true}
+$ go mod download
+> {"w":"go mod download","c":"network"}
+$ go install ./cmd/...
+> {"w":"go install ./cmd/...","c":"network,write"}
+$ make
+> {"w":"make","c":"unknown","u":true}
+$ make install
+> {"w":"make install","c":"unknown","u":true}
+$ ./configure && make
+> {"w":"./configure","c":"unknown","u":true}
+> {"w":"make","c":"unknown","u":true}
+$ cmake -B build
+> {"w":"cmake -B build","c":"unknown","u":true}
+$ ninja -C build
+> {"w":"ninja -C build","c":"unknown","u":true}
+$ ./gradlew build
+> {"w":"./gradlew build","c":"unknown","u":true}
+$ mvn clean install
+> {"w":"mvn clean install","c":"unknown","u":true}
+$ pip install --upgrade pip
+> {"w":"pip install --upgrade pip","c":"network,write"}
+$ pip uninstall -y x
+> {"w":"pip uninstall -y x","c":"network,write"}
+$ pip list
+> {"w":"pip list","c":"read"}
+$ pip freeze > requirements.txt
+> {"w":"pip freeze","c":"write","t":["write requirements.txt"]}
+$ poetry install
+> {"w":"poetry install","c":"network,write","t":["write pyproject.toml","write poetry.lock"]}
+$ poetry run pytest
+> {"w":"poetry run pytest","c":"unknown","u":true}
+$ uv sync
+> {"w":"uv sync","c":"network,write","t":["write+rec .venv"]}
+$ uv run script.py
+> {"w":"uv run script.py","c":"unknown","u":true}
+$ conda install numpy
+> {"w":"conda install numpy","c":"network,write"}
+$ gem install bundler
+> {"w":"gem install bundler","c":"network,write"}
+$ bundle install
+> {"w":"bundle install","c":"network,write","t":["write Gemfile.lock"]}
+$ bundle exec rake
+> {"w":"bundle exec rake","c":"unknown","u":true}
+$ composer install
+> {"w":"composer install","c":"network,write","t":["write+rec vendor","write composer.json","write composer.lock"]}
+$ brew list
+> {"w":"brew list","c":"read"}
+$ apt list --installed
+> {"w":"apt list --installed","c":"read"}
+$ dpkg -l
+> {"w":"dpkg -l","c":"read"}
+$ dpkg -i pkg.deb
+> {"w":"dpkg -i pkg.deb","c":"network,write"}
+$ pacman -Syu
+> {"w":"pacman -Syu","c":"network,write"}
+$ pacman -Q
+> {"w":"pacman -Q","c":"read"}
+$ docker ps -a
+> {"w":"docker ps -a","c":"read"}
+$ docker logs web
+> {"w":"docker logs web","c":"read"}
+$ docker rm -f web
+> {"w":"docker rm -f web","c":"unknown","u":true}
+$ docker pull nginx
+> {"w":"docker pull nginx","c":"network"}
+$ docker exec -it web sh
+> {"w":"docker exec -it web sh","c":"unknown","u":true}
+$ docker system prune -af
+> {"w":"docker system prune -af","c":"unknown","u":true}
+$ docker system df
+> {"w":"docker system df","c":"read"}
+$ docker compose logs
+> {"w":"docker compose logs","c":"read"}
+$ docker-compose up
+> {"w":"docker-compose up","c":"unknown","u":true}
+$ kubectl delete pod x
+> {"w":"kubectl delete pod x","c":"unknown","u":true}
+$ kubectl logs x
+> {"w":"kubectl logs x","c":"read"}
+$ kubectl config view
+> {"w":"kubectl config view","c":"read"}
+$ helm install x chart
+> {"w":"helm install x chart","c":"unknown","u":true}
+$ helm list
+> {"w":"helm list","c":"read"}
+$ terraform init
+> {"w":"terraform init","c":"network,write","t":["write+rec .terraform","write .terraform.lock.hcl"]}
+$ terraform destroy
+> {"w":"terraform destroy","c":"unknown","u":true}
+$ gh pr list
+> {"w":"gh pr list","c":"network"}
+$ gh repo clone a/b
+> {"w":"gh repo clone a/b","c":"network"}
+$ curl https://example.com
+> {"w":"curl https://example.com","c":"network"}
+$ curl -s https://api.github.com/repos/a/b | jq .name
+> {"w":"curl -s https://api.github.com/repos/a/b","c":"network"}
+> {"w":"jq .name","c":"read"}
+$ curl -L -o /tmp/x.tgz https://x.com/x.tgz && tar -xzf /tmp/x.tgz -C /tmp
+> {"w":"curl -L -o /tmp/x.tgz https://x.com/x.tgz","c":"network,write","t":["write /tmp/x.tgz"]}
+> {"w":"tar -xzf /tmp/x.tgz -C /tmp","c":"write","t":["read /tmp/x.tgz","write+rec /tmp"]}
+$ curl --output-dir out -O https://x.com/a.zip
+> {"w":"curl --output-dir out -O https://x.com/a.zip","c":"network,write","t":["write out/a.zip"]}
+$ curl -F file=@upload.bin https://x.com/up
+> {"w":"curl -F file=@upload.bin https://x.com/up","c":"network","t":["read upload.bin"]}
+$ curl -T file.txt ftp://x.com/
+> {"w":"curl -T file.txt ftp://x.com/","c":"network","t":["read file.txt"]}
+$ curl -c cookies.txt https://x.com
+> {"w":"curl -c cookies.txt https://x.com","c":"network,write","t":["write cookies.txt"]}
+$ wget -q -O out.html https://x.com
+> {"w":"wget -q -O out.html https://x.com","c":"network,write","t":["write out.html"]}
+$ wget -P downloads https://x.com/a.zip
+> {"w":"wget -P downloads https://x.com/a.zip","c":"network,write","t":["write downloads/a.zip"]}
+$ wget -i urls.txt
+> {"w":"wget -i urls.txt","c":"network,write","t":["read urls.txt"],"u":true}
+$ wget --mirror https://x.com
+> {"w":"wget --mirror https://x.com","c":"network,write","t":["write+rec ."]}
+$ tar -cf - . | ssh host 'tar -xf - -C /srv'
+> {"w":"tar -cf - .","c":"write","t":["read+rec ."]}
+> {"w":"ssh host \"tar -xf - -C /srv\"","c":"network"}
+$ tar -czf out.tgz -C src .
+> {"w":"tar -czf out.tgz -C src .","c":"write","t":["write out.tgz","read+rec src"]}
+$ tar --extract --file=a.tar
+> {"w":"tar --extract --file=a.tar","c":"write","t":["read a.tar","write+rec ."]}
+$ tar xf a.tar --strip-components=1
+> {"w":"tar xf a.tar --strip-components=1","c":"write","t":["read a.tar","write+rec ."]}
+$ tar -xvf a.tar dir/file
+> {"w":"tar -xvf a.tar dir/file","c":"write","t":["read a.tar","write+rec ."]}
+$ tar tvf a.tar
+> {"w":"tar tvf a.tar","c":"read","t":["read a.tar"]}
+$ tar rf a.tar new
+> {"w":"tar rf a.tar new","c":"write","t":["write a.tar","read+rec new"]}
+$ unzip a.zip
+> {"w":"unzip a.zip","c":"write","t":["read a.zip","write+rec ."]}
+$ unzip -p a.zip file > out
+> {"w":"unzip -p a.zip file","c":"write","t":["write out"]}
+$ zip out.zip a b c
+> {"w":"zip out.zip a b c","c":"write","t":["write out.zip","read a","read b","read c"]}
+$ zip -r out.zip . -x '*.git*'
+> {"w":"zip -r out.zip . -x *.git*","c":"write","t":["write out.zip","read+rec ."]}
+$ gzip file
+> {"w":"gzip file","c":"write","t":["write file"]}
+$ gzip -c file > file.gz
+> {"w":"gzip -c file","c":"write","t":["read file","write file.gz"]}
+$ gunzip file.gz
+> {"w":"gunzip file.gz","c":"write","t":["write file.gz"]}
+$ xz -d file.xz
+> {"w":"xz -d file.xz","c":"write","t":["write file.xz"]}
+$ bzip2 -dk file.bz2
+> {"w":"bzip2 -dk file.bz2","c":"write","t":["write file.bz2"]}
+$ 7z x a.7z
+> {"w":"7z x a.7z","c":"write","t":["read a.7z","write+rec ."]}
+$ 7z a out.7z dir
+> {"w":"7z a out.7z dir","c":"write","t":["write out.7z","read+rec dir"]}
+$ rsync -avz ./ host:/srv/
+> {"w":"rsync -avz ./ host:/srv/","c":"network","t":["read+rec ./"]}
+$ rsync -n -av --delete src/ dest/
+> {"w":"rsync -n -av --delete src/ dest/","c":"read"}
+$ rsync --remove-source-files -a src/ dest/
+> {"w":"rsync --remove-source-files -a src/ dest/","c":"write,delete","t":["write+rec dest/","read+rec src/","delete+rec src/"]}
+$ rsync -a rsync://host/mod/ local/
+> {"w":"rsync -a rsync://host/mod/ local/","c":"network,write","t":["write+rec local/"]}
+$ scp -r dir host:/srv/
+> {"w":"scp -r dir host:/srv/","c":"network","t":["read+rec dir"]}
+$ scp -P 2222 a b host:
+> {"w":"scp -P 2222 a b host:","c":"network","t":["read a","read b"]}
+$ ssh host
+> {"w":"ssh host","c":"network"}
+$ ssh host rm -rf /tmp/x
+> {"w":"ssh host rm -rf /tmp/x","c":"network"}
+$ ping -c 1 host
+> {"w":"ping -c 1 host","c":"network"}
+$ nc -zv host 22
+> {"w":"nc -zv host 22","c":"network"}
+$ dd if=in of=out
+> {"w":"dd if=in of=out","c":"write","t":["read in","write out"]}
+$ dd of=out
+> {"w":"dd of=out","c":"write","t":["write out"]}
+$ dd if=in
+> {"w":"dd if=in","c":"read","t":["read in"]}
+$ dd if=/dev/urandom of=$FILE bs=1k count=1
+> {"w":"dd if=/dev/urandom of=$FILE bs=1k count=1","c":"write","t":["read /dev/urandom","write+partial $FILE"]}
+$ truncate -s 1M big
+> {"w":"truncate -s 1M big","c":"write","t":["write big"]}
+$ touch -r ref file
+> {"w":"touch -r ref file","c":"write","t":["write file"]}
+$ touch "$f"
+> {"w":"touch $f","c":"write","t":["write+partial $f"]}
+$ mkdir a b c
+> {"w":"mkdir a b c","c":"write","t":["write a","write b","write c"]}
+$ mkdir -m 755 d
+> {"w":"mkdir -m 755 d","c":"write","t":["write d"]}
+$ mkdir "$OUT" && cd "$OUT" && touch x
+> {"w":"mkdir $OUT","c":"write","t":["write+partial $OUT"]}
+> {"w":"cd $OUT","c":"read"}
+> {"w":"touch x","c":"write","t":["write+partial x"]}
+$ ln -s a b c/
+> {"w":"ln -s a b c/","c":"write","t":["write+rec c/"]}
+$ ln target
+> {"w":"ln target","c":"write","t":["write target"]}
+$ ln -T a b
+> {"w":"ln -T a b","c":"write","t":["write b"]}
+$ cp -r a b c/
+> {"w":"cp -r a b c/","c":"write","t":["read+rec a","read+rec b","write+rec c/"]}
+$ cp -T a b
+> {"w":"cp -T a b","c":"write","t":["read a","write b"]}
+$ cp --target-directory=d a b
+> {"w":"cp --target-directory=d a b","c":"write","t":["read a","read b","write+rec d"]}
+$ cp -a . ../backup
+> {"w":"cp -a . ../backup","c":"write","t":["read+rec .","write+rec ../backup"]}
+$ cp "$SRC" "$DST"
+> {"w":"cp $SRC $DST","c":"write","t":["read+partial $SRC","write+rec+partial $DST"]}
+$ cp a.txt "$DIR"/
+> {"w":"cp a.txt $DIR/","c":"write","t":["read a.txt","write+rec+partial $DIR/"]}
+$ install -m 644 a b /usr/local/share/
+> {"w":"install -m 644 a b /usr/local/share/","c":"write","t":["read a","read b","write+rec /usr/local/share/"]}
+$ install -D a /opt/x/a
+> {"w":"install -D a /opt/x/a","c":"write","t":["read a","write+rec /opt/x/a"]}
+$ mv "$a" "$b"
+> {"w":"mv $a $b","c":"move","t":["delete+rec+partial $a","write+rec+partial $b"]}
+$ mv -f a b
+> {"w":"mv -f a b","c":"move","t":["delete+rec a","write+rec b"]}
+$ mv a b c d/
+> {"w":"mv a b c d/","c":"move","t":["delete+rec a","delete+rec b","delete+rec c","write+rec d/"]}
+$ mv --target-directory=d a b
+> {"w":"mv --target-directory=d a b","c":"move","t":["delete+rec a","delete+rec b","write+rec d"]}
+$ mv -T a b
+> {"w":"mv -T a b","c":"move","t":["delete+rec a","write b"]}
+$ mv a/ b/
+> {"w":"mv a/ b/","c":"move","t":["delete+rec a/","write+rec b/"]}
+$ chmod 644 a b
+> {"w":"chmod 644 a b","c":"write","t":["write a","write b"]}
+$ chmod u+x,g-w file
+> {"w":"chmod u+x,g-w file","c":"write","t":["write file"]}
+$ chmod --reference=a b
+> {"w":"chmod --reference=a b","c":"write","t":["write b"]}
+$ chmod -R u+w .
+> {"w":"chmod -R u+w .","c":"write","t":["write+rec ."]}
+$ chown root file
+> {"w":"chown root file","c":"write","t":["write file"]}
+$ chgrp -R staff dir
+> {"w":"chgrp -R staff dir","c":"write","t":["write+rec dir"]}
+$ mktemp
+> {"w":"mktemp","c":"write"}
+$ mktemp -p /tmp XXXX
+> {"w":"mktemp -p /tmp XXXX","c":"write","t":["write XXXX","write+rec /tmp"]}
+$ mktemp -u
+> {"w":"mktemp -u","c":"read"}
+$ ls -l /etc
+> {"w":"ls -l /etc","c":"read","t":["read /etc"]}
+$ ls "$DIR"
+> {"w":"ls $DIR","c":"read","t":["read+partial $DIR"]}
+$ ls *.txt
+> {"w":"ls *.txt","c":"read","t":["read+glob *.txt"]}
+$ cat "$FILE"
+> {"w":"cat $FILE","c":"read","t":["read+partial $FILE"]}
+$ cat *.log > all.log
+> {"w":"cat *.log","c":"write","t":["read+glob *.log","write all.log"]}
+$ head -c 100 big.bin
+> {"w":"head -c 100 big.bin","c":"read","t":["read big.bin"]}
+$ tail -n +2 file
+> {"w":"tail -n +2 file","c":"read","t":["read file"]}
+$ less README
+> {"w":"less README","c":"read","t":["read README"]}
+$ wc -l < file
+> {"w":"wc -l","c":"read","t":["read file"]}
+$ diff -u a b > patch.diff
+> {"w":"diff -u a b","c":"write","t":["read a","read b","write patch.diff"]}
+$ diff -r a b
+> {"w":"diff -r a b","c":"read","t":["read a","read b"]}
+$ sort -u list.txt -o list.txt
+> {"w":"sort -u list.txt -o list.txt","c":"write","t":["read list.txt","write list.txt"]}
+$ sort a b | uniq > out
+> {"w":"sort a b","c":"read","t":["read a","read b"]}
+> {"w":"uniq","c":"write","t":["write out"]}
+$ comm -12 a b
+> {"w":"comm -12 a b","c":"read","t":["read a","read b"]}
+$ cut -d, -f1 data.csv
+> {"w":"cut -d, -f1 data.csv","c":"read","t":["read data.csv"]}
+$ tr a-z A-Z < in > out
+> {"w":"tr a-z A-Z","c":"write","t":["read in","write out"]}
+$ grep -rl TODO . | xargs sed -i 's/TODO/DONE/'
+> {"w":"grep -rl TODO .","c":"read","t":["read+rec ."]}
+> {"w":"xargs sed -i s/TODO/DONE/","c":"write,unknown","u":true}
+$ grep -n pattern file1 file2
+> {"w":"grep -n pattern file1 file2","c":"read","t":["read file1","read file2"]}
+$ grep -f patterns.txt data
+> {"w":"grep -f patterns.txt data","c":"read","t":["read data"]}
+$ grep -i "$q" "$f"
+> {"w":"grep -i $q $f","c":"read","t":["read+partial $f"]}
+$ grep -v '^#' conf | wc -l
+> {"w":"grep -v ^# conf","c":"read","t":["read conf"]}
+> {"w":"wc -l","c":"read"}
+$ rg -l TODO | xargs rm
+> {"w":"rg -l TODO","c":"read"}
+> {"w":"xargs rm","c":"delete,unknown","u":true}
+$ rg --files -g '*.rs'
+> {"w":"rg --files -g *.rs","c":"read"}
+$ rg -e foo -e bar src
+> {"w":"rg -e foo -e bar src","c":"read","t":["read+rec src"]}
+$ rg foo -- src
+> {"w":"rg foo -- src","c":"read","t":["read+rec src"]}
+$ ag pattern
+> {"w":"ag pattern","c":"read"}
+$ fd pattern
+> {"w":"fd pattern","c":"read"}
+$ fd -t f -x chmod 644 {}
+> {"w":"fd -t f -x chmod 644 {}","c":"write,unknown","u":true}
+$ jq . data.json
+> {"w":"jq . data.json","c":"read","t":["read data.json"]}
+$ jq -r '.a' < data.json
+> {"w":"jq -r .a","c":"read","t":["read data.json"]}
+$ jq -n '1'
+> {"w":"jq -n 1","c":"read"}
+$ yq e '.a' file.yaml
+> {"w":"yq e .a file.yaml","c":"read","t":["read file.yaml"]}
+$ shasum -a 256 file
+> {"w":"shasum -a 256 file","c":"read","t":["read file"]}
+$ sha256sum *.tgz > SHA256SUMS
+> {"w":"sha256sum *.tgz","c":"write","t":["read+glob *.tgz","write SHA256SUMS"]}
+$ md5sum a b
+> {"w":"md5sum a b","c":"read","t":["read a","read b"]}
+$ base64 file > out.b64
+> {"w":"base64 file","c":"write","t":["read file","write out.b64"]}
+$ file a b
+> {"w":"file a b","c":"read","t":["read a","read b"]}
+$ stat -c %s file
+> {"w":"stat -c %s file","c":"read","t":["read file"]}
+$ du -sh .
+> {"w":"du -sh .","c":"read","t":["read ."]}
+$ df -h
+> {"w":"df -h","c":"read"}
+$ pwd
+> {"w":"pwd","c":"read"}
+$ whoami
+> {"w":"whoami","c":"read"}
+$ uname -a
+> {"w":"uname -a","c":"read"}
+$ env | sort
+> {"w":"env","c":"read"}
+> {"w":"sort","c":"read"}
+$ printenv HOME
+> {"w":"printenv HOME","c":"read"}
+$ which -a git
+> {"w":"which -a git","c":"read"}
+$ type ls
+> {"w":"type ls","c":"read"}
+$ command -V ls
+> {"w":"command -V ls","c":"read"}
+$ echo
+> {"w":"echo","c":"read"}
+$ echo -n hi
+> {"w":"echo -n hi","c":"read"}
+$ echo "$@"
+> {"w":"echo $@","c":"read"}
+$ echo ${#x}
+> {"w":"echo ${#x}","c":"read"}
+$ echo $((1+2))
+> {"w":"echo $((1+2))","c":"read"}
+$ echo $'\x41'
+> {"w":"echo A","c":"read"}
+$ echo {1..3}
+> {"w":"echo {1..3}","c":"read"}
+$ echo ~
+> {"w":"echo ~","c":"read"}
+$ echo "a" 'b' c
+> {"w":"echo a b c","c":"read"}
+$ printf "%s\n" "$x"
+> {"w":"printf \"%s\\\\n\" $x","c":"read"}
+$ test -e file
+> {"w":"test -e file","c":"read"}
+$ [[ -f file ]]
+> (none)
+$ [ -n "$x" ] && echo yes
+> {"w":"echo yes","c":"read"}
+$ sleep 1
+> {"w":"sleep 1","c":"read"}
+$ true && false
+> {"w":"true","c":"read"}
+> {"w":"false","c":"read"}
+$ false || echo failed
+> {"w":"false","c":"read"}
+> {"w":"echo failed","c":"read"}
+$ ! true
+> {"w":"true","c":"read"}
+$ exit 0
+> {"w":"exit 0","c":"read"}
+$ exit
+> {"w":"exit","c":"read"}
+$ return 1
+> {"w":"return 1","c":"read"}
+$ set -x
+> {"w":"set -x","c":"read"}
+$ unset FOO
+> {"w":"unset FOO","c":"read"}
+$ export A=1 B=2
+> {"w":"export A=1 B=2","c":"read"}
+$ local x=1
+> {"w":"local x=1","c":"read"}
+$ declare -r y=2
+> {"w":"declare -r y=2","c":"read"}
+$ readonly Z=3
+> {"w":"readonly Z=3","c":"read"}
+$ alias rm='rm -i'
+> {"w":"alias \"rm=rm -i\"","c":"read"}
+$ unalias ll
+> {"w":"unalias ll","c":"read"}
+$ umask 022
+> {"w":"umask 022","c":"read"}
+$ ulimit -n 1024
+> {"w":"ulimit -n 1024","c":"read"}
+$ trap - EXIT
+> {"w":"trap - EXIT","c":"read"}
+$ trap "rm -f $TMP" EXIT INT
+> {"w":"trap \"rm -f $TMP\" EXIT INT","c":"read"}
+$ wait
+> {"w":"wait","c":"read"}
+$ jobs
+> {"w":"jobs","c":"read"}
+$ kill %1
+> {"w":"kill %1","c":"read"}
+$ history
+> {"w":"history","c":"read"}
+$ hash -r
+> {"w":"hash -r","c":"read"}
+$ source ./venv/bin/activate && pip install x
+> {"w":"source ./venv/bin/activate","c":"unknown","u":true}
+> {"w":"pip install x","c":"network,write"}
+$ . "$HOME/.cargo/env"
+> {"w":". $HOME/.cargo/env","c":"unknown","u":true}
+$ eval "$(ssh-agent -s)"
+> {"w":"eval \"$(ssh-agent -s)\"","c":"unknown","u":true}
+> {"w":"ssh-agent -s","c":"unknown","u":true}
+$ eval $(echo ls)
+> {"w":"eval \"$(echo ls)\"","c":"unknown","u":true}
+> {"w":"echo ls","c":"read"}
+$ eval
+> {"w":"eval","c":"read"}
+$ sh script.sh
+> {"w":"sh script.sh","c":"unknown","u":true}
+$ sh -c "$CMD"
+> {"w":"sh -c $CMD","c":"unknown","u":true}
+$ sh -c 'echo $0' arg
+> {"w":"sh -c \"echo $0\" arg","c":"unknown","u":true}
+> {"w":"echo $0","c":"read"}
+$ sh -ec 'rm -rf a; rm -rf b'
+> {"w":"sh -ec \"rm -rf a; rm -rf b\"","c":"unknown","u":true}
+> {"w":"rm -rf a","c":"delete","t":["delete+rec a"]}
+> {"w":"rm -rf b","c":"delete","t":["delete+rec b"]}
+$ sh -c 'sh -c "rm -rf deep"'
+> {"w":"sh -c \"sh -c \\\"rm -rf deep\\\"\"","c":"unknown","u":true}
+> {"w":"sh -c \"rm -rf deep\"","c":"unknown","u":true}
+> {"w":"rm -rf deep","c":"delete","t":["delete+rec deep"]}
+$ bash -c 'if [ -d x ]; then rm -rf x; fi'
+> {"w":"bash -c \"if [ -d x ]; then rm -rf x; fi\"","c":"unknown","u":true}
+> {"w":"rm -rf x","c":"delete","t":["delete+rec x"]}
+$ bash -c 'echo "unterminated'
+> !incomplete
+> {"w":"bash -c \"echo \\\"unterminated\"","c":"unknown","u":true}
+> {"w":"echo","c":"read"}
+$ bash --version
+> {"w":"bash --version","c":"unknown","u":true}
+$ bash -n script.sh
+> {"w":"bash -n script.sh","c":"unknown","u":true}
+$ bash -x ./script.sh
+> {"w":"bash -x ./script.sh","c":"unknown","u":true}
+$ dash -c 'ls'
+> {"w":"dash -c ls","c":"unknown","u":true}
+> {"w":"ls","c":"read"}
+$ fish -c 'rm x'
+> {"w":"fish -c \"rm x\"","c":"unknown","u":true}
+> {"w":"rm x","c":"delete","t":["delete x"]}
+$ env sh -c 'rm x'
+> {"w":"sh -c \"rm x\"","c":"unknown","u":true}
+> {"w":"rm x","c":"delete","t":["delete x"]}
+$ sudo sh -c 'rm x'
+> {"w":"sh -c \"rm x\"","c":"unknown","u":true}
+> {"w":"rm x","c":"delete","t":["delete x"]}
+$ xargs -I {} rm {}
+> {"w":"xargs -I {} rm {}","c":"delete,unknown","u":true}
+$ xargs -n 1 -P 4 sh -c 'rm "$0"'
+> {"w":"xargs -n 1 -P 4 sh -c \"rm \\\"$0\\\"\"","c":"unknown","u":true}
+> {"w":"rm $0","c":"delete","t":["delete+partial $0"]}
+$ xargs --no-run-if-empty rm -f
+> {"w":"xargs --no-run-if-empty rm -f","c":"delete,unknown","u":true}
+$ xargs -a list.txt rm
+> {"w":"xargs -a list.txt rm","c":"delete,unknown","u":true}
+$ xargs echo
+> {"w":"xargs echo","c":"unknown","u":true}
+$ xargs -t grep foo
+> {"w":"xargs -t grep foo","c":"unknown","u":true}
+$ xargs git rm
+> {"w":"xargs git rm","c":"delete,unknown","u":true,"g":"rm"}
+$ xargs git clean -fd
+> {"w":"xargs git clean -fd","c":"delete,git_history_rewrite,unknown","t":["delete+rec ."],"u":true,"g":"clean +rewrite"}
+$ ls | xargs -I% sh -c 'cd % && make clean'
+> {"w":"ls","c":"read"}
+> {"w":"xargs -I% sh -c \"cd % && make clean\"","c":"unknown","u":true}
+> {"w":"cd $__ARG__","c":"read"}
+> {"w":"make clean","c":"unknown","u":true}
+$ watch -n 5 ls
+> {"w":"ls","c":"read"}
+$ watch rm x
+> {"w":"rm x","c":"delete","t":["delete x"]}
+$ parallel rm ::: a b
+> {"w":"parallel rm ::: a b","c":"unknown","u":true}
+$ screen -dmS s rm x
+> {"w":"screen -dmS s rm x","c":"unknown","u":true}
+$ tmux new -d 'rm -rf x'
+> {"w":"tmux new -d \"rm -rf x\"","c":"unknown","u":true}
+$ at now <<< 'rm -rf x'
+> {"w":"at now","c":"unknown","u":true}
+$ crontab -r
+> {"w":"crontab -r","c":"unknown","u":true}
+$ systemctl restart nginx
+> {"w":"systemctl restart nginx","c":"unknown","u":true}
+$ journalctl -u x
+> {"w":"journalctl -u x","c":"unknown","u":true}
+$ mount /dev/sda1 /mnt
+> {"w":"mount /dev/sda1 /mnt","c":"unknown","u":true}
+$ chroot /mnt rm x
+> {"w":"chroot /mnt rm x","c":"unknown","u":true}
+$ unknown-tool --flag
+> {"w":"unknown-tool --flag","c":"unknown","u":true}
+$ ./gradlew clean
+> {"w":"./gradlew clean","c":"unknown","u":true}
+$ ../scripts/deploy.sh
+> {"w":"../scripts/deploy.sh","c":"unknown","u":true}
+$ /opt/tool/bin/run --all
+> {"w":"/opt/tool/bin/run --all","c":"unknown","u":true}
+$ /usr/bin/git push --force
+> {"w":"git push --force","c":"network,git_history_rewrite","g":"push +rewrite +force"}
+$ /usr/local/bin/rm x
+> {"w":"rm x","c":"delete","t":["delete x"]}
+$ "rm" -rf x
+> {"w":"rm -rf x","c":"delete","t":["delete+rec x"]}
+$ 'rm' x
+> {"w":"rm x","c":"delete","t":["delete x"]}
+$ r\m x
+> {"w":"rm x","c":"delete","t":["delete x"]}
+$ $RM x
+> {"w":"$RM x","c":"unknown","u":true}
+$ ${CMD} x
+> {"w":"${CMD} x","c":"unknown","u":true}
+$ "$CMD" -rf x
+> {"w":"$CMD -rf x","c":"unknown","u":true}
+$ $(which rm) x
+> {"w":"\"$(which rm)\" x","c":"unknown","u":true}
+> {"w":"which rm","c":"read"}
+$ `which rm` x
+> {"w":"\"`which rm`\" x","c":"unknown","u":true}
+> {"w":"which rm","c":"read"}
+$ rm$X x
+> {"w":"rm$X x","c":"unknown","u":true}
+$ FOO=bar
+> (none)
+$ FOO=bar BAZ=$(rm x)
+> {"w":"rm x","c":"delete","t":["delete x"]}
+$ FOO=1 rm -rf x
+> {"w":"rm -rf x","c":"delete","t":["delete+rec x"]}
+$ FOO=1 BAR=2
+> (none)
+$ A=1 sudo rm x
+> {"w":"rm x","c":"delete","t":["delete x"]}
+$ sudo A=1 rm x
+> {"w":"rm x","c":"delete","t":["delete x"]}
+$ echo a;;
+> {"w":"echo a","c":"read"}
+$ echo $(( 1 + 2
+> !incomplete
+> {"w":"echo","c":"read"}
+$ if then fi
+> !incomplete
+> {"w":"then fi","c":"unknown","u":true}
+$ ) rm x
+> !incomplete
+> {"w":"rm x","c":"delete","t":["delete x"]}
+$ rm x )
+> !incomplete
+> {"w":"rm x","c":"delete","t":["delete x"]}
+$ { rm x
+> !incomplete
+> {"w":"rm x","c":"delete","t":["delete x"]}
+$ rm x }
+> {"w":"rm x }","c":"delete","t":["delete x","delete }"]}
+$ echo "$(rm x)"
+> {"w":"echo \"$(rm x)\"","c":"read"}
+> {"w":"rm x","c":"delete","t":["delete x"]}
+$ echo '$(rm x)'
+> {"w":"echo \"$(rm x)\"","c":"read"}
+$ echo "`rm x`"
+> {"w":"echo \"`rm x`\"","c":"read"}
+> {"w":"rm x","c":"delete","t":["delete x"]}
+$ echo \$(rm x)
+> !incomplete
+> {"w":"echo $ \"(rm x)\"","c":"read"}
+$ echo $(echo $(rm x))
+> {"w":"echo \"$(echo $(rm x))\"","c":"read"}
+> {"w":"echo \"$(rm x)\"","c":"read"}
+> {"w":"rm x","c":"delete","t":["delete x"]}
+$ echo $(cd sub && rm x); rm y
+> {"w":"echo \"$(cd sub && rm x)\"","c":"read"}
+> {"w":"cd sub","c":"read"}
+> {"w":"rm x","c":"delete","t":["delete sub/x"]}
+> {"w":"rm y","c":"delete","t":["delete y"]}
+$ x=$(cd sub && pwd) && rm "$x/y"
+> {"w":"cd sub","c":"read"}
+> {"w":"pwd","c":"read"}
+> {"w":"rm $x/y","c":"delete","t":["delete+partial $x/y"]}
+$ echo <(rm x)
+> {"w":"echo \"<(rm x)\"","c":"read"}
+> {"w":"rm x","c":"delete","t":["delete x"]}
+$ cat <(echo a) <(echo b) > out
+> {"w":"cat \"<(echo a)\" \"<(echo b)\"","c":"write","t":["write out"]}
+> {"w":"echo a","c":"read"}
+> {"w":"echo b","c":"read"}
+$ diff <(git show HEAD:a) a
+> {"w":"diff \"<(git show HEAD:a)\" a","c":"read","t":["read a"]}
+> {"w":"git show HEAD:a","c":"read","g":"show"}
+$ f() { cd sub; rm x; }; f; rm y
+> {"w":"cd sub","c":"read"}
+> {"w":"rm x","c":"delete","t":["delete sub/x"]}
+> {"w":"f","c":"unknown","u":true}
+> {"w":"rm y","c":"delete","t":["delete y"]}
+$ f() { rm x; }
+> {"w":"rm x","c":"delete","t":["delete x"]}
+$ f() ( rm x )
+> {"w":"rm x","c":"delete","t":["delete x"]}
+$ function f { rm x; }; f
+> {"w":"rm x","c":"delete","t":["delete x"]}
+> {"w":"f","c":"unknown","u":true}
+$ g() { f() { rm x; }; }
+> {"w":"rm x","c":"delete","t":["delete x"]}
+$ select x in a b; do rm $x; done
+> {"w":"rm $x","c":"delete","t":["delete+partial $x"]}
+$ for ((i=0;i<3;i++)); do rm f$i; done
+> {"w":"rm f$i","c":"delete","t":["delete+partial f$i"]}
+$ for f in $(ls); do rm $f; done
+> {"w":"ls","c":"read"}
+> {"w":"rm $f","c":"delete","t":["delete+partial $f"]}
+$ for f in a b; do cd $f; rm x; cd ..; done
+> {"w":"cd $f","c":"read"}
+> {"w":"rm x","c":"delete","t":["delete+partial x"]}
+> {"w":"cd ..","c":"read"}
+$ for f in a b; do rm $f; done; rm c
+> {"w":"rm $f","c":"delete","t":["delete+partial $f"]}
+> {"w":"rm c","c":"delete","t":["delete c"]}
+$ while true; do rm x; break; done
+> {"w":"true","c":"read"}
+> {"w":"rm x","c":"delete","t":["delete x"]}
+> {"w":"break","c":"read"}
+$ while cd sub; do rm x; done
+> {"w":"cd sub","c":"read"}
+> {"w":"rm x","c":"delete","t":["delete sub/x"]}
+$ until rm x; do sleep 1; done
+> {"w":"rm x","c":"delete","t":["delete x"]}
+> {"w":"sleep 1","c":"read"}
+$ if rm x; then ls; else touch y; fi
+> {"w":"rm x","c":"delete","t":["delete x"]}
+> {"w":"ls","c":"read"}
+> {"w":"touch y","c":"write","t":["write y"]}
+$ if [ -d a ]; then cd a; fi; rm x
+> {"w":"cd a","c":"read"}
+> {"w":"rm x","c":"delete","t":["delete+partial x"]}
+$ if [ -d a ]; then rm -rf a; elif [ -d b ]; then rm -rf b; else touch c; fi
+> {"w":"rm -rf a","c":"delete","t":["delete+rec a"]}
+> {"w":"rm -rf b","c":"delete","t":["delete+rec b"]}
+> {"w":"touch c","c":"write","t":["write c"]}
+$ case "$1" in start) touch pid;; stop) rm pid;; esac
+> {"w":"touch pid","c":"write","t":["write pid"]}
+> {"w":"rm pid","c":"delete","t":["delete pid"]}
+$ [[ -d a ]] && cd a && rm x
+> {"w":"cd a","c":"read"}
+> {"w":"rm x","c":"delete","t":["delete a/x"]}
+$ [ -d a ] || mkdir a
+> {"w":"mkdir a","c":"write","t":["write a"]}
+$ cd a || cd b; rm x
+> {"w":"cd a","c":"read"}
+> {"w":"cd b","c":"read"}
+> {"w":"rm x","c":"delete","t":["delete+partial x"]}
+$ cd a && cd b || cd c
+> {"w":"cd a","c":"read"}
+> {"w":"cd b","c":"read"}
+> {"w":"cd c","c":"read"}
+$ rm a || rm b
+> {"w":"rm a","c":"delete","t":["delete a"]}
+> {"w":"rm b","c":"delete","t":["delete b"]}
+$ rm a && rm b || rm c
+> {"w":"rm a","c":"delete","t":["delete a"]}
+> {"w":"rm b","c":"delete","t":["delete b"]}
+> {"w":"rm c","c":"delete","t":["delete c"]}
+$ rm a; rm b & rm c
+> {"w":"rm a","c":"delete","t":["delete a"]}
+> {"w":"rm b","c":"delete","t":["delete b"]}
+> {"w":"rm c","c":"delete","t":["delete c"]}
+$ rm a & wait
+> {"w":"rm a","c":"delete","t":["delete a"]}
+> {"w":"wait","c":"read"}
+$ time (rm a; rm b)
+> {"w":"\"(rm a; rm b)\"","c":"unknown","u":true}
+$ time { rm a; }
+> {"w":"{ rm a","c":"unknown","u":true}
+> {"w":"}","c":"unknown","u":true}
+$ (rm a) &
+> {"w":"rm a","c":"delete","t":["delete a"]}
+$ ( ( rm a ) )
+> {"w":"rm a","c":"delete","t":["delete a"]}
+$ { { rm a; }; }
+> {"w":"rm a","c":"delete","t":["delete a"]}
+$ ! { rm a; }
+> {"w":"{ rm a","c":"unknown","u":true}
+> {"w":"}","c":"unknown","u":true}
+$ coproc rm a
+> {"w":"coproc rm a","c":"unknown","u":true}
+$ rm a | tee log
+> {"w":"rm a","c":"delete","t":["delete a"]}
+> {"w":"tee log","c":"write","t":["write log"]}
+$ rm a |& tee log
+> {"w":"rm a","c":"delete","t":["delete a"]}
+> {"w":"tee log","c":"write","t":["write log"]}
+$ cat a | rm
+> {"w":"cat a","c":"read","t":["read a"]}
+> {"w":"rm","c":"delete"}
+$ echo a | xargs rm -rf | tee log
+> {"w":"echo a","c":"read"}
+> {"w":"xargs rm -rf","c":"delete,unknown","u":true}
+> {"w":"tee log","c":"write","t":["write log"]}
+$ cmd1 | cmd2 > out 2>&1 &
+> {"w":"cmd1","c":"unknown","u":true}
+> {"w":"cmd2","c":"unknown,write","t":["write out"],"u":true}
+$ ls | while read f; do rm "$f"; done
+> {"w":"ls","c":"read"}
+> {"w":"read f","c":"read"}
+> {"w":"rm $f","c":"delete","t":["delete+partial $f"]}
+$ ls | (cd sub && xargs rm)
+> {"w":"ls","c":"read"}
+> {"w":"cd sub","c":"read"}
+> {"w":"xargs rm","c":"delete,unknown","u":true}
+$ git log | head -5
+> {"w":"git log","c":"read","g":"log"}
+> {"w":"head -5","c":"read"}
+$ git diff | grep '^+' > added.txt
+> {"w":"git diff","c":"read","g":"diff"}
+> {"w":"grep ^+","c":"write","t":["write added.txt"]}
+$ git status --porcelain | awk '{print $2}' | xargs rm -rf
+> {"w":"git status --porcelain","c":"read","g":"status"}
+> {"w":"awk \"{print $2}\"","c":"read"}
+> {"w":"xargs rm -rf","c":"delete,unknown","u":true}
+$ git ls-files -z | xargs -0 sed -i 's/a/b/'
+> {"w":"git ls-files -z","c":"read","g":"ls-files"}
+> {"w":"xargs -0 sed -i s/a/b/","c":"write,unknown","u":true}
+$ git branch --merged | grep -v main | xargs git branch -d
+> {"w":"git branch --merged","c":"read","g":"branch"}
+> {"w":"grep -v main","c":"read"}
+> {"w":"xargs git branch -d","c":"write,unknown","u":true,"g":"branch"}
+$ git branch --merged | xargs git branch -D
+> {"w":"git branch --merged","c":"read","g":"branch"}
+> {"w":"xargs git branch -D","c":"write,git_history_rewrite,unknown","u":true,"g":"branch +rewrite"}
+$ git for-each-ref --format='%(refname)' refs/heads | xargs git branch -D
+> {"w":"git for-each-ref --format=%(refname) refs/heads","c":"read","g":"for-each-ref"}
+> {"w":"xargs git branch -D","c":"write,git_history_rewrite,unknown","u":true,"g":"branch +rewrite"}
+$ git stash && git pull && git stash pop
+> {"w":"git stash","c":"write","u":true,"g":"stash"}
+> {"w":"git pull","c":"network,write","u":true,"g":"pull +commit"}
+> {"w":"git stash pop","c":"write","u":true,"g":"stash"}
+$ git fetch origin && git reset --hard origin/main
+> {"w":"git fetch origin","c":"network","g":"fetch"}
+> {"w":"git reset --hard origin/main","c":"write,git_history_rewrite","u":true,"g":"reset +rewrite refs=origin/main"}
+$ git checkout main && git pull && git branch -D feature
+> {"w":"git checkout main","c":"write","u":true,"g":"checkout refs=main"}
+> {"w":"git pull","c":"network,write","u":true,"g":"pull +commit"}
+> {"w":"git branch -D feature","c":"write,git_history_rewrite","g":"branch +rewrite refs=feature"}
+$ git push origin --force-with-lease && git push --tags
+> {"w":"git push origin --force-with-lease","c":"network,git_history_rewrite","g":"push +rewrite +force"}
+> {"w":"git push --tags","c":"network","g":"push"}
+$ cargo fmt && cargo clippy -- -D warnings && cargo test
+> {"w":"cargo fmt","c":"write","t":["write+rec ."]}
+> {"w":"cargo clippy -- -D warnings","c":"write","t":["write+rec target"]}
+> {"w":"cargo test","c":"write,unknown","t":["write+rec target"],"u":true}
+$ npm ci && npm run build && npm test
+> {"w":"npm ci","c":"network,write","t":["write+rec node_modules","write package.json","write package-lock.json"]}
+> {"w":"npm run build","c":"unknown","u":true}
+> {"w":"npm test","c":"unknown","u":true}
+$ cd web && npm install && npm run build && cd .. && rm -rf web/node_modules
+> {"w":"cd web","c":"read"}
+> {"w":"npm install","c":"network,write","t":["write+rec web/node_modules","write web/package.json","write web/package-lock.json"]}
+> {"w":"npm run build","c":"unknown","u":true}
+> {"w":"cd ..","c":"read"}
+> {"w":"rm -rf web/node_modules","c":"delete","t":["delete+rec web/node_modules"]}
+$ make clean && make -j8
+> {"w":"make clean","c":"unknown","u":true}
+> {"w":"make -j8","c":"unknown","u":true}
+$ docker build . && docker push app
+> {"w":"docker build .","c":"unknown","u":true}
+> {"w":"docker push app","c":"network"}
+$ pytest tests/ -k foo --cov=src
+> {"w":"pytest tests/ -k foo --cov=src","c":"unknown","u":true}
+$ tox -e py311
+> {"w":"tox -e py311","c":"unknown","u":true}
+$ black . && isort . && flake8
+> {"w":"black .","c":"write","t":["write+rec ."]}
+> {"w":"isort .","c":"write","t":["write+rec ."]}
+> {"w":"flake8","c":"read"}
+$ pre-commit run --all-files
+> {"w":"pre-commit run --all-files","c":"unknown","u":true}
+$ shellcheck script.sh
+> {"w":"shellcheck script.sh","c":"read"}
+$ mypy src
+> {"w":"mypy src","c":"read"}
+$ tsc -p tsconfig.json
+> {"w":"tsc -p tsconfig.json","c":"write","u":true}
+$ tsc --noEmit
+> {"w":"tsc --noEmit","c":"read"}
+$ webpack --mode production
+> {"w":"webpack --mode production","c":"unknown","u":true}
+$ vite build
+> {"w":"vite build","c":"unknown","u":true}
+$ next build
+> {"w":"next build","c":"unknown","u":true}
+$ jest --watch
+> {"w":"jest --watch","c":"unknown","u":true}
+$ eslint src
+> {"w":"eslint src","c":"read"}
+$ eslint .
+> {"w":"eslint .","c":"read"}
+$ prettier --write "src/**/*.{ts,tsx}"
+> {"w":"prettier --write src/**/*.{ts,tsx}","c":"write","t":["write+rec+glob src/**/*.{ts,tsx}"]}
+$ prettier -w a.js b.js
+> {"w":"prettier -w a.js b.js","c":"write","t":["write+rec a.js","write+rec b.js"]}
+$ rustfmt src/main.rs
+> {"w":"rustfmt src/main.rs","c":"write","t":["write+rec src/main.rs"]}
+$ rustfmt --check src/main.rs
+> {"w":"rustfmt --check src/main.rs","c":"read"}
+$ black --diff .
+> {"w":"black --diff .","c":"read"}
+$ isort --check .
+> {"w":"isort --check .","c":"read"}
+$ isort .
+> {"w":"isort .","c":"write","t":["write+rec ."]}
+$ clang-format -i main.c
+> {"w":"clang-format -i main.c","c":"write","t":["write+rec main.c"]}
+$ clang-format main.c
+> {"w":"clang-format main.c","c":"read"}
+$ shfmt -w script.sh
+> {"w":"shfmt -w script.sh","c":"write","t":["write+rec script.sh"]}
+$ yapf -i a.py
+> {"w":"yapf -i a.py","c":"write","t":["write+rec a.py"]}
+$ autopep8 --in-place a.py
+> {"w":"autopep8 --in-place a.py","c":"write","t":["write+rec a.py"]}
+$ goimports -w .
+> {"w":"goimports -w .","c":"write","t":["write+rec ."]}
+$ terraform fmt
+> {"w":"terraform fmt","c":"unknown","u":true}
+$ biome check --write .
+> {"w":"biome check --write .","c":"write","t":["write+rec ."]}
+$ ruff
+> {"w":"ruff","c":"unknown","u":true}
+$ gcc main.c
+> {"w":"gcc main.c","c":"write","u":true}
+$ g++ -std=c++20 -O2 main.cpp -o main
+> {"w":"g++ -std=c++20 -O2 main.cpp -o main","c":"write","t":["write+rec main"]}
+$ clang -fsyntax-only a.c
+> {"w":"clang -fsyntax-only a.c","c":"write","u":true}
+$ javac -d out A.java
+> {"w":"javac -d out A.java","c":"write","t":["write+rec out"]}
+$ rustc --edition 2021 -o out main.rs
+> {"w":"rustc --edition 2021 -o out main.rs","c":"write","t":["write out"]}
+$ tsc --outDir dist
+> {"w":"tsc --outDir dist","c":"write","t":["write+rec dist"]}
+$ nm a.out
+> {"w":"nm a.out","c":"read"}
+$ strip a.out
+> {"w":"strip a.out","c":"unknown","u":true}
+$ patch -p1 < fix.patch
+> {"w":"patch -p1","c":"write","t":["read fix.patch"],"u":true}
+$ split -l 100 big.txt part_
+> {"w":"split -l 100 big.txt part_","c":"write","u":true}
+$ rename 's/a/b/' *.txt
+> {"w":"rename s/a/b/ *.txt","c":"write","u":true}
+$ mkfifo pipe
+> {"w":"mkfifo pipe","c":"write","u":true}
+$ shred file
+> {"w":"shred file","c":"delete","t":["delete file"]}
+$ trash file
+> {"w":"trash file","c":"delete","t":["delete file"]}
+$ gio trash file
+> {"w":"gio trash file","c":"unknown","u":true}
+$ open .
+> {"w":"open .","c":"unknown","u":true}
+$ code file.rs
+> {"w":"code file.rs","c":"unknown","u":true}
+$ vim file
+> {"w":"vim file","c":"unknown","u":true}
+$ nano file
+> {"w":"nano file","c":"unknown","u":true}
+$ emacs -nw file
+> {"w":"emacs -nw file","c":"unknown","u":true}
+$ xdg-open file
+> {"w":"xdg-open file","c":"unknown","u":true}
+$ pbcopy < file
+> {"w":"pbcopy","c":"read","t":["read file"]}
+$ clip < file
+> {"w":"clip","c":"read","t":["read file"]}
+$ notify-send hi
+> {"w":"notify-send hi","c":"unknown","u":true}
+$ say hello
+> {"w":"say hello","c":"unknown","u":true}
+$ afplay x.mp3
+> {"w":"afplay x.mp3","c":"unknown","u":true}
+$ sudo apt install -y git
+> {"w":"apt install -y git","c":"network,write"}
+$ sudo systemctl stop x
+> {"w":"systemctl stop x","c":"unknown","u":true}
+$ sudo tee /etc/x <<< 'a'
+> {"w":"tee /etc/x","c":"write","t":["write /etc/x"]}
+$ sudo chown -R $USER .
+> {"w":"chown -R $USER .","c":"write","t":["write+rec ."]}
+$ sudo -u www-data touch /var/www/x
+> {"w":"touch /var/www/x","c":"write","t":["write /var/www/x"]}
+$ sudo -n true
+> {"w":"true","c":"read"}
+$ sudo -v
+> {"w":"sudo -v","c":"read"}
+$ sudo -l
+> {"w":"sudo -l","c":"read"}
+$ su -c 'rm x'
+> {"w":"su -c \"rm x\"","c":"unknown","u":true}
+$ passwd
+> {"w":"passwd","c":"unknown","u":true}
+$ yes | rm -i *
+> {"w":"yes","c":"read"}
+> {"w":"rm -i *","c":"delete","t":["delete+glob *"]}
+$ yes
+> {"w":"yes","c":"read"}
+$ true | rm x
+> {"w":"true","c":"read"}
+> {"w":"rm x","c":"delete","t":["delete x"]}
+
+# ---- more PowerShell ---------------------------------------------------------------------
+$ps Remove-Item build -Recurse -Force -ErrorAction SilentlyContinue
+> {"w":"Remove-Item build -Recurse -Force -ErrorAction SilentlyContinue","c":"delete","t":["delete+rec build"]}
+$ps Remove-Item -Path "build","dist" -Recurse
+> {"w":"Remove-Item -Path build,dist -Recurse","c":"delete","t":["delete+rec build","delete+rec dist"]}
+$ps Remove-Item -Path build\* -Recurse
+> {"w":"Remove-Item -Path \"build\\\\*\" -Recurse","c":"delete","t":["delete+rec+glob build\\*"]}
+$ps Remove-Item .\*.log
+> {"w":"Remove-Item \".\\\\*.log\"","c":"delete","t":["delete+glob .\\*.log"]}
+$ps Remove-Item -Include *.tmp -Recurse
+> {"w":"Remove-Item -Include *.tmp -Recurse","c":"delete","u":true}
+$ps Remove-Item -Path:build -Recurse:$true
+> {"w":"Remove-Item -Path:build -Recurse:$true","c":"delete","t":["delete+rec build"]}
+$ps Remove-Item -Rec build
+> {"w":"Remove-Item -Rec build","c":"delete","t":["delete+rec build"]}
+$ps Remove-Item -Confirm:$false x
+> {"w":"Remove-Item -Confirm:$false x","c":"delete","t":["delete x"]}
+$ps rd /s /q build
+> {"w":"rd /s /q build","c":"delete","t":["delete /s","delete /q","delete build"]}
+$ps rmdir build -Recurse
+> {"w":"rmdir build -Recurse","c":"delete","t":["delete+rec build"]}
+$ps erase x
+> {"w":"erase x","c":"delete","t":["delete x"]}
+$ps rm x, y -Force
+> {"w":"rm x, y -Force","c":"delete","t":["delete x","delete y"]}
+$ps ri $path
+> {"w":"ri $path","c":"delete","t":["delete+partial $path"]}
+$ps Get-ChildItem | Remove-Item -Recurse -Force
+> {"w":"Get-ChildItem","c":"read"}
+> {"w":"Remove-Item -Recurse -Force","c":"delete","u":true}
+$ps ls | rm -r
+> {"w":"ls","c":"read"}
+> {"w":"rm -r","c":"delete","u":true}
+$ps gci -Recurse *.tmp | rm
+> {"w":"gci -Recurse *.tmp","c":"read","t":["read+rec+glob *.tmp"]}
+> {"w":"rm","c":"delete","u":true}
+$ps Move-Item "a b" "c d"
+> {"w":"Move-Item \"a b\" \"c d\"","c":"move","t":["delete+rec a b","write+rec c d"]}
+$ps mv a b
+> {"w":"mv a b","c":"move","t":["delete+rec a","write+rec b"]}
+$ps move a b
+> {"w":"move a b","c":"move","t":["delete+rec a","write+rec b"]}
+$ps Move-Item -Path a, b -Destination dir
+> {"w":"Move-Item -Path a, b -Destination dir","c":"move","t":["delete+rec a","write+rec dir"]}
+$ps Copy-Item -Path a -Destination b
+> {"w":"Copy-Item -Path a -Destination b","c":"write","t":["read a","write+rec b"]}
+$ps cp a b -Recurse
+> {"w":"cp a b -Recurse","c":"write","t":["read+rec a","write+rec b"]}
+$ps copy a b
+> {"w":"copy a b","c":"write","t":["read a","write+rec b"]}
+$ps Set-Content out.txt "hi"
+> {"w":"Set-Content out.txt hi","c":"write","t":["write out.txt"]}
+$ps sc out.txt hi
+> {"w":"sc out.txt hi","c":"write","t":["write out.txt"]}
+$ps Out-File -FilePath out.txt -Append
+> {"w":"Out-File -FilePath out.txt -Append","c":"write","t":["write out.txt"]}
+$ps Get-Content a | Set-Content b
+> {"w":"Get-Content a","c":"read","t":["read a"]}
+> {"w":"Set-Content b","c":"write","t":["write b"]}
+$ps Get-Content a | Out-File b
+> {"w":"Get-Content a","c":"read","t":["read a"]}
+> {"w":"Out-File b","c":"write","t":["write b"]}
+$ps Get-Content a > b
+> {"w":"Get-Content a","c":"write","t":["read a","write b"]}
+$ps Get-Date >> log.txt
+> {"w":"Get-Date","c":"write","t":["write log.txt"]}
+$ps Get-Date 2> err.txt
+> {"w":"Get-Date","c":"write","t":["write err.txt"]}
+$ps command *> all.txt
+> {"w":"command","c":"write","t":["write all.txt"]}
+$ps command 2>&1
+> {"w":"command","c":"read"}
+$ps command > $null
+> {"w":"command","c":"read"}
+$ps Write-Output hi | Out-Null
+> {"w":"Write-Output hi","c":"read"}
+> {"w":"Out-Null","c":"read"}
+$ps New-Item out.txt
+> {"w":"New-Item out.txt","c":"write","t":["write out.txt"]}
+$ps New-Item -ItemType File -Name f.txt -Path dir
+> {"w":"New-Item -ItemType File -Name f.txt -Path dir","c":"write","t":["write dir/f.txt"]}
+$ps ni a.txt -Force
+> {"w":"ni a.txt -Force","c":"write","t":["write a.txt"]}
+$ps mkdir out
+> {"w":"mkdir out","c":"write","t":["write out"]}
+$ps md a, b
+> {"w":"md a, b","c":"write","t":["write a","write b"]}
+$ps Rename-Item -Path old -NewName new
+> {"w":"Rename-Item -Path old -NewName new","c":"move","t":["delete+rec old","write+rec new"]}
+$ps Rename-Item dir\old.txt new.txt
+> {"w":"Rename-Item \"dir\\\\old.txt\" new.txt","c":"move","t":["delete+rec dir\\old.txt","write+rec dir/new.txt"]}
+$ps ren a b
+> {"w":"ren a b","c":"move","t":["delete+rec a","write+rec b"]}
+$ps Clear-Content log.txt
+> {"w":"Clear-Content log.txt","c":"write","t":["write log.txt"]}
+$ps Add-Content -Path log.txt -Value "x"
+> {"w":"Add-Content -Path log.txt -Value x","c":"write","t":["write log.txt"]}
+$ps Tee-Object -FilePath out.txt
+> {"w":"Tee-Object -FilePath out.txt","c":"write","t":["write out.txt"]}
+$ps Export-Csv out.csv
+> {"w":"Export-Csv out.csv","c":"write","t":["write out.csv"]}
+$ps cd ..; Remove-Item x
+> {"w":"cd ..","c":"read"}
+> {"w":"Remove-Item x","c":"delete","t":["delete ../x"]}
+$ps Push-Location sub; Remove-Item x; Pop-Location
+> {"w":"Push-Location sub","c":"read"}
+> {"w":"Remove-Item x","c":"delete","t":["delete+partial x"]}
+> {"w":"Pop-Location","c":"read"}
+$ps Set-Location -Path sub; rm x
+> {"w":"Set-Location -Path sub","c":"read"}
+> {"w":"rm x","c":"delete","t":["delete sub/x"]}
+$ps sl sub; ri x
+> {"w":"sl sub","c":"read"}
+> {"w":"ri x","c":"delete","t":["delete sub/x"]}
+$ps cd $dir; ri x
+> {"w":"cd $dir","c":"read"}
+> {"w":"ri x","c":"delete","t":["delete+partial x"]}
+$ps pwd
+> {"w":"pwd","c":"read"}
+$ps Get-Location
+> {"w":"Get-Location","c":"read"}
+$ps ls -Recurse
+> {"w":"ls -Recurse","c":"read"}
+$ps dir
+> {"w":"dir","c":"read"}
+$ps cat file.txt
+> {"w":"cat file.txt","c":"read","t":["read file.txt"]}
+$ps type file.txt
+> {"w":"type file.txt","c":"read","t":["read file.txt"]}
+$ps gc a, b
+> {"w":"gc a, b","c":"read","t":["read a","read b"]}
+$ps Select-String -Path *.txt -Pattern foo
+> {"w":"Select-String -Path *.txt -Pattern foo","c":"read","t":["read+glob *.txt"]}
+$ps sls foo a.txt
+> {"w":"sls foo a.txt","c":"read","t":["read a.txt"]}
+$ps Test-Path build
+> {"w":"Test-Path build","c":"read"}
+$ps Get-ChildItem -Path . -Recurse | Where-Object { $_.Name -like "*.tmp" } | Remove-Item
+> {"w":"Get-ChildItem -Path . -Recurse","c":"read","t":["read+rec ."]}
+> {"w":"Where-Object {...}","c":"read"}
+> {"w":"Remove-Item","c":"delete","u":true}
+$ps Get-ChildItem -Recurse | ForEach-Object { if ($_.Length -eq 0) { Remove-Item $_.FullName } }
+> {"w":"Get-ChildItem -Recurse","c":"read"}
+> {"w":"ForEach-Object {...}","c":"read"}
+> {"w":"Remove-Item $_.FullName","c":"delete","t":["delete+partial $_.FullName"]}
+$ps foreach ($f in Get-ChildItem) { Remove-Item $f }
+> {"w":"Remove-Item $f","c":"delete","t":["delete+partial $f"]}
+$ps $files = Get-ChildItem; Remove-Item $files
+> {"w":"Get-ChildItem","c":"read"}
+> {"w":"Remove-Item $files","c":"delete","t":["delete+partial $files"]}
+$ps $x = Remove-Item a
+> {"w":"Remove-Item a","c":"delete","t":["delete a"]}
+$ps $x = 5
+> (none)
+$ps & "C:\tools\x.exe" --flag
+> {"w":"\"C:\\\\tools\\\\x.exe\" --flag","c":"unknown","u":true}
+$ps & $cmd args
+> {"w":"$cmd args","c":"unknown","u":true}
+$ps . .\script.ps1
+> {"w":". \".\\\\script.ps1\"","c":"unknown","u":true}
+$ps .\build.ps1
+> {"w":"\".\\\\build.ps1\"","c":"unknown","u":true}
+$ps C:\tools\x.exe
+> {"w":"\"C:\\\\tools\\\\x.exe\"","c":"unknown","u":true}
+$ps Invoke-Command -ScriptBlock { Remove-Item x }
+> {"w":"Invoke-Command -ScriptBlock {...}","c":"unknown","u":true}
+> {"w":"Remove-Item x","c":"delete","t":["delete x"]}
+$ps Start-Process -FilePath cmd -ArgumentList "/c del x"
+> {"w":"Start-Process -FilePath cmd -ArgumentList \"/c del x\"","c":"unknown","u":true}
+$ps Stop-Process -Name x
+> {"w":"Stop-Process -Name x","c":"unknown","u":true}
+$ps Restart-Service x
+> {"w":"Restart-Service x","c":"unknown","u":true}
+$ps Set-ExecutionPolicy Bypass
+> {"w":"Set-ExecutionPolicy Bypass","c":"unknown","u":true}
+$ps Install-Module x
+> {"w":"Install-Module x","c":"unknown","u":true}
+$ps Import-Module x
+> {"w":"Import-Module x","c":"read"}
+$ps Invoke-RestMethod https://x.com
+> {"w":"Invoke-RestMethod https://x.com","c":"network"}
+$ps irm https://x.com/install.ps1 | iex
+> {"w":"irm https://x.com/install.ps1","c":"network"}
+> {"w":"iex","c":"unknown","u":true}
+$ps iwr https://x.com/a.zip -OutFile a.zip
+> {"w":"iwr https://x.com/a.zip -OutFile a.zip","c":"network,write","t":["write a.zip"]}
+$ps curl https://x.com
+> {"w":"curl https://x.com","c":"network"}
+$ps wget https://x.com -OutFile out
+> {"w":"wget https://x.com -OutFile out","c":"network,write","t":["write out"]}
+$ps git status
+> {"w":"git status","c":"read","g":"status"}
+$ps git clean -fdx
+> {"w":"git clean -fdx","c":"delete,git_history_rewrite","t":["delete+rec ."],"g":"clean +rewrite"}
+$ps git reset --hard
+> {"w":"git reset --hard","c":"write,git_history_rewrite","u":true,"g":"reset +rewrite"}
+$ps git push origin +main
+> {"w":"git push origin +main","c":"network,git_history_rewrite","g":"push +rewrite +force refs=main"}
+$ps npm install
+> {"w":"npm install","c":"network,write","t":["write+rec node_modules","write package.json","write package-lock.json"]}
+$ps python script.py
+> {"w":"python script.py","c":"unknown","u":true}
+$ps pip install x
+> {"w":"pip install x","c":"network,write"}
+$ps dotnet build
+> {"w":"dotnet build","c":"unknown","u":true}
+$ps msbuild
+> {"w":"msbuild","c":"unknown","u":true}
+$ps cargo build
+> {"w":"cargo build","c":"write","t":["write+rec target"]}
+$ps docker ps
+> {"w":"docker ps","c":"read"}
+$ps echo "a b"
+> {"w":"echo \"a b\"","c":"read"}
+$ps echo 'it''s'
+> {"w":"echo it's","c":"read"}
+$ps Write-Host "a`nb"
+> {"w":"Write-Host anb","c":"read"}
+$ps Remove-Item "a`"b"
+> {"w":"Remove-Item \"a\\\"b\"","c":"delete","t":["delete a\"b"]}
+$ps "just a string"
+> (none)
+$ps 1 + 2
+> (none)
+$ps (Get-Item x).Delete()
+> {"w":"\"(Get-Item x).Delete()\"","c":"unknown","u":true}
+$ps [System.IO.File]::Delete("x")
+> {"w":"\"[System.IO.File]::Delete(\\\"x\\\")\"","c":"unknown","u":true}
+$ps Remove-Item x # comment
+> {"w":"Remove-Item x","c":"delete","t":["delete x"]}
+$ps # only a comment
+> (none)
+$ps Remove-Item x;
+> {"w":"Remove-Item x","c":"delete","t":["delete x"]}
+$ps ;;
+> (none)
+$ps Remove-Item {unterminated
+> !incomplete
+> {"w":"Remove-Item","c":"delete","u":true}
+$ps Remove-Item x `
+| -Force
+> {"w":"Remove-Item x -Force","c":"delete","t":["delete x"]}
+$ps if ($true) { rm x } else { rm y }
+> {"w":"rm x","c":"delete","t":["delete x"]}
+> {"w":"rm y","c":"delete","t":["delete y"]}
+$ps try { Remove-Item x } catch { Write-Error $_ }
+> {"w":"Remove-Item x","c":"delete","t":["delete x"]}
+> {"w":"Write-Error $_","c":"read"}
+$ps function Clean { Remove-Item build -Recurse }; Clean
+> {"w":"Remove-Item build -Recurse","c":"delete","t":["delete+rec build"]}
+> {"w":"Clean","c":"unknown","u":true}
+$ps 1..3 | ForEach-Object { Remove-Item "f$_" }
+> {"w":"ForEach-Object {...}","c":"read"}
+> {"w":"Remove-Item f$_","c":"delete","t":["delete+partial f$_"]}
+$ps Get-ChildItem | % { rm $_ }
+> {"w":"Get-ChildItem","c":"read"}
+> {"w":"% {...}","c":"read"}
+> {"w":"rm $_","c":"delete","t":["delete+partial $_"]}
+$ps Get-ChildItem | ? { $_.Length -gt 5 } | rm
+> {"w":"Get-ChildItem","c":"read"}
+> {"w":"? {...}","c":"read"}
+> {"w":"rm","c":"delete","u":true}
+
+# ---- more cmd.exe ------------------------------------------------------------------------
+$cmd del /q *.*
+> {"w":"del /q *.*","c":"delete","t":["delete+glob *.*"]}
+$cmd del /s /f /q build\*
+> {"w":"del /s /f /q \"build\\\\*\"","c":"delete","t":["delete+rec+glob build\\*"]}
+$cmd del /a:h file
+> {"w":"del /a:h file","c":"delete","t":["delete file"]}
+$cmd del a.txt b.txt
+> {"w":"del a.txt b.txt","c":"delete","t":["delete a.txt","delete b.txt"]}
+$cmd del "a b.txt"
+> {"w":"del \"a b.txt\"","c":"delete","t":["delete a b.txt"]}
+$cmd del %1
+> {"w":"del %1","c":"delete","t":["delete+partial %1"]}
+$cmd del !x!
+> {"w":"del !x!","c":"delete","t":["delete+partial !x!"]}
+$cmd del ^&file
+> {"w":"del &file","c":"delete","t":["delete &file"]}
+$cmd erase /q x
+> {"w":"erase /q x","c":"delete","t":["delete x"]}
+$cmd rd build
+> {"w":"rd build","c":"delete","t":["delete build"]}
+$cmd rd /s build
+> {"w":"rd /s build","c":"delete","t":["delete+rec build"]}
+$cmd rmdir /q /s dir
+> {"w":"rmdir /q /s dir","c":"delete","t":["delete+rec dir"]}
+$cmd rmdir "dir with space" /s /q
+> {"w":"rmdir \"dir with space\" /s /q","c":"delete","t":["delete+rec dir with space"]}
+$cmd move /y a b
+> {"w":"move /y a b","c":"move","t":["delete+rec a","write+rec b"]}
+$cmd move "a b" "c d"
+> {"w":"move \"a b\" \"c d\"","c":"move","t":["delete+rec a b","write+rec c d"]}
+$cmd move a dir\
+> {"w":"move a \"dir\\\\\"","c":"move","t":["delete+rec a","write+rec dir\\"]}
+$cmd copy /y a b
+> {"w":"copy /y a b","c":"write","t":["read a","write+rec b"]}
+$cmd copy a b c
+> {"w":"copy a b c","c":"write","t":["read a","write+rec b"]}
+$cmd copy con file
+> {"w":"copy con file","c":"write","t":["read con","write+rec file"]}
+$cmd xcopy /s /e /y src dest
+> {"w":"xcopy /s /e /y src dest","c":"write","t":["read+rec src","write+rec dest"]}
+$cmd xcopy src dest
+> {"w":"xcopy src dest","c":"write","t":["read src","write+rec dest"]}
+$cmd robocopy src dest /e
+> {"w":"robocopy src dest /e","c":"write","t":["read+rec src","write+rec dest"]}
+$cmd robocopy src dest /purge
+> {"w":"robocopy src dest /purge","c":"write,delete","t":["read+rec src","write+rec dest","delete+rec dest"]}
+$cmd robocopy src dest /mov
+> {"w":"robocopy src dest /mov","c":"write,delete","t":["read+rec src","write+rec dest","delete+rec src"]}
+$cmd robocopy src dest /move
+> {"w":"robocopy src dest /move","c":"write,delete","t":["read+rec src","write+rec dest","delete+rec src"]}
+$cmd robocopy src
+> {"w":"robocopy src","c":"write","u":true}
+$cmd ren a b
+> {"w":"ren a b","c":"move","t":["delete+rec a","write+rec b"]}
+$cmd rename "a b" c
+> {"w":"rename \"a b\" c","c":"move","t":["delete+rec a b","write+rec c"]}
+$cmd rename dir\a b
+> {"w":"rename \"dir\\\\a\" b","c":"move","t":["delete+rec dir\\a","write+rec dir/b"]}
+$cmd md a\b\c
+> {"w":"md \"a\\\\b\\\\c\"","c":"write","t":["write a\\b\\c"]}
+$cmd mkdir a b
+> {"w":"mkdir a b","c":"write","t":["write a","write b"]}
+$cmd cd ..
+> {"w":"cd ..","c":"read"}
+$cmd cd ..\.. && del x
+> {"w":"cd \"..\\\\..\"","c":"read"}
+> {"w":"del x","c":"delete","t":["delete ../../x"]}
+$cmd cd /d D:\x
+> {"w":"cd /d \"D:\\\\x\"","c":"read"}
+$cmd cd %TEMP% & del x
+> {"w":"cd %TEMP%","c":"read"}
+> {"w":"del x","c":"delete","t":["delete+partial x"]}
+$cmd chdir build
+> {"w":"chdir build","c":"read"}
+$cmd pushd build
+> {"w":"pushd build","c":"read"}
+$cmd popd
+> {"w":"popd","c":"read"}
+$cmd cd build & cd .. & del x
+> {"w":"cd build","c":"read"}
+> {"w":"cd ..","c":"read"}
+> {"w":"del x","c":"delete","t":["delete x"]}
+$cmd cd build && rd /s /q out
+> {"w":"cd build","c":"read"}
+> {"w":"rd /s /q out","c":"delete","t":["delete+rec build/out"]}
+$cmd type a b
+> {"w":"type a b","c":"read","t":["read a","read b"]}
+$cmd type a > b
+> {"w":"type a","c":"write","t":["read a","write b"]}
+$cmd type a >> b
+> {"w":"type a","c":"write","t":["read a","write b"]}
+$cmd echo hi > nul
+> {"w":"echo hi","c":"read"}
+$cmd echo hi >> log 2>&1
+> {"w":"echo hi","c":"write","t":["write log"]}
+$cmd echo %PATH%
+> {"w":"echo %PATH%","c":"read"}
+$cmd echo off
+> {"w":"echo off","c":"read"}
+$cmd echo.
+> {"w":"echo.","c":"read"}
+$cmd set X=1
+> {"w":"set X=1","c":"read"}
+$cmd set X=1 && del %X%
+> {"w":"set X=1","c":"read"}
+> {"w":"del %X%","c":"delete","t":["delete+partial %X%"]}
+$cmd findstr foo a.txt
+> {"w":"findstr foo a.txt","c":"read","t":["read a.txt"]}
+$cmd find "foo" a.txt
+> {"w":"find foo a.txt","c":"read","t":["read a.txt"]}
+$cmd dir /s
+> {"w":"dir /s","c":"read"}
+$cmd dir > list.txt
+> {"w":"dir","c":"write","t":["write list.txt"]}
+$cmd more < file
+> {"w":"more","c":"read","t":["read file"]}
+$cmd title x
+> {"w":"title x","c":"read"}
+$cmd cls
+> {"w":"cls","c":"read"}
+$cmd pause
+> {"w":"pause","c":"read"}
+$cmd exit /b 1
+> {"w":"exit /b 1","c":"read"}
+$cmd setlocal enabledelayedexpansion
+> {"w":"setlocal enabledelayedexpansion","c":"read"}
+$cmd rem del x
+> {"w":"rem del x","c":"read"}
+$cmd :: del x
+> (none)
+$cmd REM del x & del y
+> {"w":"REM del x","c":"read"}
+> {"w":"del y","c":"delete","t":["delete y"]}
+$cmd @del x
+> {"w":"del x","c":"delete","t":["delete x"]}
+$cmd @echo off & del x
+> {"w":"echo off","c":"read"}
+> {"w":"del x","c":"delete","t":["delete x"]}
+$cmd call :label
+> {"w":":label","c":"unknown","u":true}
+$cmd call script.bat arg
+> {"w":"script.bat arg","c":"unknown","u":true}
+$cmd call del x
+> {"w":"del x","c":"delete","t":["delete x"]}
+$cmd start /wait x.exe
+> {"w":"start /wait x.exe","c":"unknown","u":true}
+$cmd start "" cmd /c del x
+> {"w":"start \"\" cmd /c del x","c":"unknown","u":true}
+$cmd x.exe
+> {"w":"x.exe","c":"unknown","u":true}
+$cmd .\x.bat
+> {"w":"\".\\\\x.bat\"","c":"unknown","u":true}
+$cmd build.bat
+> {"w":"build.bat","c":"unknown","u":true}
+$cmd cmd /c del x
+> {"w":"cmd /c del x","c":"unknown","u":true}
+> {"w":"del x","c":"delete","t":["delete x"]}
+$cmd cmd /c "del /s /q a & rd /s /q b"
+> {"w":"cmd /c \"del /s /q a & rd /s /q b\"","c":"unknown","u":true}
+> {"w":"del /s /q a","c":"delete","t":["delete+rec a"]}
+> {"w":"rd /s /q b","c":"delete","t":["delete+rec b"]}
+$cmd cmd /k echo hi
+> {"w":"cmd /k echo hi","c":"unknown","u":true}
+> {"w":"echo hi","c":"read"}
+$cmd powershell Remove-Item x
+> {"w":"powershell Remove-Item x","c":"unknown","u":true}
+$cmd powershell -NoProfile -Command "Remove-Item x -Recurse"
+> {"w":"powershell -NoProfile -Command \"Remove-Item x -Recurse\"","c":"unknown","u":true}
+> {"w":"Remove-Item x -Recurse","c":"delete","t":["delete+rec x"]}
+$cmd powershell -File script.ps1
+> {"w":"powershell -File script.ps1","c":"unknown","u":true}
+$cmd pwsh -c "rm x"
+> {"w":"pwsh -c \"rm x\"","c":"unknown","u":true}
+> {"w":"rm x","c":"delete","t":["delete x"]}
+$cmd if exist a del a
+> {"w":"del a","c":"delete","t":["delete a"]}
+$cmd if not exist a mkdir a
+> {"w":"mkdir a","c":"write","t":["write a"]}
+$cmd if exist a (del a) else (echo no)
+> {"w":"del a","c":"delete","t":["delete a"]}
+> {"w":"echo no","c":"read"}
+$cmd if "%1"=="" exit
+> {"w":"exit","c":"read"}
+$cmd if errorlevel 1 del x
+> {"w":"del x","c":"delete","t":["delete x"]}
+$cmd if defined X del %X%
+> {"w":"del %X%","c":"delete","t":["delete+partial %X%"]}
+$cmd if %X%==1 del x
+> {"w":"del x","c":"delete","t":["delete x"]}
+$cmd for %f in (*.tmp) do del "%f"
+> {"w":"del %f","c":"delete","t":["delete+partial %f"]}
+$cmd for %%f in (a b c) do del %%f
+> {"w":"del %%f","c":"delete","t":["delete+partial %%f"]}
+$cmd for /r %f in (*.tmp) do del "%f"
+> {"w":"del %f","c":"delete","t":["delete+partial %f"]}
+$cmd for /f %i in ('dir /b') do del %i
+> {"w":"del %i","c":"delete","t":["delete+partial %i"]}
+$cmd git status
+> {"w":"git status","c":"read","g":"status"}
+$cmd git reset --hard
+> {"w":"git reset --hard","c":"write,git_history_rewrite","u":true,"g":"reset +rewrite"}
+$cmd git clean -fdx
+> {"w":"git clean -fdx","c":"delete,git_history_rewrite","t":["delete+rec ."],"g":"clean +rewrite"}
+$cmd git push --force-with-lease
+> {"w":"git push --force-with-lease","c":"network,git_history_rewrite","g":"push +rewrite +force"}
+$cmd cargo build
+> {"w":"cargo build","c":"write","t":["write+rec target"]}
+$cmd npm install
+> {"w":"npm install","c":"network,write","t":["write+rec node_modules","write package.json","write package-lock.json"]}
+$cmd python x.py
+> {"w":"python x.py","c":"unknown","u":true}
+$cmd taskkill /f /im x.exe
+> {"w":"taskkill /f /im x.exe","c":"unknown","u":true}
+$cmd tasklist
+> {"w":"tasklist","c":"read"}
+$cmd where git
+> {"w":"where git","c":"read"}
+$cmd del a & del b
+> {"w":"del a","c":"delete","t":["delete a"]}
+> {"w":"del b","c":"delete","t":["delete b"]}
+$cmd del a && del b
+> {"w":"del a","c":"delete","t":["delete a"]}
+> {"w":"del b","c":"delete","t":["delete b"]}
+$cmd del a || del b
+> {"w":"del a","c":"delete","t":["delete a"]}
+> {"w":"del b","c":"delete","t":["delete b"]}
+$cmd del a | more
+> {"w":"del a","c":"delete","t":["delete a"]}
+> {"w":"more","c":"read"}
+$cmd del a & & del b
+> {"w":"del a","c":"delete","t":["delete a"]}
+> {"w":"del b","c":"delete","t":["delete b"]}
+$cmd del "unterminated
+> !incomplete
+> {"w":"del unterminated","c":"delete","t":["delete unterminated"]}
+$cmd (del a & del b)
+> {"w":"del a","c":"delete","t":["delete a"]}
+> {"w":"del b","c":"delete","t":["delete b"]}
+$cmd (
+| del a
+| del b
+| )
+> {"w":"del a","c":"delete","t":["delete a"]}
+> {"w":"del b","c":"delete","t":["delete b"]}
+$cmd del a
+| del b
+> {"w":"del a","c":"delete","t":["delete a"]}
+> {"w":"del b","c":"delete","t":["delete b"]}
+$cmd regedit /s x.reg
+> {"w":"regedit /s x.reg","c":"unknown","u":true}
+$cmd format c:
+> {"w":"format c:","c":"unknown","u":true}
+$cmd diskpart
+> {"w":"diskpart","c":"unknown","u":true}
+$cmd del *.* /s /q
+> {"w":"del *.* /s /q","c":"delete","t":["delete+rec+glob *.*"]}
+$cmd rd /s /q %USERPROFILE%\x
+> {"w":"rd /s /q \"%USERPROFILE%\\\\x\"","c":"delete","t":["delete+rec+partial %USERPROFILE%\\x"]}
+$cmd rd /s /q "%APPDATA%\x"
+> {"w":"rd /s /q \"%APPDATA%\\\\x\"","c":"delete","t":["delete+rec+partial %APPDATA%\\x"]}
+$cmd del /q C:\Users\me\x\*
+> {"w":"del /q \"C:\\\\Users\\\\me\\\\x\\\\*\"","c":"delete","t":["delete+glob C:\\Users\\me\\x\\*"]}

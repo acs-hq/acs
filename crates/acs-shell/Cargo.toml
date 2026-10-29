@@ -8,5 +8,14 @@ license.workspace = true
 repository.workspace = true
 publish = false
 
+[dependencies]
+acs-core = { path = "../acs-core" }
+serde.workspace = true
+tree-sitter.workspace = true
+tree-sitter-bash.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
+
 [lints]
 workspace = true
