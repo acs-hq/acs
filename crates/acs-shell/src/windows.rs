@@ -556,7 +556,7 @@ fn ps_statement(statement: Statement, ctx: &mut Ctx) {
     }
     if analyze_blocks {
         for block in &blocks {
-            powershell(block, ctx);
+            ctx.nested(crate::Dialect::PowerShell, block);
         }
     }
 }

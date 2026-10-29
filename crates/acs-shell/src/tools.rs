@@ -293,6 +293,85 @@ pub(crate) fn sed(args: &[Word], out: &mut Outcome) {
         out.class(CommandClass::Read);
         out.targets(files, TargetOp::Read, false);
     }
+    // Scripts can write files (`w out`, `s/a/b/w out`) and run commands (`e`, `s/a/b/e`).
+    let scripts = p.values(&["-e", "--expression"]).into_iter().chain(
+        p.pos
+            .first()
+            .filter(|_| !script_given)
+            .map(|w| (*w).clone()),
+    );
+    for script in scripts {
+        if sed_script_has_side_effects(&script.text) {
+            out.class(CommandClass::Write).and_unknown();
+        }
+    }
+    if p.has(&["-f", "--file"]) {
+        // A script file can contain anything.
+        out.class(CommandClass::Write).and_unknown();
+    }
+}
+
+/// Whether a `sed` script contains a write (`w`) or execute (`e`) command or flag. Scripts are
+/// split on `;`, newlines and braces, which is close enough for scripts that matter here.
+fn sed_script_has_side_effects(script: &str) -> bool {
+    script
+        .split([';', '\n', '{', '}'])
+        .any(sed_command_has_side_effects)
+}
+
+fn sed_command_has_side_effects(command: &str) -> bool {
+    let mut rest = command.trim_start();
+    // Skip the addresses: numbers, `$`, ranges and `/regex/` (with optional `I`/`M`).
+    loop {
+        rest = rest.trim_start_matches(|c: char| {
+            c.is_ascii_digit() || c.is_whitespace() || matches!(c, ',' | '$' | '!' | '~' | '+')
+        });
+        let Some(after) = rest.strip_prefix('/') else {
+            break;
+        };
+        let mut escaped = false;
+        let mut end = None;
+        for (index, c) in after.char_indices() {
+            if escaped {
+                escaped = false;
+            } else if c == '\\' {
+                escaped = true;
+            } else if c == '/' {
+                end = Some(index + 1);
+                break;
+            }
+        }
+        match end {
+            Some(end) => rest = after[end..].trim_start_matches(['I', 'M']),
+            None => return false,
+        }
+    }
+    match rest.chars().next() {
+        Some('w' | 'W' | 'e') => true,
+        Some('s') => {
+            // `s<d>pattern<d>replacement<d>flags`: the flags `w` and `e` write and execute.
+            let mut chars = rest[1..].chars();
+            let Some(delimiter) = chars.next() else {
+                return false;
+            };
+            let mut seen = 0;
+            let mut escaped = false;
+            let mut flags = String::new();
+            for c in chars {
+                if seen >= 2 {
+                    flags.push(c);
+                } else if escaped {
+                    escaped = false;
+                } else if c == '\\' {
+                    escaped = true;
+                } else if c == delimiter {
+                    seen += 1;
+                }
+            }
+            seen >= 2 && flags.contains(['w', 'e'])
+        }
+        _ => false,
+    }
 }
 
 pub(crate) fn perl(args: &[Word], out: &mut Outcome) {
@@ -1324,12 +1403,5 @@ pub(crate) fn format(args: &[Word], write_if: &[&str], read_if: &[&str], out: &m
         out.unknown_targets();
     }
     // These tools expand globs themselves, even quoted ones.
-    for path in p.pos.iter().copied() {
-        let kind = if path.kind == Kind::Exact && path.text.contains(['*', '?', '{']) {
-            Kind::Pattern
-        } else {
-            path.kind
-        };
-        out.path(&path.text, kind, TargetOp::Write, true);
-    }
+    out.pathspecs(p.pos.iter().copied(), TargetOp::Write, true);
 }

@@ -207,6 +207,30 @@ impl Outcome {
         self
     }
 
+    /// Adds a target for a pathspec the program expands itself (`git rm "*.log"`, `prettier
+    /// "src/**"`): a quoted glob is still a pattern.
+    pub fn pathspec(&mut self, word: &Word, op: TargetOp, recursive: bool) -> &mut Self {
+        let kind = if word.kind == Kind::Exact && word.text.contains(['*', '?', '[']) {
+            Kind::Pattern
+        } else {
+            word.kind
+        };
+        self.path(&word.text, kind, op, recursive)
+    }
+
+    /// Adds targets for several pathspecs.
+    pub fn pathspecs<'w>(
+        &mut self,
+        words: impl IntoIterator<Item = &'w Word>,
+        op: TargetOp,
+        recursive: bool,
+    ) -> &mut Self {
+        for word in words {
+            self.pathspec(word, op, recursive);
+        }
+        self
+    }
+
     /// Adds a target for a path computed by the handler.
     pub fn path(&mut self, path: &str, kind: Kind, op: TargetOp, recursive: bool) -> &mut Self {
         self.target(

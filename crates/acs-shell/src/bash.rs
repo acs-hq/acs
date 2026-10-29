@@ -8,8 +8,33 @@ use crate::args::Outcome;
 use crate::ctx::Ctx;
 use crate::word::{Cwd, Kind, Redirect, Word};
 
-/// How deep syntax nesting may go before the rest is given up on.
-const MAX_DEPTH: usize = 200;
+/// How deep syntax nesting may go before the line is given up on. Real command lines nest a
+/// handful of levels; this only guards the recursion below against hostile input.
+const MAX_DEPTH: usize = 100;
+
+/// Whether the tree is deeper than `limit` levels (measured without recursion).
+fn deeper_than(root: Node, limit: usize) -> bool {
+    let mut cursor = root.walk();
+    let mut depth = 0usize;
+    loop {
+        if cursor.goto_first_child() {
+            depth += 1;
+            if depth > limit {
+                return true;
+            }
+            continue;
+        }
+        loop {
+            if cursor.goto_next_sibling() {
+                break;
+            }
+            if !cursor.goto_parent() {
+                return false;
+            }
+            depth -= 1;
+        }
+    }
+}
 
 /// Analyzes `src` as bash, appending to `ctx`.
 pub(crate) fn run(src: &str, ctx: &mut Ctx) {
@@ -26,6 +51,10 @@ pub(crate) fn run(src: &str, ctx: &mut Ctx) {
         return;
     };
     let root = tree.root_node();
+    if deeper_than(root, MAX_DEPTH) {
+        ctx.unparsed(src);
+        return;
+    }
     let found = ctx.out.len();
     let mut walker = Walker {
         ctx,

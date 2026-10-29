@@ -182,7 +182,7 @@ fn subcommand(sub: &str, rest: &[Word], out: &mut Outcome, inv: &mut GitInvocati
             } else {
                 out.class(CommandClass::Delete);
                 let recursive = p.has(&["-r"]);
-                out.targets(p.pos.iter().copied(), TargetOp::Delete, recursive);
+                out.pathspecs(p.pos.iter().copied(), TargetOp::Delete, recursive);
             }
         }
         "mv" => {
@@ -561,7 +561,7 @@ fn checkout(rest: &[Word], out: &mut Outcome, inv: &mut GitInvocation) {
     if !paths.is_empty() {
         // `git checkout [<rev>] -- <paths>` overwrites working-tree files.
         inv.rewrites_history = true;
-        out.targets(paths.iter().copied(), TargetOp::Write, true);
+        out.pathspecs(paths.iter().copied(), TargetOp::Write, true);
         inv.refs = words_text(&p.positionals()[..p.positionals().len().min(1)]);
     } else if let Some(branch) = p.value(&["-b", "-B", "--orphan"]) {
         inv.rewrites_history = forced;
@@ -573,7 +573,7 @@ fn checkout(rest: &[Word], out: &mut Outcome, inv: &mut GitInvocation) {
         .is_some_and(|w| w.text == "." || w.text.starts_with("./"))
     {
         inv.rewrites_history = true;
-        out.targets(p.positionals().iter().copied(), TargetOp::Write, true);
+        out.pathspecs(p.positionals().iter().copied(), TargetOp::Write, true);
     } else {
         inv.rewrites_history = forced;
         inv.refs = words_text(&p.positionals()[..p.positionals().len().min(1)]);
@@ -607,7 +607,7 @@ fn restore(rest: &[Word], out: &mut Outcome, inv: &mut GitInvocation) {
     let staged_only = p.has(&["-S", "--staged"]) && !p.has(&["-W", "--worktree"]);
     if !staged_only {
         inv.rewrites_history = true;
-        out.targets(p.pos.iter().copied(), TargetOp::Write, true);
+        out.pathspecs(p.pos.iter().copied(), TargetOp::Write, true);
         if p.pos.is_empty() {
             out.unknown_targets();
         }
@@ -625,7 +625,7 @@ fn clean(rest: &[Word], out: &mut Outcome, inv: &mut GitInvocation) {
     if p.pos.is_empty() {
         out.path(".", Kind::Exact, TargetOp::Delete, true);
     } else {
-        out.targets(p.pos.iter().copied(), TargetOp::Delete, true);
+        out.pathspecs(p.pos.iter().copied(), TargetOp::Delete, true);
     }
 }
 

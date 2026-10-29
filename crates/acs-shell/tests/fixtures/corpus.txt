@@ -1174,7 +1174,7 @@ $ git worktree list
 $ git rm --cached secrets.env
 > {"w":"git rm --cached secrets.env","c":"write","g":"rm"}
 $ git rm -f -- "*.log"
-> {"w":"git rm -f -- *.log","c":"delete","t":["delete *.log"],"g":"rm"}
+> {"w":"git rm -f -- *.log","c":"delete","t":["delete+glob *.log"],"g":"rm"}
 $ git mv -f a b
 > {"w":"git mv -f a b","c":"move","t":["delete+rec a","write+rec b"],"g":"mv"}
 $ git clone --depth 1 https://github.com/a/b
@@ -1529,7 +1529,7 @@ $ sed -s -n '$p' a b
 $ sed 's/a/b/' file > file.new
 > {"w":"sed s/a/b/ file","c":"write","t":["read file","write file.new"]}
 $ sed -f script.sed input
-> {"w":"sed -f script.sed input","c":"read","t":["read input"]}
+> {"w":"sed -f script.sed input","c":"write,unknown","t":["read input"],"u":true}
 $ awk -i inplace '{print}' file
 > {"w":"awk -i inplace {print} file","c":"write","t":["write file"]}
 $ awk -f prog.awk data
@@ -3111,3 +3111,66 @@ $cmd rd /s /q "%APPDATA%\x"
 > {"w":"rd /s /q \"%APPDATA%\\\\x\"","c":"delete","t":["delete+rec+partial %APPDATA%\\x"]}
 $cmd del /q C:\Users\me\x\*
 > {"w":"del /q \"C:\\\\Users\\\\me\\\\x\\\\*\"","c":"delete","t":["delete+glob C:\\Users\\me\\x\\*"]}
+
+# ---- sed scripts that write or execute, git corner cases ---------------------------------
+$ sed 's/a/b/w out.txt' in
+> {"w":"sed \"s/a/b/w out.txt\" in","c":"write,unknown","t":["read in"],"u":true}
+$ sed -n '/x/w matches.txt' in
+> {"w":"sed -n \"/x/w matches.txt\" in","c":"write,unknown","t":["read in"],"u":true}
+$ sed 's/a/b/e' in
+> {"w":"sed s/a/b/e in","c":"write,unknown","t":["read in"],"u":true}
+$ sed -n 'p;w out' f
+> {"w":"sed -n \"p;w out\" f","c":"write,unknown","t":["read f"],"u":true}
+$ sed '/w/d' f
+> {"w":"sed /w/d f","c":"read","t":["read f"]}
+$ sed -n '1,3p' f
+> {"w":"sed -n 1,3p f","c":"read","t":["read f"]}
+$ git push origin main --force
+> {"w":"git push origin main --force","c":"network,git_history_rewrite","g":"push +rewrite +force refs=main"}
+$ git push --force origin
+> {"w":"git push --force origin","c":"network,git_history_rewrite","g":"push +rewrite +force"}
+$ git push origin +refs/heads/*:refs/heads/*
+> {"w":"git push origin +refs/heads/*:refs/heads/*","c":"network,git_history_rewrite","g":"push +rewrite +force refs=*"}
+$ GIT_SSH_COMMAND='ssh -i k' git push --force-with-lease origin main
+> {"w":"git push --force-with-lease origin main","c":"network,git_history_rewrite","g":"push +rewrite +force refs=main"}
+$ git commit --allow-empty -m "x" && git push -u origin HEAD
+> {"w":"git commit --allow-empty -m x","c":"write","g":"commit +commit"}
+> {"w":"git push -u origin HEAD","c":"network","g":"push refs=HEAD"}
+$ git reset --hard HEAD~1 && git push --force origin main
+> {"w":"git reset --hard HEAD~1","c":"write,git_history_rewrite","u":true,"g":"reset +rewrite refs=HEAD~1"}
+> {"w":"git push --force origin main","c":"network,git_history_rewrite","g":"push +rewrite +force refs=main"}
+$ git rebase -i --autosquash origin/main
+> {"w":"git rebase -i --autosquash origin/main","c":"write,git_history_rewrite","u":true,"g":"rebase +rewrite +commit refs=origin/main"}
+$ git stash push -u
+> {"w":"git stash push -u","c":"write","u":true,"g":"stash"}
+$ git checkout -- "*.log"
+> {"w":"git checkout -- *.log","c":"write,git_history_rewrite","t":["write+rec+glob *.log"],"g":"checkout +rewrite"}
+$ git checkout -p
+> {"w":"git checkout -p","c":"write","u":true,"g":"checkout"}
+$ git clean -xdf -- build dist
+> {"w":"git clean -xdf -- build dist","c":"delete,git_history_rewrite","t":["delete+rec build","delete+rec dist"],"g":"clean +rewrite"}
+$ git branch -D feature/a feature/b
+> {"w":"git branch -D feature/a feature/b","c":"write,git_history_rewrite","g":"branch +rewrite refs=feature/a,feature/b"}
+$ git -C /tmp/repo clean -fdx
+> {"w":"git -C /tmp/repo clean -fdx","c":"delete,git_history_rewrite","t":["delete+rec /tmp/repo"],"g":"clean +rewrite"}
+$ git -C ../sibling reset --hard
+> {"w":"git -C ../sibling reset --hard","c":"write,git_history_rewrite","u":true,"g":"reset +rewrite"}
+$ sed -i "s/$OLD/$NEW/g" file
+> {"w":"sed -i s/$OLD/$NEW/g file","c":"write","t":["write file"]}
+$ sed -i "s|a|b|" f
+> {"w":"sed -i s|a|b| f","c":"write","t":["write f"]}
+$ sed -i 's/a/b/' $(git ls-files)
+> {"w":"sed -i s/a/b/ \"$(git ls-files)\"","c":"write","t":["write+partial $(git ls-files)"]}
+> {"w":"git ls-files","c":"read","g":"ls-files"}
+$ sed -i -e '/^$/d' -e 's/ *$//' notes.md
+> {"w":"sed -i -e /^$/d -e \"s/ *$//\" notes.md","c":"write","t":["write notes.md"]}
+$ python3 - <<'PY'
+| print(1)
+| PY
+> {"w":"python3","c":"unknown","u":true}
+$ ls -la | grep '^d' | awk '{print $9}'
+> {"w":"ls -la","c":"read"}
+> {"w":"grep ^d","c":"read"}
+> {"w":"awk \"{print $9}\"","c":"read"}
+$ xargs -I{} git clean -fd {}
+> {"w":"xargs -I{} git clean -fd {}","c":"delete,git_history_rewrite,unknown","u":true,"g":"clean +rewrite"}

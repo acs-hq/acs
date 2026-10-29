@@ -105,7 +105,7 @@ impl Ctx {
 
     /// Analyzes a script found inside a command (`bash -c '...'`, `eval ...`) in the current
     /// directory; nothing it does to the directory leaks out.
-    fn nested(&mut self, dialect: Dialect, script: &str) {
+    pub fn nested(&mut self, dialect: Dialect, script: &str) {
         if self.depth >= MAX_NESTING {
             return;
         }

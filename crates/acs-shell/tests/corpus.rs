@@ -6,69 +6,8 @@
 
 mod common;
 
-use acs_shell::{Dialect, analyze};
-use common::{Rendered, render};
-
-const CORPUS: &str = include_str!("fixtures/corpus.txt");
-
-/// One case of the corpus.
-struct Case {
-    command: String,
-    dialect: Dialect,
-    /// Line number of the `$` line, for messages.
-    line: usize,
-    expected: Vec<Rendered>,
-    complete: bool,
-    /// Whether any expectation line was present.
-    blessed: bool,
-}
-
-fn parse(text: &str) -> Result<Vec<Case>, String> {
-    let mut cases: Vec<Case> = Vec::new();
-    for (index, line) in text.lines().enumerate() {
-        let number = index + 1;
-        let start = |dialect: Dialect, rest: &str| Case {
-            command: rest.to_string(),
-            dialect,
-            line: number,
-            expected: Vec::new(),
-            complete: true,
-            blessed: false,
-        };
-        if let Some(rest) = line.strip_prefix("$ps ") {
-            cases.push(start(Dialect::PowerShell, rest));
-        } else if let Some(rest) = line.strip_prefix("$cmd ") {
-            cases.push(start(Dialect::Cmd, rest));
-        } else if let Some(rest) = line.strip_prefix("$ ") {
-            cases.push(start(Dialect::Bash, rest));
-        } else if line == "$" {
-            cases.push(start(Dialect::Bash, ""));
-        } else if let Some(rest) = line.strip_prefix("| ") {
-            let case = cases
-                .last_mut()
-                .ok_or(format!("line {number}: continuation without a case"))?;
-            case.command.push('\n');
-            case.command.push_str(rest);
-        } else if let Some(rest) = line.strip_prefix("> ") {
-            let case = cases
-                .last_mut()
-                .ok_or(format!("line {number}: expectation without a case"))?;
-            case.blessed = true;
-            if rest == "!incomplete" {
-                case.complete = false;
-            } else if rest == "(none)" {
-                // No commands at all.
-            } else {
-                let rendered: Rendered = serde_json::from_str(rest)
-                    .map_err(|e| format!("line {number}: bad expectation: {e}"))?;
-                case.expected.push(rendered);
-            }
-        } else if !(line.is_empty() || line.starts_with('#')) {
-            return Err(format!("line {number}: cannot parse {line:?}"));
-        }
-    }
-    Ok(cases)
-}
+use acs_shell::analyze;
+use common::{CORPUS, Case, Rendered, is_case_start, parse_corpus, render};
 
 fn show(commands: &[Rendered]) -> String {
     commands
@@ -80,7 +19,7 @@ fn show(commands: &[Rendered]) -> String {
 
 #[test]
 fn corpus_matches_expectations() {
-    let cases = parse(CORPUS).unwrap_or_else(|e| panic!("{e}"));
+    let cases = parse_corpus(CORPUS).unwrap_or_else(|e| panic!("{e}"));
     assert!(
         cases.len() >= 200,
         "the corpus must have at least 200 commands, has {}",
@@ -146,8 +85,8 @@ fn bless(cases: &[Case]) {
         }
         by_line.insert(case.line, lines);
     }
+    // The new expectations go right after the last line of their case.
     let mut out = Vec::new();
-    let mut last_case_line = 0;
     let mut pending: Option<usize> = None;
     let flush = |pending: &mut Option<usize>, out: &mut Vec<String>| {
         if let Some(line) = pending.take()
@@ -157,22 +96,15 @@ fn bless(cases: &[Case]) {
         }
     };
     for (index, line) in CORPUS.lines().enumerate() {
-        let number = index + 1;
-        let is_case_start = line.starts_with("$ps ")
-            || line.starts_with("$cmd ")
-            || line.starts_with("$ ")
-            || line == "$";
-        if is_case_start {
+        if is_case_start(line) {
             flush(&mut pending, &mut out);
-            pending = Some(number);
-            last_case_line = number;
-        } else if !(line.starts_with("| ")) {
+            pending = Some(index + 1);
+        } else if !line.starts_with("| ") {
             flush(&mut pending, &mut out);
         }
         out.push(line.to_string());
     }
     flush(&mut pending, &mut out);
-    let _ = last_case_line;
     let mut text = out.join("\n");
     text.push('\n');
     std::fs::write(path, text).unwrap_or_else(|e| panic!("cannot write the corpus: {e}"));

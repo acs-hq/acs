@@ -43,6 +43,7 @@ pub enum Dialect {
     #[default]
     Bash,
     /// PowerShell, understood heuristically.
+    #[serde(rename = "powershell")]
     PowerShell,
     /// cmd.exe, understood heuristically.
     Cmd,
