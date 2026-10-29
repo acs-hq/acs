@@ -14,6 +14,8 @@ workspace = true
 [dependencies]
 acs-core = { path = "../acs-core" }
 dunce.workspace = true
+getrandom.workspace = true
+rusqlite.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
