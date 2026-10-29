@@ -144,7 +144,8 @@ pub struct Guards {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ZoneKind {
-    /// Only the owners' agents may change it; other agents are denied (enforced from Phase 7).
+    /// Only the owners' agents may change it; other agents are denied. Implementations that do
+    /// not yet enforce ownership MUST treat `owned` zones as `shared`.
     Owned,
     /// Any agent may change it after taking a claim.
     Shared,

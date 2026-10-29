@@ -19,8 +19,9 @@ pub enum Outcome {
     Deny,
     /// Ask the human to approve in the harness's own prompt.
     Ask,
-    /// Reserved for Phase 8 (deferred edits). Implementations MUST NOT emit it before the spec
-    /// defines its behavior; consumers that do not support it MUST treat it as `deny`.
+    /// Reserved for deferred edits, which a later revision of the spec will define.
+    /// Implementations MUST NOT emit it before then; consumers that do not support it MUST treat
+    /// it as `deny`.
     Queue,
 }
 
@@ -56,14 +57,16 @@ pub enum ReasonCode {
     /// An overlapping live claim is held by another seat (claim rules, spec section 8).
     /// Outcome `deny`.
     ClaimConflict,
-    /// A non-owner agent touched an `owned` zone. Enforced from Phase 7. Outcome `deny`.
+    /// A non-owner agent touched an `owned` zone. Implementations that do not yet enforce
+    /// ownership treat `owned` zones as `shared` and never return this code. Outcome `deny`.
     OwnedTerritory,
     /// The state database is locked, corrupt or missing. Outcome `deny` for destructive actions,
     /// otherwise `allow` with a warning.
     StateUnavailable,
     /// The adapter could not parse the harness payload. Outcome `allow`.
     UnknownPayload,
-    /// An edit was queued because of a claim conflict. Reserved for Phase 8. Outcome `queue`.
+    /// An edit was queued because of a claim conflict. Reserved together with the `queue`
+    /// outcome; implementations MUST NOT return it yet. Outcome `queue`.
     ClaimQueued,
 }
 

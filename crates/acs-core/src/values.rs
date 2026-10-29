@@ -44,10 +44,9 @@ impl From<SpecVersion> for String {
 /// A repository-relative path in a stored record.
 ///
 /// Uses forward slashes as separators, is relative to the repository root and is never empty.
-/// Deserialization rejects empty strings, paths starting with `/` or `\`, and paths starting with
-/// a Windows drive letter (`C:`). Producers MUST normalize before constructing one (no `.` or
-/// `..` segments, symlinks resolved, case folded where the filesystem is case-insensitive);
-/// that normalization is not checked here.
+/// A value is invalid if it is empty, starts with `/` or `\`, or starts with a Windows drive
+/// letter (`C:`). Producers MUST also normalize paths (no `.` or `..` segments, symlinks
+/// resolved, case folded where the filesystem is case-insensitive); validators cannot check that.
 #[derive(
     Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
 )]

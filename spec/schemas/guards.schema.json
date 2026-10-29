@@ -1,0 +1,81 @@
+{
+  "$defs": {
+    "Destructive": {
+      "additionalProperties": false,
+      "description": "The `[destructive]` table of `guards.toml`: limits on destructive shell commands.",
+      "properties": {
+        "ban": {
+          "default": [],
+          "description": "Command patterns that are always denied, for example `git push --force*`. `*` matches any\nrun of characters.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "max_files_deleted_outside_claims": {
+          "default": 0,
+          "description": "How many files a command may delete outside the seat's claims. `0` denies any such delete.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "max_files_deleted_per_command": {
+          "default": 50,
+          "description": "How many files one command may delete before the human is asked.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "SpecVersion": {
+      "const": "acs/0.1",
+      "description": "The `spec` field of a document: the version of the ACS spec it was written against.\n\nThe only supported value is `\"acs/0.1\"`. Readers MUST reject any other value.",
+      "type": "string"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "`.acs/policy/guards.toml`: sealed paths, protected branches and destructive-command limits.\nEvery field defaults to empty; the built-in default guards are applied by the policy loader.",
+  "properties": {
+    "destructive": {
+      "$ref": "#/$defs/Destructive",
+      "default": {
+        "ban": [],
+        "max_files_deleted_outside_claims": 0,
+        "max_files_deleted_per_command": 50
+      },
+      "description": "Limits on destructive shell commands."
+    },
+    "protected_branches": {
+      "default": [],
+      "description": "Branch name globs on which history rewrites and force pushes are denied.",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "sealed": {
+      "default": [],
+      "description": "Globs of paths agents may never write. See [`DEFAULT_SEALED`].",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "spec": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/SpecVersion"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Optional spec version. If present it must be `acs/0.1`."
+    }
+  },
+  "title": "Guards",
+  "type": "object"
+}

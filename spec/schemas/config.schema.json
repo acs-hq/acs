@@ -1,0 +1,61 @@
+{
+  "$defs": {
+    "LedgerConfig": {
+      "additionalProperties": false,
+      "description": "Settings for the session ledger.",
+      "properties": {
+        "store_prompts": {
+          "default": false,
+          "description": "Whether user prompts are stored in the ledger. Defaults to `false`: prompts are never\nstored unless this is enabled.",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "SpecVersion": {
+      "const": "acs/0.1",
+      "description": "The `spec` field of a document: the version of the ACS spec it was written against.\n\nThe only supported value is `\"acs/0.1\"`. Readers MUST reject any other value.",
+      "type": "string"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "`.acs/policy/config.toml`: repository-wide settings. Only `spec` is required.",
+  "properties": {
+    "claim_ttl_secs": {
+      "default": 900,
+      "description": "Seconds a claim stays live without a heartbeat before it expires.",
+      "format": "uint64",
+      "minimum": 1,
+      "type": "integer"
+    },
+    "default_target_branch": {
+      "default": "main",
+      "description": "The branch work is integrated into when a seat's own target is not known.",
+      "type": "string"
+    },
+    "ledger": {
+      "$ref": "#/$defs/LedgerConfig",
+      "default": {
+        "store_prompts": false
+      },
+      "description": "Ledger settings."
+    },
+    "spec": {
+      "$ref": "#/$defs/SpecVersion",
+      "description": "The spec version the policy is written against. Always `acs/0.1`."
+    },
+    "sync_interval_secs": {
+      "default": 30,
+      "description": "Seconds between background syncs of claims and ledger with the git remote.",
+      "format": "uint64",
+      "minimum": 1,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "spec"
+  ],
+  "title": "Config",
+  "type": "object"
+}

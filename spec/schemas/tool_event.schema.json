@@ -1,0 +1,226 @@
+{
+  "$defs": {
+    "EditInfo": {
+      "description": "The text change made by an edit tool. Enables symbol-level claims.",
+      "properties": {
+        "new_text": {
+          "description": "The text it is replaced with.",
+          "type": "string"
+        },
+        "old_text": {
+          "description": "The text being replaced.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "old_text",
+        "new_text"
+      ],
+      "type": "object"
+    },
+    "Phase": {
+      "description": "The moment in a session at which an event is raised.",
+      "oneOf": [
+        {
+          "const": "pre_tool",
+          "description": "Before the harness runs a tool. The engine's decision gates the call.",
+          "type": "string"
+        },
+        {
+          "const": "post_tool",
+          "description": "After the harness ran a tool. Used to attribute what actually changed.",
+          "type": "string"
+        },
+        {
+          "const": "session_start",
+          "description": "A session started. No tool is involved.",
+          "type": "string"
+        },
+        {
+          "const": "prompt_submit",
+          "description": "The user submitted a prompt. No tool is involved.",
+          "type": "string"
+        },
+        {
+          "const": "session_end",
+          "description": "A session ended. No tool is involved.",
+          "type": "string"
+        }
+      ]
+    },
+    "SpecVersion": {
+      "const": "acs/0.1",
+      "description": "The `spec` field of a document: the version of the ACS spec it was written against.\n\nThe only supported value is `\"acs/0.1\"`. Readers MUST reject any other value.",
+      "type": "string"
+    },
+    "Tool": {
+      "description": "The tool a `pre_tool` or `post_tool` event refers to.",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/ToolKind",
+          "description": "What the tool does, as classified by the adapter."
+        },
+        "name": {
+          "description": "The harness's own name for the tool, for example `Edit` or `Bash`.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "kind"
+      ],
+      "type": "object"
+    },
+    "ToolKind": {
+      "description": "What a tool does, as far as ACS is concerned. Adapters map each harness tool onto one kind.",
+      "oneOf": [
+        {
+          "const": "read",
+          "description": "Reads files without changing anything.",
+          "type": "string"
+        },
+        {
+          "const": "write",
+          "description": "Creates a file or overwrites it entirely.",
+          "type": "string"
+        },
+        {
+          "const": "edit",
+          "description": "Modifies part of an existing file.",
+          "type": "string"
+        },
+        {
+          "const": "delete",
+          "description": "Deletes files.",
+          "type": "string"
+        },
+        {
+          "const": "move",
+          "description": "Moves or renames files. `paths` lists the source followed by the destination.",
+          "type": "string"
+        },
+        {
+          "const": "shell",
+          "description": "Runs a shell command. The command text is in `command`.",
+          "type": "string"
+        },
+        {
+          "const": "other",
+          "description": "Anything else (search, web fetch, MCP tools, ...).",
+          "type": "string"
+        }
+      ]
+    },
+    "ToolResult": {
+      "description": "The outcome of a tool call. Present on `post_tool` events only.",
+      "properties": {
+        "exit_code": {
+          "description": "The exit code, for shell commands.",
+          "format": "int32",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "success": {
+          "description": "Whether the tool call succeeded.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "success"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "The canonical event: what every adapter produces from a harness payload.\n\n`pre_tool` and `post_tool` events MUST carry `tool`; session events (`session_start`,\n`prompt_submit`, `session_end`) do not. Unknown fields are ignored so that newer producers\nremain readable.",
+  "properties": {
+    "command": {
+      "description": "The shell command text, when `tool.kind` is `shell`.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "cwd": {
+      "description": "Absolute working directory of the harness process when the event was raised.",
+      "type": "string"
+    },
+    "edit": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/EditInfo"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "The text change, when the tool is an edit and the harness exposes it."
+    },
+    "harness": {
+      "description": "Name of the harness that produced the event, for example `claude-code` or `antigravity`.\nA free-form string so new adapters need no schema change; `canonical` marks synthetic\nevents (tests, the conformance suite).",
+      "type": "string"
+    },
+    "harness_session_id": {
+      "description": "The harness's own identifier for the session. One harness session is one seat.",
+      "type": "string"
+    },
+    "paths": {
+      "description": "Paths the tool touches, exactly as the harness gave them: absolute, or relative to `cwd`.\nNormalization happens later in the pipeline.",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "phase": {
+      "$ref": "#/$defs/Phase",
+      "description": "When in the session this event was raised."
+    },
+    "prompt": {
+      "description": "The user's prompt. `prompt_submit` only. Implementations MUST NOT store it unless\n`ledger.store_prompts` is enabled.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "raw": {
+      "description": "The original harness payload, kept for debugging only. Never interpreted."
+    },
+    "result": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ToolResult"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "The tool's outcome. `post_tool` only."
+    },
+    "spec": {
+      "$ref": "#/$defs/SpecVersion",
+      "description": "The spec version this event conforms to. Always `acs/0.1`."
+    },
+    "tool": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Tool"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "The tool involved. Absent for session phases."
+    }
+  },
+  "required": [
+    "spec",
+    "harness",
+    "harness_session_id",
+    "phase",
+    "cwd"
+  ],
+  "title": "ToolEvent",
+  "type": "object"
+}

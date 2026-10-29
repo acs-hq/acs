@@ -1,0 +1,135 @@
+{
+  "$defs": {
+    "ClaimId": {
+      "description": "Identifier of a claim.\n\nStarts with `clm_`.",
+      "pattern": "^clm_[0-9a-z_-]{1,64}$",
+      "type": "string"
+    },
+    "ClaimOrigin": {
+      "description": "Who created a claim.",
+      "oneOf": [
+        {
+          "const": "agent",
+          "description": "Acquired by an agent through the gate.",
+          "type": "string"
+        },
+        {
+          "const": "human",
+          "description": "Taken by a human, for example by the editor extension or `acs watch`.",
+          "type": "string"
+        }
+      ]
+    },
+    "ClaimScope": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "description": "A whole file.",
+          "properties": {
+            "file": {
+              "$ref": "#/$defs/RepoPath",
+              "description": "Repository-relative path of the file."
+            }
+          },
+          "required": [
+            "file"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "One symbol (function, class, method, ...) within a file.",
+          "properties": {
+            "symbol": {
+              "$ref": "#/$defs/RepoPath",
+              "description": "Repository-relative path of the file that contains the symbol."
+            },
+            "symbol_path": {
+              "$ref": "#/$defs/SymbolPath",
+              "description": "The symbol's path inside the file, segments joined by `.`."
+            }
+          },
+          "required": [
+            "symbol",
+            "symbol_path"
+          ],
+          "type": "object"
+        }
+      ],
+      "description": "What a claim covers: a whole file, or one symbol inside a file.\n\nOn the wire this is `{\"file\": \"<path>\"}` or `{\"symbol\": \"<path>\", \"symbol_path\": \"<a.b.c>\"}`."
+    },
+    "RepoPath": {
+      "description": "A repository-relative path in a stored record.\n\nUses forward slashes as separators, is relative to the repository root and is never empty.\nA value is invalid if it is empty, starts with `/` or `\\`, or starts with a Windows drive\nletter (`C:`). Producers MUST also normalize paths (no `.` or `..` segments, symlinks\nresolved, case folded where the filesystem is case-insensitive); validators cannot check that.",
+      "minLength": 1,
+      "pattern": "^(?:[^/\\\\A-Za-z]|[A-Za-z](?:[^:]|$))",
+      "type": "string"
+    },
+    "SeatId": {
+      "description": "Identifier of a seat: one agent session (or human editing session) working in a repository.\n\nStarts with `seat_`.",
+      "pattern": "^seat_[0-9a-z_-]{1,64}$",
+      "type": "string"
+    },
+    "SymbolPath": {
+      "description": "The path of a symbol within its file, as segments joined by `.`.\n\nFor example `Refunds.apply` names the method `apply` of the class `Refunds`. Every segment is\nnon-empty. One symbol path *contains* another when its segments are a prefix of the other's\n(a symbol contains itself).",
+      "pattern": "^[^.]+(?:\\.[^.]+)*$",
+      "type": "string"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "A live claim: a seat's exclusive right to change a scope until it is released or expires.",
+  "properties": {
+    "acquired_at": {
+      "description": "When the claim was acquired (UTC).",
+      "format": "date-time",
+      "type": "string"
+    },
+    "claim_id": {
+      "$ref": "#/$defs/ClaimId",
+      "description": "Identifier of the claim."
+    },
+    "heartbeat_at": {
+      "description": "When the holder last proved it is alive (UTC). Expiry counts from here.",
+      "format": "date-time",
+      "type": "string"
+    },
+    "origin": {
+      "$ref": "#/$defs/ClaimOrigin",
+      "description": "Who created the claim."
+    },
+    "pilot": {
+      "description": "The holder's pilot (git email).",
+      "type": "string"
+    },
+    "scope": {
+      "$ref": "#/$defs/ClaimScope",
+      "description": "What the claim covers."
+    },
+    "seat_id": {
+      "$ref": "#/$defs/SeatId",
+      "description": "The seat holding the claim."
+    },
+    "target_branch": {
+      "description": "The branch the holder integrates into. Claims only conflict within one target branch.",
+      "type": "string"
+    },
+    "ttl_secs": {
+      "description": "Seconds after `heartbeat_at` at which the claim expires.",
+      "format": "uint64",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "claim_id",
+    "seat_id",
+    "pilot",
+    "scope",
+    "target_branch",
+    "acquired_at",
+    "heartbeat_at",
+    "ttl_secs",
+    "origin"
+  ],
+  "title": "Claim",
+  "type": "object"
+}

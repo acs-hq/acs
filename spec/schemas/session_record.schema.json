@@ -1,0 +1,502 @@
+{
+  "$defs": {
+    "ClaimHistoryEntry": {
+      "description": "One claim in a session's history.",
+      "properties": {
+        "acquired_at": {
+          "description": "When it was acquired (UTC).",
+          "format": "date-time",
+          "type": "string"
+        },
+        "claim_id": {
+          "$ref": "#/$defs/ClaimId",
+          "description": "Identifier of the claim."
+        },
+        "release_reason": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ReleaseReason"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Why it ended. Absent if it had not ended when the record was assembled."
+        },
+        "released_at": {
+          "description": "When it ended (UTC). Absent if it had not ended when the record was assembled.",
+          "format": "date-time",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "scope": {
+          "$ref": "#/$defs/ClaimScope",
+          "description": "What the claim covered."
+        }
+      },
+      "required": [
+        "claim_id",
+        "scope",
+        "acquired_at"
+      ],
+      "type": "object"
+    },
+    "ClaimId": {
+      "description": "Identifier of a claim.\n\nStarts with `clm_`.",
+      "pattern": "^clm_[0-9a-z_-]{1,64}$",
+      "type": "string"
+    },
+    "ClaimScope": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "description": "A whole file.",
+          "properties": {
+            "file": {
+              "$ref": "#/$defs/RepoPath",
+              "description": "Repository-relative path of the file."
+            }
+          },
+          "required": [
+            "file"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "One symbol (function, class, method, ...) within a file.",
+          "properties": {
+            "symbol": {
+              "$ref": "#/$defs/RepoPath",
+              "description": "Repository-relative path of the file that contains the symbol."
+            },
+            "symbol_path": {
+              "$ref": "#/$defs/SymbolPath",
+              "description": "The symbol's path inside the file, segments joined by `.`."
+            }
+          },
+          "required": [
+            "symbol",
+            "symbol_path"
+          ],
+          "type": "object"
+        }
+      ],
+      "description": "What a claim covers: a whole file, or one symbol inside a file.\n\nOn the wire this is `{\"file\": \"<path>\"}` or `{\"symbol\": \"<path>\", \"symbol_path\": \"<a.b.c>\"}`."
+    },
+    "ContentHash": {
+      "description": "A content hash: the lowercase hex SHA-256 digest (64 characters) of a file's bytes.",
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "EndedReason": {
+      "description": "Why a session record was finalized.",
+      "oneOf": [
+        {
+          "const": "clean",
+          "description": "The harness reported the end of the session.",
+          "type": "string"
+        },
+        {
+          "const": "crashed",
+          "description": "No end event arrived; the record was assembled later and `ended_at` is the last time the\nseat was seen.",
+          "type": "string"
+        }
+      ]
+    },
+    "FileChange": {
+      "description": "A file a session changed, with content hashes before and after.",
+      "properties": {
+        "path": {
+          "$ref": "#/$defs/RepoPath",
+          "description": "Repository-relative path of the file."
+        },
+        "post_hash": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ContentHash"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Hash of the content after the session's last change. `null` if the file was deleted."
+        },
+        "pre_hash": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ContentHash"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Hash of the content before the session's first change. `null` if the file did not exist."
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "type": "object"
+    },
+    "GuardDecisions": {
+      "description": "Summary of the gate's decisions during a session.",
+      "properties": {
+        "counts": {
+          "additionalProperties": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "description": "How many times each reason code was returned. Codes never returned are omitted.",
+          "propertyNames": {
+            "$ref": "#/$defs/ReasonCode"
+          },
+          "type": "object"
+        },
+        "notable": {
+          "description": "The denials and prompts worth reading individually, oldest first.",
+          "items": {
+            "$ref": "#/$defs/NotableDecision"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "counts",
+        "notable"
+      ],
+      "type": "object"
+    },
+    "LoreId": {
+      "description": "Identifier of a lore entry, chosen when the entry is created and stable afterwards.\n\nStarts with `lore_`.",
+      "pattern": "^lore_[0-9a-z_-]{1,64}$",
+      "type": "string"
+    },
+    "NotableDecision": {
+      "description": "A guard decision worth listing individually in the record.",
+      "properties": {
+        "at": {
+          "description": "When the decision was made (UTC).",
+          "format": "date-time",
+          "type": "string"
+        },
+        "outcome": {
+          "$ref": "#/$defs/Outcome",
+          "description": "What the engine decided."
+        },
+        "path_or_command": {
+          "description": "The repository-relative path or, for shell commands, the command text that triggered the\ndecision. Recorders MUST NOT store secrets here (records sync to the git remote) and\nSHOULD truncate long commands.",
+          "type": "string"
+        },
+        "reason_code": {
+          "$ref": "#/$defs/ReasonCode",
+          "description": "Why the engine decided as it did."
+        }
+      },
+      "required": [
+        "at",
+        "reason_code",
+        "outcome",
+        "path_or_command"
+      ],
+      "type": "object"
+    },
+    "Outcome": {
+      "description": "What the harness should do with the tool call.",
+      "oneOf": [
+        {
+          "const": "allow",
+          "description": "Let the tool call proceed.",
+          "type": "string"
+        },
+        {
+          "const": "deny",
+          "description": "Block the tool call. `message` tells the agent why and what to do instead.",
+          "type": "string"
+        },
+        {
+          "const": "ask",
+          "description": "Ask the human to approve in the harness's own prompt.",
+          "type": "string"
+        },
+        {
+          "const": "queue",
+          "description": "Reserved for deferred edits, which a later revision of the spec will define.\nImplementations MUST NOT emit it before then; consumers that do not support it MUST treat\nit as `deny`.",
+          "type": "string"
+        }
+      ]
+    },
+    "ReasonCode": {
+      "description": "A stable machine-readable code saying why the engine decided as it did.\n\nThe set is closed: a new code is a spec change. The typical outcome of each code is listed in\nthe spec's reason-code table and by [`ReasonCode::typical_outcomes`].",
+      "oneOf": [
+        {
+          "const": "ok",
+          "description": "Nothing is blocked. Outcome `allow`.",
+          "type": "string"
+        },
+        {
+          "const": "gate_off",
+          "description": "`acs off` is active for this repository; the gate is disabled except for sealed paths.\nOutcome `allow`.",
+          "type": "string"
+        },
+        {
+          "const": "sealed_path",
+          "description": "A target matches a sealed glob. Always denied for agents. Outcome `deny`.",
+          "type": "string"
+        },
+        {
+          "const": "banned_command",
+          "description": "A shell command matches a `destructive.ban` pattern. Always denied. Outcome `deny`.",
+          "type": "string"
+        },
+        {
+          "const": "protected_branch",
+          "description": "A history rewrite or force push targets a protected branch. Outcome `deny`.",
+          "type": "string"
+        },
+        {
+          "const": "path_escapes_repo",
+          "description": "A write, delete or move target resolves outside the repository root, including via a\nsymlink or junction. Outcome `ask`.",
+          "type": "string"
+        },
+        {
+          "const": "delete_outside_claims",
+          "description": "Deletes exceed `destructive.max_files_deleted_outside_claims`. Outcome `deny`.",
+          "type": "string"
+        },
+        {
+          "const": "destructive_budget",
+          "description": "Deletes in one command exceed `destructive.max_files_deleted_per_command`. Outcome `ask`.",
+          "type": "string"
+        },
+        {
+          "const": "destructive_unknown_targets",
+          "description": "A destructive shell command whose targets cannot be determined. Outcome `ask`.",
+          "type": "string"
+        },
+        {
+          "const": "claim_conflict",
+          "description": "An overlapping live claim is held by another seat (claim rules, spec section 8).\nOutcome `deny`.",
+          "type": "string"
+        },
+        {
+          "const": "owned_territory",
+          "description": "A non-owner agent touched an `owned` zone. Implementations that do not yet enforce\nownership treat `owned` zones as `shared` and never return this code. Outcome `deny`.",
+          "type": "string"
+        },
+        {
+          "const": "state_unavailable",
+          "description": "The state database is locked, corrupt or missing. Outcome `deny` for destructive actions,\notherwise `allow` with a warning.",
+          "type": "string"
+        },
+        {
+          "const": "unknown_payload",
+          "description": "The adapter could not parse the harness payload. Outcome `allow`.",
+          "type": "string"
+        },
+        {
+          "const": "claim_queued",
+          "description": "An edit was queued because of a claim conflict. Reserved together with the `queue`\noutcome; implementations MUST NOT return it yet. Outcome `queue`.",
+          "type": "string"
+        }
+      ]
+    },
+    "ReleaseReason": {
+      "description": "Why a claim ended.",
+      "oneOf": [
+        {
+          "const": "released",
+          "description": "The holder released it explicitly.",
+          "type": "string"
+        },
+        {
+          "const": "expired",
+          "description": "It ran past its TTL without a heartbeat.",
+          "type": "string"
+        },
+        {
+          "const": "session_end",
+          "description": "It was released because the session ended.",
+          "type": "string"
+        }
+      ]
+    },
+    "RepoPath": {
+      "description": "A repository-relative path in a stored record.\n\nUses forward slashes as separators, is relative to the repository root and is never empty.\nA value is invalid if it is empty, starts with `/` or `\\`, or starts with a Windows drive\nletter (`C:`). Producers MUST also normalize paths (no `.` or `..` segments, symlinks\nresolved, case folded where the filesystem is case-insensitive); validators cannot check that.",
+      "minLength": 1,
+      "pattern": "^(?:[^/\\\\A-Za-z]|[A-Za-z](?:[^:]|$))",
+      "type": "string"
+    },
+    "Seat": {
+      "description": "One agent session (or human editing session) working in a repository.\n\nThere is exactly one seat per harness session. A seat is created on the first event of a\nsession.",
+      "properties": {
+        "branch": {
+          "description": "The checked-out branch. Absent when HEAD is detached.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "harness": {
+          "description": "Name of the harness, for example `claude-code`.",
+          "type": "string"
+        },
+        "harness_session_id": {
+          "description": "The harness's own session identifier.",
+          "type": "string"
+        },
+        "last_seen_at": {
+          "description": "When the seat last produced an event (UTC).",
+          "format": "date-time",
+          "type": "string"
+        },
+        "pilot": {
+          "description": "The pilot (the human responsible for the seat), identified by git email address.",
+          "type": "string"
+        },
+        "seat_id": {
+          "$ref": "#/$defs/SeatId",
+          "description": "Identifier of the seat."
+        },
+        "started_at": {
+          "description": "When the seat was created (UTC).",
+          "format": "date-time",
+          "type": "string"
+        },
+        "target_branch": {
+          "description": "The branch this work will be integrated into. Claims only conflict within one target\nbranch.",
+          "type": "string"
+        },
+        "worktree": {
+          "description": "Absolute path of the worktree the seat works in.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "seat_id",
+        "pilot",
+        "harness",
+        "harness_session_id",
+        "worktree",
+        "target_branch",
+        "started_at",
+        "last_seen_at"
+      ],
+      "type": "object"
+    },
+    "SeatId": {
+      "description": "Identifier of a seat: one agent session (or human editing session) working in a repository.\n\nStarts with `seat_`.",
+      "pattern": "^seat_[0-9a-z_-]{1,64}$",
+      "type": "string"
+    },
+    "SessionId": {
+      "description": "Identifier of a session record. This is the value carried by the `ACS-Session` commit trailer.\n\nStarts with `ses_`.",
+      "pattern": "^ses_[0-9a-z_-]{1,64}$",
+      "type": "string"
+    },
+    "SpecVersion": {
+      "const": "acs/0.1",
+      "description": "The `spec` field of a document: the version of the ACS spec it was written against.\n\nThe only supported value is `\"acs/0.1\"`. Readers MUST reject any other value.",
+      "type": "string"
+    },
+    "SymbolPath": {
+      "description": "The path of a symbol within its file, as segments joined by `.`.\n\nFor example `Refunds.apply` names the method `apply` of the class `Refunds`. Every segment is\nnon-empty. One symbol path *contains* another when its segments are a prefix of the other's\n(a symbol contains itself).",
+      "pattern": "^[^.]+(?:\\.[^.]+)*$",
+      "type": "string"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "The ledger entry for one session: who worked, what was claimed, what changed, what was denied.\n\nRecords are synced to the git remote, so they hold only structural data (paths, hashes,\ncounts), never prompts.",
+  "properties": {
+    "acs_version": {
+      "description": "Version of the `acs` binary that wrote the record.",
+      "type": "string"
+    },
+    "claims": {
+      "description": "Every claim the seat held, in acquisition order.",
+      "items": {
+        "$ref": "#/$defs/ClaimHistoryEntry"
+      },
+      "type": "array"
+    },
+    "commits": {
+      "description": "Full hashes of the commits that carry this session's `ACS-Session` trailer.",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "ended_at": {
+      "description": "When the session ended (UTC). For crashed sessions, the last time the seat was seen.",
+      "format": "date-time",
+      "type": "string"
+    },
+    "ended_reason": {
+      "$ref": "#/$defs/EndedReason",
+      "description": "Whether the session ended cleanly."
+    },
+    "files_changed": {
+      "description": "Every file the session changed.",
+      "items": {
+        "$ref": "#/$defs/FileChange"
+      },
+      "type": "array"
+    },
+    "guard_decisions": {
+      "$ref": "#/$defs/GuardDecisions",
+      "description": "Summary of the gate's decisions."
+    },
+    "intent": {
+      "description": "What the agent said it was doing, from the `acs_intent` tool. Absent if never declared.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "lore_loaded": {
+      "description": "Lore entries injected into the session.",
+      "items": {
+        "$ref": "#/$defs/LoreId"
+      },
+      "type": "array"
+    },
+    "seat": {
+      "$ref": "#/$defs/Seat",
+      "description": "The seat the session ran on."
+    },
+    "session_id": {
+      "$ref": "#/$defs/SessionId",
+      "description": "Identifier of the record; the value of the `ACS-Session` commit trailer."
+    },
+    "spec": {
+      "$ref": "#/$defs/SpecVersion",
+      "description": "The spec version this record conforms to. Always `acs/0.1`."
+    },
+    "started_at": {
+      "description": "When the session started (UTC).",
+      "format": "date-time",
+      "type": "string"
+    }
+  },
+  "required": [
+    "spec",
+    "session_id",
+    "seat",
+    "claims",
+    "files_changed",
+    "guard_decisions",
+    "commits",
+    "lore_loaded",
+    "started_at",
+    "ended_at",
+    "ended_reason",
+    "acs_version"
+  ],
+  "title": "SessionRecord",
+  "type": "object"
+}

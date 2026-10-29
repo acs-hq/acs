@@ -1,0 +1,66 @@
+{
+  "$defs": {
+    "SeatId": {
+      "description": "Identifier of a seat: one agent session (or human editing session) working in a repository.\n\nStarts with `seat_`.",
+      "pattern": "^seat_[0-9a-z_-]{1,64}$",
+      "type": "string"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "One agent session (or human editing session) working in a repository.\n\nThere is exactly one seat per harness session. A seat is created on the first event of a\nsession.",
+  "properties": {
+    "branch": {
+      "description": "The checked-out branch. Absent when HEAD is detached.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "harness": {
+      "description": "Name of the harness, for example `claude-code`.",
+      "type": "string"
+    },
+    "harness_session_id": {
+      "description": "The harness's own session identifier.",
+      "type": "string"
+    },
+    "last_seen_at": {
+      "description": "When the seat last produced an event (UTC).",
+      "format": "date-time",
+      "type": "string"
+    },
+    "pilot": {
+      "description": "The pilot (the human responsible for the seat), identified by git email address.",
+      "type": "string"
+    },
+    "seat_id": {
+      "$ref": "#/$defs/SeatId",
+      "description": "Identifier of the seat."
+    },
+    "started_at": {
+      "description": "When the seat was created (UTC).",
+      "format": "date-time",
+      "type": "string"
+    },
+    "target_branch": {
+      "description": "The branch this work will be integrated into. Claims only conflict within one target\nbranch.",
+      "type": "string"
+    },
+    "worktree": {
+      "description": "Absolute path of the worktree the seat works in.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "seat_id",
+    "pilot",
+    "harness",
+    "harness_session_id",
+    "worktree",
+    "target_branch",
+    "started_at",
+    "last_seen_at"
+  ],
+  "title": "Seat",
+  "type": "object"
+}

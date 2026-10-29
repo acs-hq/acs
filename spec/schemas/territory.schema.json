@@ -1,0 +1,103 @@
+{
+  "$defs": {
+    "Owner": {
+      "description": "The owner of a zone or lore entry: a pilot (git email) or a team.\n\nOn the wire it is a single string: an email address, or `team:<name>` where `<name>` is a key\nof the `[teams]` table in `territory.toml`.",
+      "pattern": "^(?:team:[A-Za-z0-9_.-]+|[^@\\s:]+@[^@\\s:]+)$",
+      "type": "string"
+    },
+    "SpecVersion": {
+      "const": "acs/0.1",
+      "description": "The `spec` field of a document: the version of the ACS spec it was written against.\n\nThe only supported value is `\"acs/0.1\"`. Readers MUST reject any other value.",
+      "type": "string"
+    },
+    "Zone": {
+      "additionalProperties": false,
+      "description": "One `[[zone]]` entry of `territory.toml`.",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/ZoneKind",
+          "description": "How strictly the zone is controlled."
+        },
+        "owners": {
+          "description": "Who owns the zone. Meaningful for `owned` zones; may be listed on any zone for review\nrouting.",
+          "items": {
+            "$ref": "#/$defs/Owner"
+          },
+          "type": "array"
+        },
+        "paths": {
+          "description": "Globs of the paths the zone covers. When zones overlap, the most specific match wins.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "paths",
+        "kind"
+      ],
+      "type": "object"
+    },
+    "ZoneKind": {
+      "description": "How strictly a zone of the repository is controlled.",
+      "oneOf": [
+        {
+          "const": "owned",
+          "description": "Only the owners' agents may change it; other agents are denied. Implementations that do\nnot yet enforce ownership MUST treat `owned` zones as `shared`.",
+          "type": "string"
+        },
+        {
+          "const": "shared",
+          "description": "Any agent may change it after taking a claim.",
+          "type": "string"
+        },
+        {
+          "const": "open",
+          "description": "Any agent may change it without a claim.",
+          "type": "string"
+        },
+        {
+          "const": "sealed",
+          "description": "No agent may write it.",
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "`.acs/policy/territory.toml`: who may change what. Every field defaults to empty, which makes\nthe whole repository `shared`.",
+  "properties": {
+    "spec": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/SpecVersion"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Optional spec version. If present it must be `acs/0.1`."
+    },
+    "teams": {
+      "additionalProperties": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "description": "Team name to member git emails, referenced from `owners` as `team:<name>`.",
+      "type": "object"
+    },
+    "zone": {
+      "description": "The zones, written as `[[zone]]` tables.",
+      "items": {
+        "$ref": "#/$defs/Zone"
+      },
+      "type": "array"
+    }
+  },
+  "title": "Territory",
+  "type": "object"
+}

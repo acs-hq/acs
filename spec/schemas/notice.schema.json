@@ -1,0 +1,81 @@
+{
+  "$defs": {
+    "NoticeId": {
+      "description": "Identifier of a notice.\n\nStarts with `ntc_`.",
+      "pattern": "^ntc_[0-9a-z_-]{1,64}$",
+      "type": "string"
+    },
+    "NoticeKind": {
+      "description": "What a notice tells the agent about.",
+      "oneOf": [
+        {
+          "const": "interface_changed",
+          "description": "An exported signature changed in code the target seat's claims reference.",
+          "type": "string"
+        },
+        {
+          "const": "claim_released",
+          "description": "A claim the target seat was waiting for was released.",
+          "type": "string"
+        },
+        {
+          "const": "queued_edit_applied",
+          "description": "A deferred edit of the target seat was applied.",
+          "type": "string"
+        },
+        {
+          "const": "lore_stale",
+          "description": "A lore entry in scope of the target seat may be out of date.",
+          "type": "string"
+        }
+      ]
+    },
+    "SeatId": {
+      "description": "Identifier of a seat: one agent session (or human editing session) working in a repository.\n\nStarts with `seat_`.",
+      "pattern": "^seat_[0-9a-z_-]{1,64}$",
+      "type": "string"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "A one-way system message from ACS to a seat, delivered in the seat's next hook context.",
+  "properties": {
+    "body": {
+      "description": "The text shown to the agent. Written for the agent: what changed and what to do about it.",
+      "type": "string"
+    },
+    "created_at": {
+      "description": "When the notice was created (UTC).",
+      "format": "date-time",
+      "type": "string"
+    },
+    "delivered_at": {
+      "description": "When it was delivered (UTC). Absent until delivered.",
+      "format": "date-time",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "kind": {
+      "$ref": "#/$defs/NoticeKind",
+      "description": "What the notice is about."
+    },
+    "notice_id": {
+      "$ref": "#/$defs/NoticeId",
+      "description": "Identifier of the notice."
+    },
+    "target_seat": {
+      "$ref": "#/$defs/SeatId",
+      "description": "The seat the notice is for."
+    }
+  },
+  "required": [
+    "notice_id",
+    "kind",
+    "target_seat",
+    "body",
+    "created_at"
+  ],
+  "title": "Notice",
+  "type": "object"
+}

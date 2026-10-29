@@ -1,0 +1,153 @@
+{
+  "$defs": {
+    "ClaimId": {
+      "description": "Identifier of a claim.\n\nStarts with `clm_`.",
+      "pattern": "^clm_[0-9a-z_-]{1,64}$",
+      "type": "string"
+    },
+    "Outcome": {
+      "description": "What the harness should do with the tool call.",
+      "oneOf": [
+        {
+          "const": "allow",
+          "description": "Let the tool call proceed.",
+          "type": "string"
+        },
+        {
+          "const": "deny",
+          "description": "Block the tool call. `message` tells the agent why and what to do instead.",
+          "type": "string"
+        },
+        {
+          "const": "ask",
+          "description": "Ask the human to approve in the harness's own prompt.",
+          "type": "string"
+        },
+        {
+          "const": "queue",
+          "description": "Reserved for deferred edits, which a later revision of the spec will define.\nImplementations MUST NOT emit it before then; consumers that do not support it MUST treat\nit as `deny`.",
+          "type": "string"
+        }
+      ]
+    },
+    "ReasonCode": {
+      "description": "A stable machine-readable code saying why the engine decided as it did.\n\nThe set is closed: a new code is a spec change. The typical outcome of each code is listed in\nthe spec's reason-code table and by [`ReasonCode::typical_outcomes`].",
+      "oneOf": [
+        {
+          "const": "ok",
+          "description": "Nothing is blocked. Outcome `allow`.",
+          "type": "string"
+        },
+        {
+          "const": "gate_off",
+          "description": "`acs off` is active for this repository; the gate is disabled except for sealed paths.\nOutcome `allow`.",
+          "type": "string"
+        },
+        {
+          "const": "sealed_path",
+          "description": "A target matches a sealed glob. Always denied for agents. Outcome `deny`.",
+          "type": "string"
+        },
+        {
+          "const": "banned_command",
+          "description": "A shell command matches a `destructive.ban` pattern. Always denied. Outcome `deny`.",
+          "type": "string"
+        },
+        {
+          "const": "protected_branch",
+          "description": "A history rewrite or force push targets a protected branch. Outcome `deny`.",
+          "type": "string"
+        },
+        {
+          "const": "path_escapes_repo",
+          "description": "A write, delete or move target resolves outside the repository root, including via a\nsymlink or junction. Outcome `ask`.",
+          "type": "string"
+        },
+        {
+          "const": "delete_outside_claims",
+          "description": "Deletes exceed `destructive.max_files_deleted_outside_claims`. Outcome `deny`.",
+          "type": "string"
+        },
+        {
+          "const": "destructive_budget",
+          "description": "Deletes in one command exceed `destructive.max_files_deleted_per_command`. Outcome `ask`.",
+          "type": "string"
+        },
+        {
+          "const": "destructive_unknown_targets",
+          "description": "A destructive shell command whose targets cannot be determined. Outcome `ask`.",
+          "type": "string"
+        },
+        {
+          "const": "claim_conflict",
+          "description": "An overlapping live claim is held by another seat (claim rules, spec section 8).\nOutcome `deny`.",
+          "type": "string"
+        },
+        {
+          "const": "owned_territory",
+          "description": "A non-owner agent touched an `owned` zone. Implementations that do not yet enforce\nownership treat `owned` zones as `shared` and never return this code. Outcome `deny`.",
+          "type": "string"
+        },
+        {
+          "const": "state_unavailable",
+          "description": "The state database is locked, corrupt or missing. Outcome `deny` for destructive actions,\notherwise `allow` with a warning.",
+          "type": "string"
+        },
+        {
+          "const": "unknown_payload",
+          "description": "The adapter could not parse the harness payload. Outcome `allow`.",
+          "type": "string"
+        },
+        {
+          "const": "claim_queued",
+          "description": "An edit was queued because of a claim conflict. Reserved together with the `queue`\noutcome; implementations MUST NOT return it yet. Outcome `queue`.",
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "What the engine returns for an event.\n\nUnknown fields are ignored so that newer producers remain readable.",
+  "properties": {
+    "claims_acquired": {
+      "description": "Claims acquired while deciding this event.",
+      "items": {
+        "$ref": "#/$defs/ClaimId"
+      },
+      "type": "array"
+    },
+    "context": {
+      "description": "Lore and notices to inject into the agent's context.",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "message": {
+      "default": "",
+      "description": "Guidance written for the agent: what is blocked, by whom, and what to do next. May be\nempty when nothing is blocked.",
+      "type": "string"
+    },
+    "outcome": {
+      "$ref": "#/$defs/Outcome",
+      "description": "What the harness should do."
+    },
+    "reason_code": {
+      "$ref": "#/$defs/ReasonCode",
+      "description": "Why, as a stable machine code."
+    },
+    "warnings": {
+      "description": "One-line warnings that do not change the outcome, such as a stale remote claims view or an\ninvalid policy file that fell back to the last valid one. Adapters render them as context.",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "outcome",
+    "reason_code"
+  ],
+  "title": "Decision",
+  "type": "object"
+}

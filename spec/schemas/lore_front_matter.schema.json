@@ -1,0 +1,46 @@
+{
+  "$defs": {
+    "LoreId": {
+      "description": "Identifier of a lore entry, chosen when the entry is created and stable afterwards.\n\nStarts with `lore_`.",
+      "pattern": "^lore_[0-9a-z_-]{1,64}$",
+      "type": "string"
+    },
+    "Owner": {
+      "description": "The owner of a zone or lore entry: a pilot (git email) or a team.\n\nOn the wire it is a single string: an email address, or `team:<name>` where `<name>` is a key\nof the `[teams]` table in `territory.toml`.",
+      "pattern": "^(?:team:[A-Za-z0-9_.-]+|[^@\\s:]+@[^@\\s:]+)$",
+      "type": "string"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The TOML front matter of a lore entry (a Markdown file under `.acs/policy/lore/`).\n\nA lore file starts with a line `+++`, the front matter, a line `+++`, then the Markdown body.",
+  "properties": {
+    "id": {
+      "$ref": "#/$defs/LoreId",
+      "description": "Stable identifier of the entry."
+    },
+    "owner": {
+      "$ref": "#/$defs/Owner",
+      "description": "Who maintains the entry and reviews proposed changes."
+    },
+    "scope": {
+      "description": "Globs of the paths the entry applies to. The entry is injected the first time a seat\nenters one of them in a session.",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "written_against": {
+      "description": "The git revision the entry was written against; staleness is measured from it.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "scope",
+    "owner",
+    "written_against"
+  ],
+  "title": "LoreFrontMatter",
+  "type": "object"
+}

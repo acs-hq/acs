@@ -42,7 +42,7 @@ pub struct Seat {
 ///
 /// On the wire this is `{"file": "<path>"}` or `{"symbol": "<path>", "symbol_path": "<a.b.c>"}`.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, JsonSchema)]
-#[serde(untagged)]
+#[serde(untagged, deny_unknown_fields)]
 pub enum ClaimScope {
     /// A whole file.
     File {
@@ -219,6 +219,7 @@ pub struct NotableDecision {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct GuardDecisions {
     /// How many times each reason code was returned. Codes never returned are omitted.
+    #[schemars(extend("propertyNames" = {"$ref": "#/$defs/ReasonCode"}))]
     pub counts: BTreeMap<ReasonCode, u64>,
     /// The denials and prompts worth reading individually, oldest first.
     pub notable: Vec<NotableDecision>,

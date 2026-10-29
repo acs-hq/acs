@@ -12,6 +12,7 @@ mod event;
 mod ids;
 mod policy_types;
 mod records;
+pub mod schema;
 mod values;
 
 pub use decision::{Decision, Outcome, ReasonCode};
