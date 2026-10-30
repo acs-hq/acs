@@ -8,6 +8,7 @@ use std::process::ExitCode;
 use acs_core::Phase;
 use clap::{Args, Parser, Subcommand, ValueEnum};
 
+use crate::commands;
 use crate::hook::{self, HookEnv};
 
 /// The `acs` command line.
@@ -28,6 +29,20 @@ pub struct Cli {
 pub enum Command {
     /// Handle one harness hook call: read the payload on stdin, write the decision on stdout.
     Hook(HookArgs),
+    /// Set the repository up: policy defaults, fetch refspec, git hooks, plugin hints.
+    Init(commands::init::InitArgs),
+    /// Show claims, sealed paths and whether the gate is on.
+    Status(commands::status::StatusArgs),
+    /// Claim files for yourself (the human seat).
+    Claim(commands::claim::ClaimArgs),
+    /// Release your claims.
+    Release(commands::release::ReleaseArgs),
+    /// Turn the gate off for this repository on this machine (sealed paths still hold).
+    Off(commands::off::OffArgs),
+    /// Turn the gate back on.
+    On(commands::off::OnArgs),
+    /// Check the installation and repair what can be repaired.
+    Doctor(commands::doctor::DoctorArgs),
 }
 
 /// A hook phase on the command line (the names of the spec's `phase` field).
@@ -105,6 +120,13 @@ pub fn run_from_env() -> ExitCode {
 pub fn run(cli: Cli) -> ExitCode {
     match cli.command {
         Command::Hook(args) => run_hook(&args),
+        Command::Init(args) => commands::init::run(&args),
+        Command::Status(args) => commands::status::run(&args),
+        Command::Claim(args) => commands::claim::run(&args),
+        Command::Release(args) => commands::release::run(&args),
+        Command::Off(args) => commands::off::run_off(&args),
+        Command::On(args) => commands::off::run_on(&args),
+        Command::Doctor(args) => commands::doctor::run(&args),
     }
 }
 
@@ -145,7 +167,9 @@ mod tests {
     #[test]
     fn canonical_takes_a_phase() {
         let cli = parse(&["hook", "--canonical", "pre_tool"]).unwrap();
-        let Command::Hook(args) = cli.command;
+        let Command::Hook(args) = cli.command else {
+            unreachable!("parsed a hook command")
+        };
         assert_eq!(args.canonical, Some(PhaseArg::PreTool));
         assert!(args.harness.is_none());
         assert!(parse(&["hook", "--canonical", "pre-tool"]).is_ok());
@@ -154,7 +178,9 @@ mod tests {
     #[test]
     fn harness_form_takes_an_optional_phase() {
         let cli = parse(&["hook", "claude-code", "--phase", "session_end"]).unwrap();
-        let Command::Hook(args) = cli.command;
+        let Command::Hook(args) = cli.command else {
+            unreachable!("parsed a hook command")
+        };
         assert_eq!(args.harness.as_deref(), Some("claude-code"));
         assert_eq!(args.phase, Some(PhaseArg::SessionEnd));
         assert!(parse(&["hook", "claude-code"]).is_ok());

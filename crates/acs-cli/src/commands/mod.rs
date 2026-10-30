@@ -4,3 +4,11 @@
 //! This is the registration point: a work package adds one `pub mod` line here, one variant to
 //! [`crate::cli::Command`] and one arm to [`crate::cli::run`]. Commands call the shared
 //! operations in [`crate::runtime`] instead of reimplementing them.
+
+pub mod claim;
+pub mod doctor;
+pub mod init;
+pub mod off;
+pub mod release;
+pub mod status;
+mod support;
