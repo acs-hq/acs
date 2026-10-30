@@ -1,8 +1,10 @@
 # Claude Code adapter notes
 
-Status: WP2.2 stage 1 (research). Written 2026-10-30 against Claude Code **2.1.314**
-(`claude --version` on the research machine). The adapter and plugin code follow in stage 2 and
-must match this document; if Claude Code changes, update this file first.
+Status: WP2.2 complete (research, adapter, plugin, acceptance run). Written 2026-10-30 against
+Claude Code **2.1.314** (`claude --version` on the research machine). The adapter
+(`crates/acs-adapters/src/claude_code.rs`) and the plugin (`integrations/claude-code/`) match this
+document; if Claude Code changes, update this file first. Choices made beyond the plan and spec are
+in `docs/decisions/0013-claude-code-adapter.md`.
 
 Everything below is marked as one of:
 
@@ -320,7 +322,7 @@ hook stdin was kept.
 `onFailure` requires Claude Code 2.1.295 or later. How an older version treats an unknown
 `onFailure` key in a plugin's `hooks.json` was not tested.
 
-Decision for stage 2 (to record in decision 0013): the plugin does **not** set
+Decision (recorded in decision 0013): the plugin does **not** set
 `onFailure: "block"` by default, because with the binary missing every tool call (including the
 `Bash` call that installs `acs`) would be blocked and the setup skill could not recover. ACS's own
 hard guarantees come from sealed paths and the git backstop (decision 0011). `acs init` may offer a
@@ -579,3 +581,65 @@ repository, where agents work), `.claude/agent-memory/` and other state Claude C
   and without `onFailure: block`), and `--resume` / `--continue`. Nothing outside the scratch
   directory was modified; no settings file of the repository or the user was touched.
 - Fixture provenance: see `tests/fixtures/claude-code/README.md`.
+
+## 17. Acceptance run (real session, 2026-10-30)
+
+Setup, all in a scratch directory (`ACS_HOME` inside it, debug build of `acs` copied to a `bin/`
+directory placed first on `PATH` for the run only, no global install, no change to any settings
+file):
+
+1. A throwaway git repository (`user.email dev@example.com`) with `src/payments/refund.rs`.
+2. A second seat, `harness_session_id` `sara-session-1`, pilot `sara@example.com` (through
+   `GIT_CONFIG_COUNT`/`GIT_CONFIG_KEY_0`/`GIT_CONFIG_VALUE_0` in the environment of that one
+   command), claims the file through the canonical adapter:
+   `acs hook --canonical session_start < ...` then `acs hook --canonical pre_tool < ...` with an
+   `Edit` event for `src/payments/refund.rs`. The result was `allow` with one claim acquired.
+3. Claude Code, loading the plugin from the checkout:
+   `claude -p "Edit src/payments/refund.rs so the function refund returns the number 1 (use the Edit
+   tool). If the edit is blocked, quote the exact blocking message you received verbatim, and also
+   quote verbatim any text that mentions ACS and was added to your context at the start of the
+   session. Then stop; do not try any other way to change the file."
+   --plugin-dir integrations/claude-code --permission-mode acceptEdits --session-id <uuid>`.
+
+Outcome: the edit was blocked, the file is unchanged (`fn refund() {}`), and the model quoted the
+guidance, naming the holder. Transcript excerpt (model output, trimmed to the quotes):
+
+```
+The edit was blocked ...
+
+The blocking message, verbatim:
+> PreToolUse:Edit hook error: `src/payments/refund.rs` is claimed by sara@example.com (canonical,
+> active just now). Work on other files, or ask your pilot to coordinate.
+
+Text mentioning ACS that was added to my context at the start of the session, verbatim:
+> ACS coordinates the agents working in this repository. Editing a file claims it for you; a file
+> another seat has claimed is blocked until they finish.
+> You hold no claims yet.
+> Claimed by others: `src/payments/refund.rs` (sara@example.com, canonical).
+> Never writable: `.git/**`, `.acs/**`, `.github/workflows/**`, `**/.env*` and 2 more.
+```
+
+Claude Code's debug log for the same run (`--debug-file`) shows the hook side:
+
+```
+Hooks: SessionStart:startup [acs hook claude-code] (plugin acs@inline) finished with status 0 (117ms)
+Hook SessionStart:startup success: {"hookSpecificOutput":{"additionalContext":"ACS coordinates ...","hookEventName":"SessionStart"}}
+Hooks: PreToolUse:Edit [acs hook claude-code] (plugin acs@inline) finished with status 2 (17ms)
+Hook PreToolUse:Edit (PreToolUse) error: status code 2
+stdout: {"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"`src/payments/refund.rs` is claimed by sara@example.com (canonical, active just now). Work on other files, or ask your pilot to coordinate."}}
+stderr: `src/payments/refund.rs` is claimed by sara@example.com (canonical, active just now). Work on other files, or ask your pilot to coordinate.
+```
+
+Observations from the run:
+
+- Plugin loaded with `--plugin-dir` (hooks, skill `acs:acs-usage` listed). The MCP server
+  `plugin:acs:acs` failed to connect because `acs mcp` does not exist yet (WP2.6); Claude Code
+  reported "Skipping connection (recent failure cached ...)" and carried on. A failed MCP server
+  does not affect the hooks.
+- With `acs` missing from `PATH` (an earlier, accidental run in a clobbered scratch directory), every
+  hook failed to start and the tool call went ahead: the fail-open behaviour of section 8, seen
+  with the real plugin.
+- Hook latency as logged by Claude Code (debug build, cold): SessionStart 117 ms, PreToolUse 13
+  to 34 ms, PostToolUse 11 ms.
+- Still to do when WP2.6 lands: the same run with `acs mcp` serving, to confirm tool search finds
+  `mcp__plugin_acs_acs__acs_status` and that the seat binds through `CLAUDE_CODE_SESSION_ID`.
