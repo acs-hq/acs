@@ -120,6 +120,11 @@ fn record(
         outcome: Some(decision.outcome),
         detail: detail.as_deref(),
     });
+    // An uneventful allow that touches nothing (a read-only tool, or the MCP call to `acs_why`
+    // itself) must not replace the decision the agent is asking about.
+    if decision.outcome == Outcome::Allow && paths.is_empty() && event.command.is_none() {
+        return;
+    }
     let _ = db.set_last_decision(
         &info.seat.seat_id,
         &LastDecision {

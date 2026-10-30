@@ -335,8 +335,8 @@ fn claude_code_session_tools_end_to_end() {
         "delete_outside_claims"
     );
 
-    // The harness's own pre-tool hook for the next MCP call records an uneventful allow over
-    // the denial; acs_why still finds the denial in the event log.
+    // The harness's own pre-tool hook for the next MCP call is an uneventful allow; it does not
+    // replace the denial, so acs_why still gives the gate's original wording.
     let hooked = sara.pre_tool("mcp__acs__acs_why", "other", &[]);
     assert_eq!(hooked.outcome, acs_core::Outcome::Allow);
     let why = server.call("acs_why", json!({}));
@@ -345,7 +345,7 @@ fn claude_code_session_tools_end_to_end() {
         "{}",
         text(&why)
     );
-    assert!(text(&why).contains("Earlier"), "{}", text(&why));
+    assert!(text(&why).contains(&denied.message), "{}", text(&why));
 
     // Release: one held, one not held.
     let released = server.call("acs_release", json!({"paths": ["a.txt", "b.txt"]}));
