@@ -538,6 +538,23 @@ impl StateDb {
         )
     }
 
+    /// Every unexpired claim in the remote view (other machines' claims as last fetched), oldest
+    /// first: for `acs status`. The view is returned even when stale; callers decide how to
+    /// present that (see [`StateDb::remote_sync_status`]).
+    ///
+    /// # Errors
+    ///
+    /// Any [`StoreError`].
+    pub fn live_remote_claims(&self, now: Timestamp) -> Result<Vec<HeldClaim>, StoreError> {
+        collect_held(
+            &mut self.conn.prepare_cached(&format!(
+                "{REMOTE_SELECT} WHERE expires_at > ?1 ORDER BY acquired_at, claim_id"
+            ))?,
+            params![to_db(now)],
+            ClaimSource::Remote,
+        )
+    }
+
     /// Every claim the seat has held, oldest first, for its session record: ended claims from
     /// the history, then claims still live (without `released_at`).
     ///

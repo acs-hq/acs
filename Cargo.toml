@@ -11,6 +11,7 @@ repository = "https://github.com/acs-hq/acs"
 
 [workspace.dependencies]
 # Dependencies are added by the work packages that need them.
+clap = { version = "4.6.7", default-features = false, features = ["std", "derive", "help", "usage", "error-context", "suggestions"] }
 dunce = "1.0.5"
 getrandom = "0.4.3"
 globset = { version = "0.4.18", default-features = false }

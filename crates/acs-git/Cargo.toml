@@ -1,6 +1,6 @@
 [package]
 name = "acs-git"
-description = "ACS git: gix reads, git CLI network and signing, refs, trailers and hooks."
+description = "ACS git: repository reads, working-tree change detection, git CLI helpers."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -10,3 +10,10 @@ publish = false
 
 [lints]
 workspace = true
+
+[dependencies]
+dunce.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
