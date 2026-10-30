@@ -1,0 +1,18 @@
+{
+  "conversationId": "3f2a9c1e-7b4d-4e0a-9d51-0c6b8e2a7f10",
+  "stepIdx": 2,
+  "toolCall": {
+    "name": "run_command",
+    "args": {
+      "CommandLine": "Remove-Item -Recurse -Force .\\build",
+      "WaitMsBeforeAsync": 500,
+      "toolSummary": "Remove build output"
+    }
+  },
+  "workspacePaths": [
+    "C:\\Users\\dev\\proj"
+  ],
+  "transcriptPath": "C:\\Users\\dev\\.gemini\\antigravity-cli\\brain\\3f2a9c1e-7b4d-4e0a-9d51-0c6b8e2a7f10\\transcript_full.jsonl",
+  "artifactDirectoryPath": "C:\\Users\\dev\\.gemini\\antigravity-cli\\brain\\3f2a9c1e-7b4d-4e0a-9d51-0c6b8e2a7f10",
+  "modelName": "gemini-3.8-flash-medium"
+}
