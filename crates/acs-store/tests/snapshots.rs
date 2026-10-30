@@ -471,8 +471,14 @@ fn capturing_1000_small_files_is_fast() {
     assert_eq!(results.len(), 1000);
     println!("snapshot capture of 1000 files: cold {cold:?}, deduplicated {warm:?}");
 
-    // The 200 ms budget applies to release builds; debug builds get generous slack.
-    let limit_ms = if cfg!(debug_assertions) { 5000 } else { 200 };
+    // The 200 ms budget applies to release builds; debug builds get generous slack. Windows CI
+    // runners scan every new file (cold capture has taken 7 s there in debug), so they only get a
+    // sanity bound; the release-build budget is enforced by the benchmarks (WP10.1).
+    let limit_ms = match (cfg!(debug_assertions), cfg!(windows)) {
+        (true, true) => 30_000,
+        (true, false) => 5000,
+        (false, _) => 200,
+    };
     assert!(cold.as_millis() < limit_ms, "cold capture took {cold:?}");
     assert!(warm.as_millis() < limit_ms, "warm capture took {warm:?}");
 }
