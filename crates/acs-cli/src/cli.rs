@@ -181,7 +181,10 @@ mod tests {
         let cli = parse(&["mcp"]).unwrap();
         assert!(matches!(
             cli.command,
-            Command::Mcp(McpArgs { harness: None })
+            Command::Mcp(McpArgs {
+                harness: None,
+                structured_content: false
+            })
         ));
         let cli = parse(&["mcp", "--harness", "antigravity"]).unwrap();
         let Command::Mcp(args) = cli.command else {

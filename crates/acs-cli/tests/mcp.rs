@@ -2,6 +2,8 @@
 //! harness does (newline-delimited JSON-RPC), against a temporary repository and `ACS_HOME`.
 //! Seats are created with `acs hook --canonical`, as a harness's hooks would.
 
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 mod common;
 
 use std::io::{BufRead, BufReader, Write};
@@ -191,6 +193,10 @@ fn without_a_session_status_answers_and_the_rest_explain() {
     let status = server.call("acs_status", json!({}));
     assert!(!is_error(&status), "{status}");
     assert!(
+        status.get("structuredContent").is_none(),
+        "text only by default: {status}"
+    );
+    assert!(
         text(&status).contains("No active ACS session for claude-code yet"),
         "{}",
         text(&status)
@@ -228,7 +234,7 @@ fn claude_code_session_tools_end_to_end() {
 
     let mut server = Server::start(
         &world,
-        &["--harness", "claude-code"],
+        &["--harness", "claude-code", "--structured-content"],
         &[("CLAUDE_CODE_SESSION_ID", "cc-sara")],
     );
     server.initialize("claude-code");
@@ -412,7 +418,7 @@ fn antigravity_binds_per_call_from_the_root_conversation_id() {
     let b = Agent::new(&world, "antigravity", "conv-b");
     a.start();
     b.start();
-    let mut server = Server::start(&world, &[], &[]);
+    let mut server = Server::start(&world, &["--structured-content"], &[]);
     server.initialize("antigravity-client");
     let key = "antigravity.google/root_conversation_id";
 
@@ -460,6 +466,61 @@ fn antigravity_binds_per_call_from_the_root_conversation_id() {
     assert_eq!(
         status["structuredContent"]["seat"]["session_id"].as_str(),
         Some(b.info().session_id.as_str())
+    );
+    server.finish();
+}
+
+#[test]
+fn replays_the_requests_captured_from_claude_code() {
+    // Claude Code 2.1.314 speaks the stateless protocol revision: a `server/discover` probe,
+    // no `initialize`, and its identity in each request's `_meta`.
+    let captured = include_str!("../../../tests/fixtures/claude-code/mcp_requests.captured.jsonl");
+    let world = World::new();
+    Agent::new(&world, "claude-code", "cc-fixture").start();
+    let mut server = Server::start(
+        &world,
+        &["--harness", "claude-code"],
+        &[("CLAUDE_CODE_SESSION_ID", "cc-fixture")],
+    );
+    let mut responses = std::collections::HashMap::new();
+    for line in captured.lines() {
+        let request: Value = serde_json::from_str(line).unwrap();
+        server.send(&request);
+        let response = loop {
+            let line = server
+                .lines
+                .recv_timeout(Duration::from_secs(20))
+                .expect("the server answers within 20 s");
+            let value: Value = serde_json::from_str(&line).unwrap();
+            if value["id"] == request["id"] {
+                break value;
+            }
+        };
+        responses.insert(request["id"].to_string(), response);
+    }
+    let discover = &responses["\"server-discover-probe-1\""]["result"];
+    assert!(
+        discover["supportedVersions"]
+            .as_array()
+            .is_some_and(|v| v.contains(&json!("2026-07-28"))),
+        "{discover}"
+    );
+    assert_eq!(discover["capabilities"]["tools"], json!({}));
+    let tools = &responses["0"]["result"]["tools"];
+    assert_eq!(tools.as_array().map(Vec::len), Some(5), "{tools}");
+    let intent = &responses["1"]["result"];
+    assert!(
+        text(intent).contains("Intent recorded: \"capture check\""),
+        "{intent}"
+    );
+    let status = &responses["2"]["result"];
+    assert!(
+        text(status).contains("You: claude-code session ses_"),
+        "{status}"
+    );
+    assert!(
+        text(status).contains("Intent: \"capture check\"."),
+        "{status}"
     );
     server.finish();
 }

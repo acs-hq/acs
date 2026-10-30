@@ -74,24 +74,25 @@ impl ToolOutput {
     }
 }
 
-/// Arguments of `acs_claim` and `acs_release`.
+// Arguments of `acs_claim` and `acs_release`. (Plain comments: doc comments on the types would
+// end up in the schema sent to the model.)
 #[derive(Debug, Deserialize, JsonSchema)]
 struct PathsArgs {
-    /// Files or directories to claim, relative to the repository root (or absolute). A directory
-    /// claims the files under it.
+    /// Files or directories, relative to the repository root (or absolute). A directory covers
+    /// the files under it.
     #[serde(deserialize_with = "one_or_many")]
     #[schemars(with = "Vec<String>")]
     paths: Vec<String>,
 }
 
-/// Arguments of `acs_intent`.
+// Arguments of `acs_intent`.
 #[derive(Debug, Deserialize, JsonSchema)]
 struct IntentArgs {
     /// One sentence: what you are about to do and which files it touches.
     text: String,
 }
 
-/// Arguments of `acs_status` and `acs_why`: none.
+// Arguments of `acs_status` and `acs_why`: none.
 #[derive(Debug, Deserialize, JsonSchema)]
 struct NoArgs {}
 
@@ -117,6 +118,10 @@ fn schema_of<T: JsonSchema>() -> Map<String, Value> {
     // Some clients reject the meta-schema URL; the arguments are plain draft 2020-12.
     schema.remove("$schema");
     schema.remove("title");
+    schema.remove("description");
+    schema
+        .entry("properties")
+        .or_insert_with(|| Value::Object(Map::new()));
     schema
 }
 
@@ -310,7 +315,7 @@ fn status_text(reply: &StatusReply) -> String {
     ));
     match &reply.seat {
         Some(seat) => lines.push(format!(
-            "You: {} session {}, pilot {}. Intent: {}",
+            "You: {} session {}, pilot {}. Intent: {}.",
             seat.harness,
             seat.session_id,
             seat.pilot,

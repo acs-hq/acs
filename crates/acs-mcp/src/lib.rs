@@ -27,7 +27,7 @@ pub use backend::{
     IntentRequest, ReleaseReply, ReleaseRequest, SeatInfo, StatusReply, WhyReply,
 };
 pub use bind::BindingSettings;
-pub use server::AcsServer;
+pub use server::{AcsServer, ServerOptions};
 
 /// Why [`serve_stdio`] ended abnormally.
 #[derive(Debug, thiserror::Error)]
@@ -51,12 +51,12 @@ pub enum ServeError {
 /// # Errors
 ///
 /// [`ServeError`] when the runtime cannot start or the session fails.
-pub fn serve_stdio<B: Backend>(backend: B, settings: BindingSettings) -> Result<(), ServeError> {
+pub fn serve_stdio<B: Backend>(backend: B, options: ServerOptions) -> Result<(), ServeError> {
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()?;
     runtime.block_on(async {
-        let server = AcsServer::new(backend, settings);
+        let server = AcsServer::new(backend, options);
         let running = server
             .serve(rmcp::transport::stdio())
             .await

@@ -1,0 +1,12 @@
+{
+  "jsonrpc": "2.0",
+  "id": 7,
+  "method": "tools/call",
+  "params": {
+    "name": "acs_status",
+    "arguments": {},
+    "_meta": {
+      "antigravity.google/root_conversation_id": "0b8f6c1e-2d4a-4e7b-9a3c-5f1d2e8a7b60"
+    }
+  }
+}

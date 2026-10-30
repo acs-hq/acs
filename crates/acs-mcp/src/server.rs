@@ -28,20 +28,32 @@ const INSTRUCTIONS: &str = "ACS coordinates the coding agents working in this re
 Claim files with acs_claim before you edit or delete them, say what you are doing with \
 acs_intent, release files when done, and call acs_why when something is denied.";
 
+/// How the server behaves.
+#[derive(Debug, Clone, Default)]
+pub struct ServerOptions {
+    /// How calls are bound to a harness session.
+    pub binding: BindingSettings,
+    /// Also return each result as `structuredContent`. Off by default: Claude Code (2.1.314)
+    /// shows the model the structured JSON *instead of* the text content when both are present,
+    /// and the text is what is written for the agent. Turn it on for clients that read the
+    /// structure.
+    pub structured_content: bool,
+}
+
 /// The MCP server for one harness session.
 pub struct AcsServer<B> {
     backend: Arc<B>,
-    settings: BindingSettings,
+    options: ServerOptions,
     client_name: Mutex<Option<String>>,
 }
 
 impl<B: Backend> AcsServer<B> {
-    /// A server answering with `backend`; `settings` say how to bind calls to a harness session.
+    /// A server answering with `backend`.
     #[must_use]
-    pub fn new(backend: B, settings: BindingSettings) -> Self {
+    pub fn new(backend: B, options: ServerOptions) -> Self {
         Self {
             backend: Arc::new(backend),
-            settings,
+            options,
             client_name: Mutex::new(None),
         }
     }
@@ -79,14 +91,16 @@ pub fn list_tools_result() -> ListToolsResult {
     ListToolsResult::with_all_items(tools::definitions().iter().map(tool_of).collect())
 }
 
-fn result_of(output: ToolOutput) -> CallToolResult {
+fn result_of(output: ToolOutput, structured: bool) -> CallToolResult {
     let content = vec![ContentBlock::text(output.text)];
     let mut result = if output.is_error {
         CallToolResult::error(content)
     } else {
         CallToolResult::success(content)
     };
-    result.structured_content = output.structured;
+    if structured {
+        result.structured_content = output.structured;
+    }
     result
 }
 
@@ -135,10 +149,13 @@ impl<B: Backend> ServerHandler for AcsServer<B> {
         context: RequestContext<RoleServer>,
     ) -> Result<CallToolResponse, McpError> {
         let meta = request_meta(&request, &context);
-        let caller = self.settings.caller(self.client_name().as_deref(), &meta);
+        let caller = self
+            .options
+            .binding
+            .caller(self.client_name().as_deref(), &meta);
         // The backend does short blocking work (SQLite, a few file reads); the server handles
         // one request at a time on a single thread, so there is nothing to starve.
         let output = tools::call(&*self.backend, &caller, &request.name, request.arguments);
-        Ok(result_of(output).into())
+        Ok(result_of(output, self.options.structured_content).into())
     }
 }

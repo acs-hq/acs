@@ -26,8 +26,8 @@ use std::process::ExitCode;
 use acs_core::{Outcome, Phase, Timestamp};
 use acs_mcp::{
     Backend, BackendError, BindingSettings, Caller, ClaimInfo, ClaimReply, ClaimRequest,
-    DecisionInfo, IntentReply, IntentRequest, ReleaseReply, ReleaseRequest, SeatInfo, StatusReply,
-    WhyReply,
+    DecisionInfo, IntentReply, IntentRequest, ReleaseReply, ReleaseRequest, SeatInfo,
+    ServerOptions, StatusReply, WhyReply,
 };
 use acs_store::{AcsHome, SeatInfo as StoredSeat, StateDb};
 use clap::Args;
@@ -49,14 +49,21 @@ pub struct McpArgs {
     /// seats the tools bind to; inferred from the client when omitted.
     #[arg(long, value_name = "NAME")]
     pub harness: Option<String>,
+    /// Also return results as MCP `structuredContent`. Claude Code shows the model that JSON
+    /// instead of the text written for it, so leave this off unless the client needs it.
+    #[arg(long)]
+    pub structured_content: bool,
 }
 
 /// Runs the MCP server on stdin and stdout until the client closes the pipe.
 #[must_use]
 pub fn run(args: &McpArgs) -> ExitCode {
     let backend = RuntimeBackend::from_process();
-    let settings = BindingSettings::from_process(args.harness.clone());
-    match acs_mcp::serve_stdio(backend, settings) {
+    let options = ServerOptions {
+        binding: BindingSettings::from_process(args.harness.clone()),
+        structured_content: args.structured_content,
+    };
+    match acs_mcp::serve_stdio(backend, options) {
         Ok(()) => ExitCode::SUCCESS,
         Err(err) => {
             eprintln!("acs mcp: {err}");
@@ -236,6 +243,11 @@ impl RuntimeBackend {
     }
 }
 
+/// An RFC 3339 time without the fraction: shorter for an agent to read.
+fn whole_seconds(at: Timestamp) -> String {
+    Timestamp::from_second(at.as_second()).map_or_else(|_| at.to_string(), |t| t.to_string())
+}
+
 const fn outcome_str(outcome: Outcome) -> &'static str {
     match outcome {
         Outcome::Allow => "allow",
@@ -252,7 +264,7 @@ fn claim_info(view: &ClaimView) -> ClaimInfo {
         holder: view.pilot.clone(),
         harness: view.harness.clone(),
         source: view.source.to_owned(),
-        expires_at: view.expires_at.to_string(),
+        expires_at: whole_seconds(view.expires_at),
     }
 }
 
@@ -392,7 +404,7 @@ impl Backend for RuntimeBackend {
                 outcome: outcome_str(d.outcome).to_owned(),
                 reason_code: d.reason_code.as_str().to_owned(),
                 message: d.message,
-                at: d.at.to_string(),
+                at: whole_seconds(d.at),
             }),
         })
     }
@@ -430,6 +442,6 @@ fn last_block(ctx: &RepoContext, seat: &StoredSeat) -> Option<DecisionInfo> {
              repeat the action to see it again, or call acs_status to see claims and sealed \
              paths."
         ),
-        at: event.at.to_string(),
+        at: whole_seconds(event.at),
     })
 }

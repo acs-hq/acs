@@ -20,6 +20,10 @@ pub const ANTIGRAVITY: &str = "antigravity";
 pub const ANTIGRAVITY_ROOT_KEY: &str = "antigravity.google/root_conversation_id";
 /// `params._meta` key with the tool use id on Claude Code.
 pub const CLAUDE_TOOL_USE_KEY: &str = "claudecode/toolUseId";
+/// `params._meta` key with the client's identity on every request of the stateless protocol
+/// revision `2026-07-28` (Claude Code 2.1.314 speaks it: no `initialize`, a `server/discover`
+/// probe, and `{name, version, ...}` here instead).
+pub const CLIENT_INFO_KEY: &str = "io.modelcontextprotocol/clientInfo";
 /// The environment variable Claude Code sets for the MCP servers it starts.
 pub const CLAUDE_SESSION_ENV: &str = "CLAUDE_CODE_SESSION_ID";
 
@@ -42,8 +46,9 @@ impl BindingSettings {
         }
     }
 
-    /// The [`Caller`] of one `tools/call`: `client_name` is `clientInfo.name` from `initialize`,
-    /// `meta` the request's `_meta` object (empty when there is none).
+    /// The [`Caller`] of one `tools/call`: `client_name` is `clientInfo.name` from `initialize`
+    /// (when the client sent one; stateless clients put it in `meta` instead), `meta` the
+    /// request's `_meta` object (empty when there is none).
     ///
     /// The harness is, in order: `--harness`; Antigravity if its conversation id is in `_meta`;
     /// Claude Code if its tool use id is in `_meta` or its session id is in the environment; the
@@ -54,6 +59,11 @@ impl BindingSettings {
         let antigravity_id = meta_str(meta, ANTIGRAVITY_ROOT_KEY);
         let tool_use_id = meta_str(meta, CLAUDE_TOOL_USE_KEY);
         let claude_id = non_empty(self.claude_code_session_id.as_deref());
+        let client_name = client_name.or_else(|| {
+            meta.get(CLIENT_INFO_KEY)
+                .and_then(|info| info.get("name"))
+                .and_then(Value::as_str)
+        });
 
         let harness = non_empty(self.harness.as_deref())
             .map(str::to_ascii_lowercase)
@@ -164,6 +174,58 @@ mod tests {
         assert_eq!(by_name.session_id, None);
         let unknown = s.caller(Some("inspector"), &Map::new());
         assert_eq!(unknown, Caller::default());
+    }
+
+    #[test]
+    fn the_real_claude_code_requests_bind_from_the_environment() {
+        // Captured from Claude Code 2.1.314 (`claude -p`, MCP server registered with
+        // `--mcp-config`): no `initialize`; the client identity and the tool use id ride in
+        // each request's `_meta`.
+        let captured =
+            include_str!("../../../tests/fixtures/claude-code/mcp_requests.captured.jsonl");
+        let calls: Vec<Value> = captured
+            .lines()
+            .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+            .filter(|v| v["method"] == "tools/call")
+            .collect();
+        assert_eq!(calls.len(), 2);
+        for call in &calls {
+            let meta = call["params"]["_meta"]
+                .as_object()
+                .cloned()
+                .unwrap_or_default();
+            // Without `--harness` and without the environment variable, the client name decides.
+            let by_name = settings(None, None).caller(None, &meta);
+            assert_eq!(by_name.harness.as_deref(), Some("claude-code"));
+            assert_eq!(by_name.session_id, None);
+            assert!(
+                by_name
+                    .tool_use_id
+                    .as_deref()
+                    .is_some_and(|id| id.starts_with("toolu_")),
+                "{by_name:?}"
+            );
+            let bound = settings(Some("claude-code"), Some("5e6f")).caller(None, &meta);
+            assert_eq!(bound.session_id.as_deref(), Some("5e6f"));
+        }
+    }
+
+    #[test]
+    fn the_documented_antigravity_call_binds_from_its_meta() {
+        let documented: Value = serde_json::from_str(include_str!(
+            "../../../tests/fixtures/antigravity/mcp_tools_call.documented.json"
+        ))
+        .unwrap_or_default();
+        let meta = documented["params"]["_meta"]
+            .as_object()
+            .cloned()
+            .unwrap_or_default();
+        let caller = settings(None, None).caller(None, &meta);
+        assert_eq!(caller.harness.as_deref(), Some("antigravity"));
+        assert_eq!(
+            caller.session_id.as_deref(),
+            Some("0b8f6c1e-2d4a-4e7b-9a3c-5f1d2e8a7b60")
+        );
     }
 
     #[test]
