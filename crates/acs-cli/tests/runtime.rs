@@ -44,7 +44,10 @@ fn a_context_reports_state_problems_without_failing_to_open() {
     assert!(ctx.db().is_err());
     let view = status(&ctx, None, Timestamp::now());
     assert!(view.state_unavailable.is_some());
-    assert!(view.sealed.iter().any(|g| g == ".git/**"), "policy still works");
+    assert!(
+        view.sealed.iter().any(|g| g == ".git/**"),
+        "policy still works"
+    );
 }
 
 #[test]
@@ -76,29 +79,37 @@ fn claiming_and_releasing_go_through_the_same_gate_as_the_hook() {
     let ctx = open(&world);
     let db = ctx.db().unwrap();
     let now = Timestamp::now();
-    let human = seats::human_seat(&ctx, db, "sara@example.com", now).unwrap().info;
+    let human = seats::human_seat(&ctx, db, "sara@example.com", now)
+        .unwrap()
+        .info;
 
     // The agent's claim blocks the human's, with the engine's explanation.
-    let (code, message) = refused(
-        claim_paths(&ctx, &human, &["src/lib.rs".to_owned()], &world.repo, now).unwrap(),
-    );
+    let (code, message) =
+        refused(claim_paths(&ctx, &human, &["src/lib.rs".to_owned()], &world.repo, now).unwrap());
     assert_eq!(code, ReasonCode::ClaimConflict);
-    assert!(message.contains("src/lib.rs") && message.contains("claude-code"), "{message}");
+    assert!(
+        message.contains("src/lib.rs") && message.contains("claude-code"),
+        "{message}"
+    );
     // The refusal is on record for `acs_why`.
     let last = last_decision(&ctx, &human.seat.seat_id).unwrap().unwrap();
-    assert_eq!((last.outcome, last.reason_code), (Outcome::Deny, ReasonCode::ClaimConflict));
+    assert_eq!(
+        (last.outcome, last.reason_code),
+        (Outcome::Deny, ReasonCode::ClaimConflict)
+    );
 
     // Sealed paths are refused too.
-    let (code, _) = refused(
-        claim_paths(&ctx, &human, &[".git/config".to_owned()], &world.repo, now).unwrap(),
-    );
+    let (code, _) =
+        refused(claim_paths(&ctx, &human, &[".git/config".to_owned()], &world.repo, now).unwrap());
     assert_eq!(code, ReasonCode::SealedPath);
     let (code, _) = refused(claim_paths(&ctx, &human, &[], &world.repo, now).unwrap());
     assert_eq!(code, ReasonCode::Ok);
 
     // A free file is granted with origin `human`; claiming again is a heartbeat.
     let granted = |outcome| match outcome {
-        ClaimOutcome::Granted { paths, claim_ids, .. } => (paths, claim_ids),
+        ClaimOutcome::Granted {
+            paths, claim_ids, ..
+        } => (paths, claim_ids),
         ClaimOutcome::Refused { message, .. } => panic!("refused: {message}"),
     };
     let (paths, ids) =
@@ -108,7 +119,10 @@ fn claiming_and_releasing_go_through_the_same_gate_as_the_hook() {
         granted(claim_paths(&ctx, &human, &["a.txt".to_owned()], &world.repo, now).unwrap());
     assert_eq!(ids, ids_again);
     let held = db.live_claims(now).unwrap();
-    let mine = held.iter().find(|h| h.claim.scope.path().as_str() == "a.txt").unwrap();
+    let mine = held
+        .iter()
+        .find(|h| h.claim.scope.path().as_str() == "a.txt")
+        .unwrap();
     assert_eq!(mine.claim.origin, ClaimOrigin::Human);
 }
 
@@ -121,14 +135,19 @@ fn claiming_a_directory_takes_every_file_in_it_or_nothing() {
     let ctx = open(&world);
     let db = ctx.db().unwrap();
     let now = Timestamp::now();
-    let human = seats::human_seat(&ctx, db, "sara@example.com", now).unwrap().info;
+    let human = seats::human_seat(&ctx, db, "sara@example.com", now)
+        .unwrap()
+        .info;
     // One file of the directory is held by the agent: all or nothing.
     let (code, message) =
         refused(claim_paths(&ctx, &human, &["src".to_owned()], &world.repo, now).unwrap());
     assert_eq!(code, ReasonCode::ClaimConflict);
     assert!(message.contains("src/util.rs"), "{message}");
     assert!(
-        db.live_claims(now).unwrap().iter().all(|h| h.claim.seat_id != human.seat.seat_id),
+        db.live_claims(now)
+            .unwrap()
+            .iter()
+            .all(|h| h.claim.seat_id != human.seat.seat_id),
         "nothing was taken"
     );
     // After the agent leaves, the whole directory is claimable.
@@ -151,20 +170,30 @@ fn releasing_only_touches_the_seats_own_claims() {
     let ctx = open(&world);
     let db = ctx.db().unwrap();
     let now = Timestamp::now();
-    let human = seats::human_seat(&ctx, db, "sara@example.com", now).unwrap().info;
+    let human = seats::human_seat(&ctx, db, "sara@example.com", now)
+        .unwrap()
+        .info;
     claim_paths(&ctx, &human, &["a.txt".to_owned()], &world.repo, now).unwrap();
 
     let report = release_paths(
         &ctx,
         &human,
-        &["a.txt".to_owned(), "src/lib.rs".to_owned(), "../x".to_owned()],
+        &[
+            "a.txt".to_owned(),
+            "src/lib.rs".to_owned(),
+            "../x".to_owned(),
+        ],
         &world.repo,
         now,
     )
     .unwrap();
     let names = |v: &[acs_core::RepoPath]| v.iter().map(|p| p.to_string()).collect::<Vec<_>>();
     assert_eq!(names(&report.released), vec!["a.txt"]);
-    assert_eq!(names(&report.not_held), vec!["src/lib.rs"], "the agent's claim is not ours");
+    assert_eq!(
+        names(&report.not_held),
+        vec!["src/lib.rs"],
+        "the agent's claim is not ours"
+    );
     assert_eq!(report.outside, vec!["../x"]);
     assert_eq!(agent.claimed(), vec!["src/lib.rs"]);
 }
@@ -180,8 +209,14 @@ fn intent_is_trimmed_bounded_and_required() {
     assert_eq!(agent.info().intent.as_deref(), Some("refactor refunds"));
     assert!(set_intent(&ctx, &id, "   ").is_err());
     set_intent(&ctx, &id, &"x".repeat(10_000)).unwrap();
-    assert_eq!(agent.info().intent.unwrap().chars().count(), acs_cli::runtime::MAX_INTENT_CHARS);
-    assert!(last_decision(&ctx, &id).unwrap().is_none(), "no pre-tool event yet");
+    assert_eq!(
+        agent.info().intent.unwrap().chars().count(),
+        acs_cli::runtime::MAX_INTENT_CHARS
+    );
+    assert!(
+        last_decision(&ctx, &id).unwrap().is_none(),
+        "no pre-tool event yet"
+    );
 }
 
 #[test]
@@ -202,9 +237,19 @@ fn status_lists_mine_others_sealed_gate_and_remote() {
     assert_eq!(view.branch.as_deref(), Some("main"));
     assert_eq!(view.target_branch, "main");
     assert!(!view.gate_off);
-    assert_eq!(view.my_claims.iter().map(|c| c.path.as_str()).collect::<Vec<_>>(), vec!["a.txt"]);
+    assert_eq!(
+        view.my_claims
+            .iter()
+            .map(|c| c.path.as_str())
+            .collect::<Vec<_>>(),
+        vec!["a.txt"]
+    );
     assert_eq!(view.other_claims.len(), 2);
-    assert!(view.other_claims.iter().all(|c| c.harness.as_deref() == Some("antigravity")));
+    assert!(
+        view.other_claims
+            .iter()
+            .all(|c| c.harness.as_deref() == Some("antigravity"))
+    );
     assert!(view.sealed.contains(&".acs/**".to_owned()));
     assert!(!view.remote.configured && !view.remote.stale);
     assert_eq!(view.seat.as_ref().unwrap().harness, "claude-code");
@@ -250,7 +295,9 @@ fn the_remote_is_only_stale_once_sync_ran() {
     let d = agent.pre_edit("src/lib.rs");
     assert_eq!(d.outcome, Outcome::Allow, "stale remote fails open");
     assert!(
-        d.warnings.iter().any(|w| w.contains("remote") || w.contains("other machines")),
+        d.warnings
+            .iter()
+            .any(|w| w.contains("remote") || w.contains("other machines")),
         "{d:?}"
     );
 }

@@ -144,10 +144,10 @@ impl StateDb {
         new: &NewSeat<'_>,
         now: Timestamp,
     ) -> Result<(SeatInfo, bool), StoreError> {
-        if let Some(info) = self.seat_by_session(new.harness, new.harness_session_id)? {
-            if info.ended_at.is_none() {
-                return Ok((info, false));
-            }
+        if let Some(info) = self.seat_by_session(new.harness, new.harness_session_id)?
+            && info.ended_at.is_none()
+        {
+            return Ok((info, false));
         }
         self.write(|tx| {
             let found = tx

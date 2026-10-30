@@ -110,10 +110,7 @@ pub fn clear_tool_marker(ctx: &RepoContext, seat: &SeatId) {
 /// # Errors
 ///
 /// The I/O error; callers ignore it (the commit then goes without a trailer from the marker).
-pub fn write_commit_marker(
-    ctx: &RepoContext,
-    marker: &CommitMarker,
-) -> io::Result<()> {
+pub fn write_commit_marker(ctx: &RepoContext, marker: &CommitMarker) -> io::Result<()> {
     let key = worktree_key(&ctx.layout.work_tree);
     match pending_file(ctx, "commit", &format!("{key}.json")) {
         Some(path) => write_json(&path, marker),
@@ -124,12 +121,18 @@ pub fn write_commit_marker(
 /// Reads the pending-commit marker for `worktree` from `pending_dir`, ignoring one older than
 /// ten minutes. For the git hooks (WP2.4), which call it from `prepare-commit-msg`.
 #[must_use]
-pub fn read_commit_marker(pending_dir: &Path, worktree: &Path, now: Timestamp) -> Option<CommitMarker> {
+pub fn read_commit_marker(
+    pending_dir: &Path,
+    worktree: &Path,
+    now: Timestamp,
+) -> Option<CommitMarker> {
     let path = pending_dir
         .join("commit")
         .join(format!("{}.json", worktree_key(worktree)));
     let marker: CommitMarker = read_json(&path)?;
-    let age = now.as_second().saturating_sub(marker.created_at.as_second());
+    let age = now
+        .as_second()
+        .saturating_sub(marker.created_at.as_second());
     (age <= COMMIT_MARKER_MAX_AGE_SECS).then_some(marker)
 }
 
@@ -163,7 +166,11 @@ pub fn save_unknown_payload(ctx: &RepoContext, now: Timestamp, payload: &[u8]) {
     if create_private_dir_all(&dir).is_err() {
         return;
     }
-    let name = format!("{:020}-{}.json", now.as_microsecond().max(0), std::process::id());
+    let name = format!(
+        "{:020}-{}.json",
+        now.as_microsecond().max(0),
+        std::process::id()
+    );
     let cut = &payload[..payload.len().min(MAX_UNKNOWN_BYTES)];
     let _ = write_private_atomic(&dir.join(name), cut);
     // Names sort by time, so the oldest are the first to go.

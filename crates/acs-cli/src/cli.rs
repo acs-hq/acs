@@ -12,7 +12,11 @@ use crate::hook::{self, HookEnv};
 
 /// The `acs` command line.
 #[derive(Debug, Parser)]
-#[command(name = "acs", version, about = "Agent Control System: coordinate coding agents in one repository")]
+#[command(
+    name = "acs",
+    version,
+    about = "Agent Control System: coordinate coding agents in one repository"
+)]
 pub struct Cli {
     /// What to do.
     #[command(subcommand)]

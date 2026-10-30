@@ -313,7 +313,10 @@ fn ignored_among(root: &Path, paths: &[String]) -> HashSet<String> {
         return HashSet::new();
     }
     let Ok(mut child) = git_command(root)
-        .args(["check-ignore", "-z", "--stdin"])
+        // `--no-index`: do not read the index to learn what is tracked (a read of the whole index,
+        // tens of milliseconds on a huge repository). A tracked file that matches an ignore
+        // pattern (force-added) is therefore treated as ignored.
+        .args(["check-ignore", "--no-index", "-z", "--stdin"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())

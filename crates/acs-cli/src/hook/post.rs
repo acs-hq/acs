@@ -23,21 +23,11 @@ const MAX_CLAIMED_SCOPE: usize = 200;
 const MAX_SCAN_DIRS: usize = 64;
 
 /// Handles a `post_tool` event. Always allows; its work is recording.
-pub fn run(
-    ctx: &RepoContext,
-    event: &ToolEvent,
-    now: Timestamp,
-    scan: &ScanOptions,
-) -> Decision {
+pub fn run(ctx: &RepoContext, event: &ToolEvent, now: Timestamp, scan: &ScanOptions) -> Decision {
     let allow = Decision::new(Outcome::Allow, ReasonCode::Ok, "");
     let Ok(db) = ctx.db() else { return allow };
-    let Ok(resolved) = seats::agent_seat(
-        ctx,
-        db,
-        &event.harness,
-        &event.harness_session_id,
-        now,
-    ) else {
+    let Ok(resolved) = seats::agent_seat(ctx, db, &event.harness, &event.harness_session_id, now)
+    else {
         return allow;
     };
     let info = resolved.info;
@@ -65,7 +55,10 @@ pub fn run(
         .collect();
     let _ = db.record_attributions(&info.seat.seat_id, &changes, source, now);
     let _ = db.heartbeat_seat_claims(&info.seat.seat_id, now);
-    let paths: Vec<String> = observed.iter().map(|o| o.path.as_str().to_owned()).collect();
+    let paths: Vec<String> = observed
+        .iter()
+        .map(|o| o.path.as_str().to_owned())
+        .collect();
     let tool = event.tool.as_ref();
     let _ = db.record_event(&NewEvent {
         seat_id: &info.seat.seat_id,
@@ -121,8 +114,8 @@ fn shell_changes(
     let since_micros = marker
         .as_ref()
         .map_or(info.seat.last_seen_at.as_microsecond(), |m| m.t0_micros);
-    let since = Timestamp::from_microsecond(since_micros)
-        .map_or(SystemTime::UNIX_EPOCH, SystemTime::from);
+    let since =
+        Timestamp::from_microsecond(since_micros).map_or(SystemTime::UNIX_EPOCH, SystemTime::from);
 
     let live = db.live_claims(now).unwrap_or_default();
     let mut known: Vec<String> = marker.as_ref().map(|m| m.paths.clone()).unwrap_or_default();

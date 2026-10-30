@@ -7,6 +7,7 @@ use std::path::PathBuf;
 
 use acs_core::gate::SnapshotRequest;
 use acs_core::{ContentHash, RepoPath, SessionId, Timestamp};
+use acs_git::repo::BlobSource;
 use acs_store::{FileState, SnapshotKind};
 
 use crate::runtime::RepoContext;
@@ -69,8 +70,10 @@ pub fn capture_pre(
         Ok(store) => store,
         Err(why) => return vec![format!("ACS could not take pre-images: {why}")],
     };
-    let borrowed: Vec<(RepoPath, &std::path::Path)> =
-        items.iter().map(|(rel, abs)| (rel.clone(), abs.as_path())).collect();
+    let borrowed: Vec<(RepoPath, &std::path::Path)> = items
+        .iter()
+        .map(|(rel, abs)| (rel.clone(), abs.as_path()))
+        .collect();
     match store.capture(session, SnapshotKind::Pre, &borrowed, now) {
         Ok(_) => Vec::new(),
         Err(err) => vec![format!("ACS could not take pre-images: {err}")],
@@ -125,8 +128,10 @@ pub fn observe(
     if items.is_empty() {
         return Vec::new();
     }
-    let borrowed: Vec<(RepoPath, &std::path::Path)> =
-        items.iter().map(|(rel, abs)| (rel.clone(), abs.as_path())).collect();
+    let borrowed: Vec<(RepoPath, &std::path::Path)> = items
+        .iter()
+        .map(|(rel, abs)| (rel.clone(), abs.as_path()))
+        .collect();
     // What the session last left each path as, to tell a repeated call that changed nothing from
     // one that did.
     let previous: Vec<Option<Option<ContentHash>>> = items
@@ -175,9 +180,10 @@ const MAX_BASELINES: usize = 50;
 /// predictable), records the best before-state available so the change can be attributed and
 /// undone:
 ///
-/// - a tracked file: its **staged** content (`git cat-file`), which is the work tree's before-state
-///   unless the file was already modified and unstaged, in which case the baseline is older than
-///   the command;
+/// - a tracked file: its **staged** content (`git cat-file`; the committed content in repositories
+///   of more than 20,000 files), which is the work tree's before-state unless the file was
+///   already modified (and unstaged) before the command, in which case the baseline is older
+///   than the command;
 /// - an untracked file created at or after `since`: absent;
 /// - an untracked file that existed before: nothing is recorded (unknown), and its `pre_hash`
 ///   stays `None`.
@@ -201,7 +207,14 @@ pub fn record_baselines(
         return;
     }
     let names: Vec<String> = missing.iter().map(|p| p.as_str().to_owned()).collect();
-    let blobs = acs_git::repo::index_blobs(&ctx.layout.work_tree, &names).unwrap_or_default();
+    // Small repositories read the staged content; for big ones git would read the whole index
+    // (tens of milliseconds), so the committed content stands in.
+    let source = match acs_git::repo::index_entry_count(&ctx.layout.git_dir) {
+        Some(count) if count > acs_git::status::DEFAULT_FULL_SCAN_MAX_ENTRIES => BlobSource::Head,
+        _ => BlobSource::Index,
+    };
+    let blobs =
+        acs_git::repo::index_blobs(&ctx.layout.work_tree, &names, source).unwrap_or_default();
     let dir = repo.pending_dir().join("baseline");
     if acs_store::fsutil::create_private_dir_all(&dir).is_err() {
         return;
@@ -220,19 +233,24 @@ pub fn record_baselines(
             }
             None => {
                 let abs = ctx.layout.work_tree.join(rel.as_str());
-                let created_before = fs::metadata(&abs)
-                    .and_then(|m| m.created())
-                    .is_ok_and(|born| {
-                        born < since.checked_sub(std::time::Duration::from_secs(2)).unwrap_or(since)
-                    });
+                let created_before =
+                    fs::metadata(&abs)
+                        .and_then(|m| m.created())
+                        .is_ok_and(|born| {
+                            born < since
+                                .checked_sub(std::time::Duration::from_secs(2))
+                                .unwrap_or(since)
+                        });
                 if !created_before {
                     items.push(((*rel).clone(), absent.clone()));
                 }
             }
         }
     }
-    let borrowed: Vec<(RepoPath, &std::path::Path)> =
-        items.iter().map(|(rel, abs)| (rel.clone(), abs.as_path())).collect();
+    let borrowed: Vec<(RepoPath, &std::path::Path)> = items
+        .iter()
+        .map(|(rel, abs)| (rel.clone(), abs.as_path()))
+        .collect();
     let _ = store.capture(session, SnapshotKind::Pre, &borrowed, now);
     for file in temp_files {
         let _ = fs::remove_file(file);

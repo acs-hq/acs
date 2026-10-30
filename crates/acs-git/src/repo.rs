@@ -37,8 +37,8 @@ pub struct RepoLayout {
 /// [`GitError::NotAWorkTree`] when no ancestor has a `.git`, [`GitError::Io`] when `.git` cannot
 /// be read.
 pub fn discover(start: &Path) -> Result<RepoLayout, GitError> {
-    let start =
-        std::path::absolute(start).map_err(|e| GitError::io("resolving", start.to_path_buf(), e))?;
+    let start = std::path::absolute(start)
+        .map_err(|e| GitError::io("resolving", start.to_path_buf(), e))?;
     for dir in start.ancestors() {
         let dot_git = dir.join(".git");
         let Ok(meta) = fs::symlink_metadata(&dot_git) else {
@@ -79,8 +79,8 @@ pub fn discover(start: &Path) -> Result<RepoLayout, GitError> {
             }
             Err(_) => git_dir.clone(),
         };
-        let work_tree =
-            dunce::canonicalize(dir).map_err(|e| GitError::io("resolving", dir.to_path_buf(), e))?;
+        let work_tree = dunce::canonicalize(dir)
+            .map_err(|e| GitError::io("resolving", dir.to_path_buf(), e))?;
         return Ok(RepoLayout {
             work_tree,
             git_dir,
@@ -173,14 +173,30 @@ pub fn index_entry_count(git_dir: &Path) -> Option<u32> {
 /// Largest blob [`index_blobs`] returns, in bytes. Bigger ones are reported as absent.
 pub const MAX_INDEX_BLOB: usize = 16 * 1024 * 1024;
 
-/// The staged content (`:path`) of each path, via one `git cat-file --batch` process. A path that
-/// is not in the index, is larger than [`MAX_INDEX_BLOB`] or contains a newline yields `None`.
-/// The result has one entry per input path, in order.
+/// Where [`index_blobs`] reads content from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlobSource {
+    /// The index (`:path`): staged content. Git reads the whole index to answer, which costs
+    /// tens of milliseconds on a repository of 100,000 files.
+    Index,
+    /// The commit `HEAD` (`HEAD:path`): reads only the trees on the way to the path, a few
+    /// milliseconds whatever the size of the repository. Staged but uncommitted changes are not
+    /// seen.
+    Head,
+}
+
+/// The content of each path from `source`, via one `git cat-file --batch` process. A path that
+/// is not there, is larger than [`MAX_INDEX_BLOB`] or contains a newline yields `None`. The
+/// result has one entry per input path, in order.
 ///
 /// # Errors
 ///
 /// [`GitError::Command`] when `git` cannot be run or its output cannot be read.
-pub fn index_blobs(work_tree: &Path, paths: &[String]) -> Result<Vec<Option<Vec<u8>>>, GitError> {
+pub fn index_blobs(
+    work_tree: &Path,
+    paths: &[String],
+    source: BlobSource,
+) -> Result<Vec<Option<Vec<u8>>>, GitError> {
     let fail = |detail: String| GitError::Command {
         args: "cat-file --batch".to_owned(),
         detail,
@@ -201,7 +217,10 @@ pub fn index_blobs(work_tree: &Path, paths: &[String]) -> Result<Vec<Option<Vec<
             // Keep the line count aligned: an unresolvable name gets a "missing" answer.
             input.push_str(":\n");
         } else {
-            input.push(':');
+            input.push_str(match source {
+                BlobSource::Index => ":",
+                BlobSource::Head => "HEAD:",
+            });
             input.push_str(path);
             input.push('\n');
         }
@@ -324,7 +343,14 @@ mod tests {
         let linked = tmp.path().join("linked");
         git(
             &main,
-            &["worktree", "add", "-q", "-b", "feature", linked.to_str().unwrap()],
+            &[
+                "worktree",
+                "add",
+                "-q",
+                "-b",
+                "feature",
+                linked.to_str().unwrap(),
+            ],
         );
         let layout = discover(&linked).unwrap();
         assert_eq!(layout.work_tree, dunce::canonicalize(&linked).unwrap());
@@ -400,13 +426,33 @@ mod tests {
         fs::write(tmp.path().join("a.txt"), "changed in the work tree\n").unwrap();
         let blobs = index_blobs(
             tmp.path(),
-            &["a.txt".to_owned(), "missing.txt".to_owned(), "a.txt".to_owned()],
+            &[
+                "a.txt".to_owned(),
+                "missing.txt".to_owned(),
+                "a.txt".to_owned(),
+            ],
+            BlobSource::Index,
         )
         .unwrap();
         assert_eq!(blobs[0].as_deref(), Some(&b"staged a\n"[..]));
         assert_eq!(blobs[1], None);
         assert_eq!(blobs[2].as_deref(), Some(&b"staged a\n"[..]));
-        assert!(index_blobs(tmp.path(), &[]).unwrap().is_empty());
+        assert!(
+            index_blobs(tmp.path(), &[], BlobSource::Index)
+                .unwrap()
+                .is_empty()
+        );
+        // `HEAD` has no commit here, so nothing is found; after a commit it reads the committed
+        // content, not the staged one.
+        let head = index_blobs(tmp.path(), &["a.txt".to_owned()], BlobSource::Head).unwrap();
+        assert_eq!(head, vec![None]);
+        git(tmp.path(), &["commit", "-q", "-m", "one"]);
+        fs::write(tmp.path().join("a.txt"), "second\n").unwrap();
+        git(tmp.path(), &["add", "a.txt"]);
+        let head = index_blobs(tmp.path(), &["a.txt".to_owned()], BlobSource::Head).unwrap();
+        assert_eq!(head[0].as_deref(), Some(&b"staged a\n"[..]));
+        let staged = index_blobs(tmp.path(), &["a.txt".to_owned()], BlobSource::Index).unwrap();
+        assert_eq!(staged[0].as_deref(), Some(&b"second\n"[..]));
     }
 
     #[test]

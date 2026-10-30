@@ -73,10 +73,11 @@ pub fn redact_command(command: &str) -> String {
             && is_sensitive_name(name.trim_start_matches('-'))
         {
             format!("{name}=***")
-        } else if token.starts_with('-') && is_sensitive_name(token) {
-            mask_next = 1;
-            token.to_owned()
-        } else if token.eq_ignore_ascii_case("bearer") || token.eq_ignore_ascii_case("basic") {
+        } else if (token.starts_with('-') && is_sensitive_name(token))
+            || token.eq_ignore_ascii_case("bearer")
+            || token.eq_ignore_ascii_case("basic")
+        {
+            // `--password hunter2`, `Bearer <token>`: the next word is the secret.
             mask_next = 1;
             token.to_owned()
         } else if token.ends_with(':') && is_sensitive_name(token) {

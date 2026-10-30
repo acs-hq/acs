@@ -53,7 +53,11 @@ fn three_seats_share_one_repository() {
 
     // The last decision of the denied seat is on record for `acs_why`.
     let last = world.db().last_decision(&antigravity.seat_id()).unwrap();
-    assert_eq!(last.unwrap().outcome, Outcome::Allow, "its latest call was allowed");
+    assert_eq!(
+        last.unwrap().outcome,
+        Outcome::Allow,
+        "its latest call was allowed"
+    );
 
     // Ending a session releases its claims, so another seat can proceed.
     assert_eq!(claude.end().outcome, Outcome::Allow);
@@ -67,7 +71,12 @@ fn sealed_paths_are_denied_for_every_tool() {
     let world = World::new();
     let agent = Agent::new(&world, "claude-code", "s1");
     agent.start();
-    for path in [".acs/policy/guards.toml", ".git/hooks/pre-commit", ".env", "app/.env.local"] {
+    for path in [
+        ".acs/policy/guards.toml",
+        ".git/hooks/pre-commit",
+        ".env",
+        "app/.env.local",
+    ] {
         let d = agent.pre_edit(path);
         assert_eq!(d.outcome, Outcome::Deny, "{path}");
         assert_eq!(d.reason_code, ReasonCode::SealedPath, "{path}");
@@ -112,7 +121,10 @@ fn banned_commands_and_unknown_targets() {
     let agent = Agent::new(&world, "claude-code", "s1");
     agent.start();
     let d = agent.pre_shell("git reset --hard HEAD~1");
-    assert_eq!((d.outcome, d.reason_code), (Outcome::Deny, ReasonCode::BannedCommand));
+    assert_eq!(
+        (d.outcome, d.reason_code),
+        (Outcome::Deny, ReasonCode::BannedCommand)
+    );
     // A delete whose target cannot be determined asks the human.
     let d = agent.pre_shell("rm -rf $BUILD_DIR");
     assert_eq!(
@@ -212,7 +224,10 @@ fn file_tool_edits_are_attributed_with_pre_and_post_hashes() {
     assert_eq!(rows.len(), 1, "{rows:?}");
     assert_eq!(rows[0].via, AttributionSource::Tool);
     assert_eq!(rows[0].pre_hash, Some(acs_core::ContentHash::of(b"a\n")));
-    assert_eq!(rows[0].post_hash, Some(acs_core::ContentHash::of(b"edited\n")));
+    assert_eq!(
+        rows[0].post_hash,
+        Some(acs_core::ContentHash::of(b"edited\n"))
+    );
 }
 
 #[test]
@@ -226,7 +241,10 @@ fn ending_a_session_keeps_its_snapshots_and_a_resumed_session_gets_status_again(
     let session = agent.info().session_id;
     agent.end();
     assert!(agent.claimed().is_empty());
-    assert!(!world.snapshots().list(&session).unwrap().is_empty(), "undo needs them");
+    assert!(
+        !world.snapshots().list(&session).unwrap().is_empty(),
+        "undo needs them"
+    );
 
     // `claude --resume` reuses the session id: the seat is revived with the same session id and
     // the status context is delivered again, whatever the reason for the start.
@@ -278,7 +296,13 @@ fn pre_tool_context_delivers_notices_on_allow_but_not_on_deny() {
     assert!(d.context.is_empty());
     let d = agent.pre_edit("a.txt");
     assert_eq!(d.context, vec!["lore is stale"]);
-    assert!(world.db().pending_notices(&agent.seat_id()).unwrap().is_empty());
+    assert!(
+        world
+            .db()
+            .pending_notices(&agent.seat_id())
+            .unwrap()
+            .is_empty()
+    );
 }
 
 #[test]
@@ -290,11 +314,20 @@ fn gate_off_allows_everything_but_sealed_paths() {
     two.start();
     assert_eq!(one.pre_edit("a.txt").outcome, Outcome::Allow);
     assert_eq!(two.pre_edit("a.txt").outcome, Outcome::Deny);
-    world.db().set_flag(FLAG_GATE_OFF, "1", acs_core::Timestamp::now()).unwrap();
+    world
+        .db()
+        .set_flag(FLAG_GATE_OFF, "1", acs_core::Timestamp::now())
+        .unwrap();
     let d = two.pre_edit("a.txt");
-    assert_eq!((d.outcome, d.reason_code), (Outcome::Allow, ReasonCode::GateOff));
+    assert_eq!(
+        (d.outcome, d.reason_code),
+        (Outcome::Allow, ReasonCode::GateOff)
+    );
     let d = two.pre_edit(".acs/policy/guards.toml");
-    assert_eq!((d.outcome, d.reason_code), (Outcome::Deny, ReasonCode::SealedPath));
+    assert_eq!(
+        (d.outcome, d.reason_code),
+        (Outcome::Deny, ReasonCode::SealedPath)
+    );
     let status = two.start();
     assert!(status.context[0].contains("`acs off` is active"));
 }
@@ -316,7 +349,10 @@ fn unknown_payloads_are_allowed_logged_and_warned_once_per_session() {
         serde_json::from_slice::<acs_core::Decision>(&out.stdout).unwrap()
     };
     let first = send();
-    assert_eq!((first.outcome, first.reason_code), (Outcome::Allow, ReasonCode::UnknownPayload));
+    assert_eq!(
+        (first.outcome, first.reason_code),
+        (Outcome::Allow, ReasonCode::UnknownPayload)
+    );
     assert_eq!(first.warnings.len(), 1, "{first:?}");
     assert!(first.warnings[0].contains("could not read"));
     let second = send();
@@ -329,7 +365,11 @@ fn unknown_payloads_are_allowed_logged_and_warned_once_per_session() {
 
     // Garbage that recovers nothing is warned about every time.
     let garbage = |expect_warning: bool| {
-        let out = world.run(&["hook", "--canonical", "pre_tool"], b"not json", &world.repo);
+        let out = world.run(
+            &["hook", "--canonical", "pre_tool"],
+            b"not json",
+            &world.repo,
+        );
         let d: acs_core::Decision = serde_json::from_slice(&out.stdout).unwrap();
         assert_eq!(d.reason_code, ReasonCode::UnknownPayload);
         assert_eq!(!d.warnings.is_empty(), expect_warning);
@@ -347,7 +387,10 @@ fn a_git_commit_leaves_a_pending_commit_marker() {
     assert!(!marker_dir.exists());
     assert_eq!(agent.pre_shell("git status").outcome, Outcome::Allow);
     assert!(!marker_dir.exists(), "only commits leave a marker");
-    assert_eq!(agent.pre_shell("git commit -am 'fix refunds'").outcome, Outcome::Allow);
+    assert_eq!(
+        agent.pre_shell("git commit -am 'fix refunds'").outcome,
+        Outcome::Allow
+    );
 
     let key = acs_cli::hook::markers::worktree_key(&world.repo);
     let text = fs::read_to_string(marker_dir.join(format!("{key}.json"))).unwrap();
@@ -385,15 +428,25 @@ fn a_broken_state_database_degrades_as_the_spec_says() {
         side.push(suffix);
         let _ = fs::remove_file(side);
     }
-    fs::write(&db_file, b"this is not a database, just text, long enough to look like a page.....").unwrap();
+    fs::write(
+        &db_file,
+        b"this is not a database, just text, long enough to look like a page.....",
+    )
+    .unwrap();
 
     // Ordinary edits go through with a warning; destructive actions are denied; sealed paths
     // and banned commands still hold.
     let d = agent.pre_edit("src/lib.rs");
-    assert_eq!((d.outcome, d.reason_code), (Outcome::Allow, ReasonCode::StateUnavailable));
+    assert_eq!(
+        (d.outcome, d.reason_code),
+        (Outcome::Allow, ReasonCode::StateUnavailable)
+    );
     assert!(!d.warnings.is_empty());
     let d = agent.pre_shell("rm src/lib.rs");
-    assert_eq!((d.outcome, d.reason_code), (Outcome::Deny, ReasonCode::StateUnavailable));
+    assert_eq!(
+        (d.outcome, d.reason_code),
+        (Outcome::Deny, ReasonCode::StateUnavailable)
+    );
     let d = agent.pre_edit(".git/config");
     assert_eq!(d.reason_code, ReasonCode::SealedPath);
     let d = agent.pre_shell("git reset --hard");
@@ -409,11 +462,21 @@ fn an_invalid_policy_falls_back_with_a_warning() {
     world.write(".acs/policy/guards.toml", "sealed = [");
     let agent = Agent::new(&world, "claude-code", "s1");
     let d = agent.start();
-    assert!(d.warnings.iter().any(|w| w.contains("guards.toml")), "{d:?}");
+    assert!(
+        d.warnings.iter().any(|w| w.contains("guards.toml")),
+        "{d:?}"
+    );
     let d = agent.pre_edit("a.txt");
     assert_eq!(d.outcome, Outcome::Allow);
-    assert!(!d.warnings.is_empty(), "the fallback is reported on every call");
-    assert_eq!(agent.pre_edit(".git/config").outcome, Outcome::Deny, "defaults still seal");
+    assert!(
+        !d.warnings.is_empty(),
+        "the fallback is reported on every call"
+    );
+    assert_eq!(
+        agent.pre_edit(".git/config").outcome,
+        Outcome::Deny,
+        "defaults still seal"
+    );
 }
 
 #[test]
@@ -433,7 +496,11 @@ fn outside_a_repository_and_for_unknown_harnesses() {
     assert_eq!((d.outcome, d.reason_code), (Outcome::Allow, ReasonCode::Ok));
 
     let out = world.run(&["hook", "no-such-harness"], b"{}", &world.repo);
-    assert_eq!(out.status.code(), Some(1), "never 2: that blocks some harnesses");
+    assert_eq!(
+        out.status.code(),
+        Some(1),
+        "never 2: that blocks some harnesses"
+    );
     assert!(String::from_utf8_lossy(&out.stderr).contains("unknown harness"));
 }
 
@@ -460,7 +527,10 @@ fn an_edit_that_escapes_the_repository_asks() {
     let agent = Agent::new(&world, "claude-code", "s1");
     agent.start();
     let d = agent.pre_edit("../outside.txt");
-    assert_eq!((d.outcome, d.reason_code), (Outcome::Ask, ReasonCode::PathEscapesRepo));
+    assert_eq!(
+        (d.outcome, d.reason_code),
+        (Outcome::Ask, ReasonCode::PathEscapesRepo)
+    );
 }
 
 #[test]
@@ -479,6 +549,10 @@ fn concurrent_hooks_never_double_grant_a_claim() {
             .collect();
         handles.into_iter().map(|h| h.join().unwrap()).collect()
     });
-    assert_eq!(outcomes.iter().filter(|o| **o == Outcome::Allow).count(), 1, "{outcomes:?}");
+    assert_eq!(
+        outcomes.iter().filter(|o| **o == Outcome::Allow).count(),
+        1,
+        "{outcomes:?}"
+    );
     assert_eq!(outcomes.iter().filter(|o| **o == Outcome::Deny).count(), 5);
 }

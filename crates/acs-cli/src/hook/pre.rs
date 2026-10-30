@@ -82,7 +82,13 @@ fn unavailable_seat(ctx: &RepoContext, event: &ToolEvent, now: Timestamp) -> Opt
         harness_session_id: event.harness_session_id.clone(),
         worktree: ctx.worktree_str(),
         branch: acs_git::repo::current_branch(&ctx.layout.git_dir),
-        target_branch: ctx.policy.policy.files().config.default_target_branch.clone(),
+        target_branch: ctx
+            .policy
+            .policy
+            .files()
+            .config
+            .default_target_branch
+            .clone(),
         started_at: now,
         last_seen_at: now,
     })

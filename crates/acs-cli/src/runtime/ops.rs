@@ -7,8 +7,8 @@ use std::path::Path;
 
 use acs_core::gate::{ClaimSource, HeldClaim};
 use acs_core::{
-    ClaimId, ClaimOrigin, ClaimScope, Outcome, ReasonCode, ReleaseReason, RepoPath, SeatId,
-    SpecVersion, Timestamp, Tool, ToolEvent, ToolKind, Phase,
+    ClaimId, ClaimOrigin, ClaimScope, Outcome, Phase, ReasonCode, ReleaseReason, RepoPath, SeatId,
+    SpecVersion, Timestamp, Tool, ToolEvent, ToolKind,
 };
 use acs_store::{FLAG_GATE_OFF, LastDecision, SeatInfo, StoreError};
 use serde::Serialize;
@@ -56,7 +56,10 @@ impl ClaimView {
             ClaimScope::Symbol {
                 symbol,
                 symbol_path,
-            } => (symbol.as_str().to_owned(), Some(symbol_path.as_str().to_owned())),
+            } => (
+                symbol.as_str().to_owned(),
+                Some(symbol_path.as_str().to_owned()),
+            ),
         };
         let ttl = i64::try_from(claim.ttl_secs).unwrap_or(i64::MAX);
         let expires = Timestamp::from_second(claim.heartbeat_at.as_second().saturating_add(ttl))
@@ -168,7 +171,10 @@ impl StatusView {
         if self.my_claims.is_empty() {
             lines.push("You hold no claims yet.".to_owned());
         } else {
-            lines.push(format!("You hold: {}.", list(self.my_claims.iter().map(|c| c.path.as_str()))));
+            lines.push(format!(
+                "You hold: {}.",
+                list(self.my_claims.iter().map(|c| c.path.as_str()))
+            ));
         }
         if !self.other_claims.is_empty() {
             let shown = self.other_claims.iter().take(3).map(|c| {
@@ -330,7 +336,9 @@ pub fn claim_paths(
     cwd: &Path,
     now: Timestamp,
 ) -> Result<ClaimOutcome, OpError> {
-    let db = ctx.db().map_err(|why| OpError::Unavailable(why.to_owned()))?;
+    let db = ctx
+        .db()
+        .map_err(|why| OpError::Unavailable(why.to_owned()))?;
     if paths.is_empty() {
         return Ok(ClaimOutcome::Refused {
             reason_code: ReasonCode::Ok,
@@ -437,7 +445,9 @@ pub fn release_paths(
     cwd: &Path,
     now: Timestamp,
 ) -> Result<ReleaseReport, OpError> {
-    let db = ctx.db().map_err(|why| OpError::Unavailable(why.to_owned()))?;
+    let db = ctx
+        .db()
+        .map_err(|why| OpError::Unavailable(why.to_owned()))?;
     let (inside, outside) = resolve_for_claim(ctx, paths, cwd);
     let mine: Vec<HeldClaim> = db
         .live_claims(now)?
@@ -478,7 +488,9 @@ pub fn set_intent(ctx: &RepoContext, seat_id: &SeatId, text: &str) -> Result<(),
     if text.is_empty() {
         return Err(OpError::Invalid("the intent is empty".to_owned()));
     }
-    let db = ctx.db().map_err(|why| OpError::Unavailable(why.to_owned()))?;
+    let db = ctx
+        .db()
+        .map_err(|why| OpError::Unavailable(why.to_owned()))?;
     db.set_seat_intent(seat_id, &text)?;
     Ok(())
 }
@@ -489,6 +501,8 @@ pub fn set_intent(ctx: &RepoContext, seat_id: &SeatId, text: &str) -> Result<(),
 ///
 /// [`OpError`] when the database cannot be used.
 pub fn last_decision(ctx: &RepoContext, seat_id: &SeatId) -> Result<Option<LastDecision>, OpError> {
-    let db = ctx.db().map_err(|why| OpError::Unavailable(why.to_owned()))?;
+    let db = ctx
+        .db()
+        .map_err(|why| OpError::Unavailable(why.to_owned()))?;
     Ok(db.last_decision(seat_id)?)
 }

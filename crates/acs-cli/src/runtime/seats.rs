@@ -119,7 +119,13 @@ fn create(
 ) -> Result<ResolvedSeat, StoreError> {
     let branch = acs_git::repo::current_branch(&ctx.layout.git_dir);
     let worktree = ctx.worktree_str();
-    let target = ctx.policy.policy.files().config.default_target_branch.clone();
+    let target = ctx
+        .policy
+        .policy
+        .files()
+        .config
+        .default_target_branch
+        .clone();
     let (info, created) = db.get_or_create_seat_info(
         &NewSeat {
             harness,

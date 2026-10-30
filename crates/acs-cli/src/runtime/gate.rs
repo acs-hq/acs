@@ -173,14 +173,19 @@ fn acquire(
 /// first loss, by deciding again).
 fn lost_race_denial(conflicts: &[HeldClaim], now: Timestamp) -> Decision {
     let message = conflicts.first().map_or_else(
-        || "Another seat claimed these files at the same moment. Work on other files, or retry."
-            .to_owned(),
+        || {
+            "Another seat claimed these files at the same moment. Work on other files, or retry."
+                .to_owned()
+        },
         |held| {
             let who = match &held.holder_harness {
                 Some(harness) => format!("{} ({harness})", held.claim.pilot),
                 None => held.claim.pilot.clone(),
             };
-            let mins = now.as_second().saturating_sub(held.claim.heartbeat_at.as_second()) / 60;
+            let mins = now
+                .as_second()
+                .saturating_sub(held.claim.heartbeat_at.as_second())
+                / 60;
             format!(
                 "`{}` was claimed by {who} at the same moment (active {mins} min). Work on other \
                  files, or ask your pilot to override.",

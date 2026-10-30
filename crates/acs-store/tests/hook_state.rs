@@ -260,3 +260,35 @@ fn upgrading_a_version_two_database_backfills_session_ids() {
     assert!(one.session_id.as_str().starts_with("ses_"));
     assert_ne!(one.session_id, two.session_id);
 }
+
+#[test]
+fn live_remote_claims_lists_unexpired_remote_claims() {
+    use acs_core::{Claim, ClaimOrigin};
+    let repo = TestRepo::new();
+    let db = repo.open();
+    let claim = |id: &str, file: &str, ttl: u64| Claim {
+        claim_id: id.parse().unwrap(),
+        seat_id: "seat_remote".parse().unwrap(),
+        pilot: "omar@example.com".into(),
+        scope: store_common::file(file),
+        target_branch: "main".into(),
+        acquired_at: at(0),
+        heartbeat_at: at(0),
+        ttl_secs: ttl,
+        origin: ClaimOrigin::Agent,
+    };
+    db.replace_remote_claims(
+        "0de61b1110462435",
+        &[
+            claim("clm_a", "src/a.rs", 900),
+            claim("clm_b", "src/b.rs", 10),
+        ],
+        at(1),
+    )
+    .unwrap();
+    let live = db.live_remote_claims(at(100)).unwrap();
+    assert_eq!(live.len(), 1, "the 10 s claim has expired");
+    assert_eq!(live[0].claim.scope.path().as_str(), "src/a.rs");
+    assert_eq!(live[0].source, acs_core::gate::ClaimSource::Remote);
+    assert_eq!(db.live_remote_claims(at(5)).unwrap().len(), 2);
+}

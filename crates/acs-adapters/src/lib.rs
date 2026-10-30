@@ -145,8 +145,9 @@ pub mod canonical {
         /// line (`acs hook --canonical pre_tool`) is authoritative, which lets one event
         /// document be replayed through several phases.
         fn parse(&self, phase: Option<Phase>, payload: &[u8]) -> Result<ToolEvent, AdapterError> {
-            let mut event: ToolEvent = serde_json::from_slice(payload)
-                .map_err(|err| AdapterError::recovering(format!("not a ToolEvent: {err}"), payload))?;
+            let mut event: ToolEvent = serde_json::from_slice(payload).map_err(|err| {
+                AdapterError::recovering(format!("not a ToolEvent: {err}"), payload)
+            })?;
             if let Some(phase) = phase {
                 event.phase = phase;
             }

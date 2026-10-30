@@ -44,13 +44,20 @@ impl World {
     /// A repository with `a.txt`, `src/lib.rs`, `src/util.rs` and a `.gitignore` for `target/`,
     /// committed.
     pub fn new() -> Self {
-        let tmp = tempfile::Builder::new().prefix("acs-e2e-").tempdir().unwrap();
+        let tmp = tempfile::Builder::new()
+            .prefix("acs-e2e-")
+            .tempdir()
+            .unwrap();
         let base = dunce::canonicalize(tmp.path()).unwrap();
         let repo = base.join("repo");
         let home = base.join("acs-home");
         let git_config = base.join("gitconfig");
         fs::create_dir_all(&repo).unwrap();
-        fs::write(&git_config, "[user]\n\temail = sara@example.com\n\tname = Sara\n").unwrap();
+        fs::write(
+            &git_config,
+            "[user]\n\temail = sara@example.com\n\tname = Sara\n",
+        )
+        .unwrap();
         git(&repo, &git_config, &["init", "-q", "-b", "main", "."]);
         fs::write(repo.join(".gitignore"), "target/\n*.log\n").unwrap();
         fs::write(repo.join("a.txt"), "a\n").unwrap();
@@ -106,7 +113,9 @@ impl World {
 
     pub fn repo_home(&self) -> RepoHome {
         let home = self.acs_home();
-        RepoIdentity::resolve(&home, &self.repo).unwrap().home(&home)
+        RepoIdentity::resolve(&home, &self.repo)
+            .unwrap()
+            .home(&home)
     }
 
     pub fn db(&self) -> StateDb {

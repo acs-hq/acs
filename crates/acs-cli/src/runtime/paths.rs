@@ -16,9 +16,7 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use acs_core::gate::{
-    Confidence, Expansion, PathLocation, ShellAnalysis, Target, TargetOp,
-};
+use acs_core::gate::{Confidence, Expansion, PathLocation, ShellAnalysis, Target, TargetOp};
 use acs_core::{RepoPath, ToolEvent, ToolKind};
 use acs_paths::has_glob_meta;
 use acs_shell::{Dialect, analyze};
@@ -146,7 +144,9 @@ impl Builder<'_> {
 
     fn write_path(&mut self, raw: &str) {
         let resolved = self.ctx.resolver.resolve(raw, &self.cwd);
-        let is_dir = resolved.repo_path().is_some_and(|rel| self.is_real_dir(rel));
+        let is_dir = resolved
+            .repo_path()
+            .is_some_and(|rel| self.is_real_dir(rel));
         if !is_dir {
             self.out.targets.push(Target {
                 path: resolved,
