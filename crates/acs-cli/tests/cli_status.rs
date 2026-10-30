@@ -5,7 +5,7 @@
 mod cli_common;
 mod common;
 
-use acs_core::{Outcome, ReasonCode};
+use acs_core::{DEFAULT_SEALED, Outcome, ReasonCode};
 use cli_common::{
     acs, acs_in, assert_failure, assert_fits_80, assert_success, json, stderr, stdout,
 };
@@ -67,13 +67,16 @@ fn status_shows_my_claims_and_other_agents_in_text_and_json() {
         line.contains("claude-code") && line.contains("sara@example.com"),
         "{line}"
     );
+    let total = DEFAULT_SEALED.len();
     assert!(
-        text.contains("Sealed paths no agent may write (12):"),
+        text.contains(&format!("Sealed paths no agent may write ({total}):")),
         "{text}"
     );
-    assert!(text.contains("and 8 more"), "{text}");
+    assert!(text.contains(&format!("and {} more", total - 4)), "{text}");
     let all = stdout(&acs(&world, &["status", "--sealed"]));
-    assert!(all.contains("**/.agent/plugins.json"), "{all}");
+    for glob in DEFAULT_SEALED {
+        assert!(all.contains(glob), "{glob} missing from {all}");
+    }
     assert_fits_80(&all);
 }
 
