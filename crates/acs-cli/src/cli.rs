@@ -185,4 +185,25 @@ mod tests {
         assert_eq!(Phase::from(PhaseArg::PromptSubmit), Phase::PromptSubmit);
         assert_eq!(Phase::from(PhaseArg::SessionStart), Phase::SessionStart);
     }
+
+    #[test]
+    fn git_hook_passes_git_arguments_through() {
+        let cli = parse(&[
+            "git-hook",
+            "prepare-commit-msg",
+            ".git/COMMIT_EDITMSG",
+            "message",
+        ])
+        .unwrap();
+        let Command::GitHook(args) = cli.command else {
+            panic!("not a git-hook command")
+        };
+        assert_eq!(args.name, "prepare-commit-msg");
+        assert_eq!(args.args, [".git/COMMIT_EDITMSG", "message"]);
+        let cli = parse(&["git-hook", "pre-push", "origin", "-weird-url"]).unwrap();
+        let Command::GitHook(args) = cli.command else {
+            panic!("not a git-hook command")
+        };
+        assert_eq!(args.args, ["origin", "-weird-url"]);
+    }
 }

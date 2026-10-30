@@ -283,4 +283,37 @@ mod tests {
         let text = fs::read_to_string(&path).unwrap();
         assert!(text.contains("\"session_id\"") && text.contains("\"created_at\""));
     }
+
+    #[test]
+    fn taking_a_marker_removes_it_and_push_markers_are_separate() {
+        let dir = tempfile::tempdir().unwrap();
+        let work = Path::new("/work/repo");
+        let now: Timestamp = "2026-10-30T12:00:00Z".parse().unwrap();
+        let marker = CommitMarker {
+            session_id: "ses_abc".into(),
+            seat_id: "seat_abc".into(),
+            harness: "claude-code".into(),
+            created_at: now,
+        };
+        let key = worktree_key(work);
+        write_json(
+            &dir.path().join("commit").join(format!("{key}.json")),
+            &marker,
+        )
+        .unwrap();
+        assert_eq!(read_push_marker(dir.path(), work, now), None);
+        assert_eq!(
+            take_commit_marker(dir.path(), work, now),
+            Some(marker.clone())
+        );
+        assert_eq!(read_commit_marker(dir.path(), work, now), None);
+        write_json(
+            &dir.path().join("push").join(format!("{key}.json")),
+            &marker,
+        )
+        .unwrap();
+        assert_eq!(read_commit_marker(dir.path(), work, now), None);
+        assert_eq!(take_push_marker(dir.path(), work, now), Some(marker));
+        assert_eq!(take_push_marker(dir.path(), work, now), None);
+    }
 }

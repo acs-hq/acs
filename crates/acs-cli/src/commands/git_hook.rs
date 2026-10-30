@@ -484,7 +484,7 @@ fn attributed_sessions(ctx: &RepoContext) -> Result<Vec<String>, String> {
                 let cutoff = *last_commit.get_or_insert_with(|| {
                     query::last_commit_time(&ctx.layout.work_tree, &change.path)
                 });
-                cutoff.is_none_or(|t| row.at.as_second() > t)
+                cutoff.is_none_or(|t| row.at.as_second() >= t)
             };
             if !covered {
                 continue;
