@@ -198,4 +198,27 @@ mod tests {
         assert_eq!(Phase::from(PhaseArg::PromptSubmit), Phase::PromptSubmit);
         assert_eq!(Phase::from(PhaseArg::SessionStart), Phase::SessionStart);
     }
+
+    #[test]
+    fn every_ws2_5_command_takes_json() {
+        for args in [
+            vec!["init", "--json"],
+            vec!["status", "--json"],
+            vec!["claim", "a.txt", "--json"],
+            vec!["release", "a.txt", "--json"],
+            vec!["release", "--all", "--json"],
+            vec!["off", "--json"],
+            vec!["on", "--json"],
+            vec!["doctor", "--fix", "--json"],
+        ] {
+            assert!(parse(&args).is_ok(), "{args:?}");
+        }
+    }
+
+    #[test]
+    fn claim_and_release_need_paths_and_release_all_takes_none() {
+        assert!(parse(&["claim"]).is_err());
+        assert!(parse(&["release"]).is_err());
+        assert!(parse(&["release", "--all", "a.txt"]).is_err());
+    }
 }
