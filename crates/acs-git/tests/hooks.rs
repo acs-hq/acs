@@ -36,7 +36,7 @@ impl Repo {
         fs::create_dir_all(&dir).unwrap();
         let config = base.join("gitconfig");
         fs::write(&config, "[user]\n\temail = t@example.com\n\tname = T\n").unwrap();
-        let path_var = std::env::var_os("PATH").unwrap_or_default();
+        let path_var = path_without_acs();
         let repo = Self {
             _tmp: tmp,
             dir,
@@ -68,6 +68,16 @@ impl Repo {
     fn hooks_dir(&self) -> PathBuf {
         self.layout().common_dir.join("hooks")
     }
+}
+
+/// `PATH` without any directory holding an `acs` binary. These tests rely on `acs` being absent
+/// (the hook's "did not run" warning shows that the ACS block executed), but on Windows cargo puts
+/// the target directory, which holds the freshly built `acs.exe`, on `PATH` for test processes.
+fn path_without_acs() -> std::ffi::OsString {
+    let path = std::env::var_os("PATH").unwrap_or_default();
+    let kept = std::env::split_paths(&path)
+        .filter(|dir| !dir.join("acs").is_file() && !dir.join("acs.exe").is_file());
+    std::env::join_paths(kept).unwrap()
 }
 
 fn stderr(out: &Output) -> String {
