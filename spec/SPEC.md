@@ -219,6 +219,7 @@ Every key defaults to empty (zero for the numeric limits noted); the built-in de
 **/.agent/plugins/**
 **/.agents/plugins.json
 **/.agent/plugins.json
+.husky/**
 ```
 
 ### 5.3 `territory.toml`

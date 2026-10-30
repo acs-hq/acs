@@ -31,6 +31,7 @@ pub const DEFAULT_SEALED: &[&str] = &[
     "**/.agent/plugins/**",
     "**/.agents/plugins.json",
     "**/.agent/plugins.json",
+    ".husky/**",
 ];
 
 const DEFAULT_CLAIM_TTL_SECS: NonZeroU64 = non_zero(900);

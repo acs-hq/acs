@@ -96,6 +96,7 @@ fn default_guards() {
         (".agent/plugins/x/plugin.json", "**/.agent/plugins/**"),
         (".agents/plugins.json", "**/.agents/plugins.json"),
         (".agent/plugins.json", "**/.agent/plugins.json"),
+        (".husky/pre-commit", ".husky/**"),
     ];
     for (path, glob) in sealed_paths {
         assert_eq!(policy.sealed_match(&rp(path)), Some(glob), "{path}");
@@ -111,7 +112,7 @@ fn default_guards() {
     ] {
         assert_eq!(policy.sealed_match(&rp(path)), None, "{path}");
     }
-    assert_eq!(DEFAULT_SEALED.len(), 12, "update the table above");
+    assert_eq!(DEFAULT_SEALED.len(), 13, "update the table above");
 
     // Protected branches.
     for branch in ["main", "release/1.0", "release/v2"] {
@@ -1189,7 +1190,7 @@ fn corrupt_or_foreign_cache_is_ignored() {
 
     // A different format or version is silently stale.
     let entry = fs::read_to_string(&path).unwrap();
-    fs::write(&path, entry.replace("\"format\":2", "\"format\":99")).unwrap();
+    fs::write(&path, entry.replace("\"format\":3", "\"format\":99")).unwrap();
     let outcome = load_cached(policy.path(), cache.path(), CS);
     assert_eq!(outcome.origin, Origin::Fresh);
     assert!(outcome.warnings.is_empty());

@@ -24,7 +24,7 @@ use crate::load::RawFiles;
 pub const CACHE_FILE: &str = "policy.json";
 
 /// Bump when the cache layout or the built-in defaults change; older entries are then ignored.
-const CACHE_FORMAT: u32 = 2;
+const CACHE_FORMAT: u32 = 3;
 
 /// A cache entry as read back.
 #[derive(Deserialize)]

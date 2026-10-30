@@ -11,6 +11,7 @@ sealed = [
   "**/.agent/plugins/**",
   "**/.agents/plugins.json",
   "**/.agent/plugins.json",
+  ".husky/**",
 ]
 protected_branches = ["main", "release/*"]
 

@@ -32,6 +32,13 @@ Deliberately **not** sealed by default:
 
 `CACHE_FORMAT` in `acs-policy` goes from 1 to 2 so cached policies pick up the new defaults.
 
+## Amendment (same day, after WP2.4)
+
+`.husky/**` is added (13 globs, `CACHE_FORMAT` 3). The git backstop (decision 0015) writes its
+block into husky's committed `.husky/<hook>` scripts; default git hooks under `.git/` were already
+sealed, and leaving `.husky/` writable would let an agent remove the backstop silently. Agents in
+husky repositories ask their pilot to change those hooks.
+
 ## Consequences
 
 - Files outside the repository (`~/.claude/settings.json`, `~/.gemini/config/hooks.json`, ...)
