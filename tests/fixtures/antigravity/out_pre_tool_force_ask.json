@@ -1,0 +1,4 @@
+{
+  "decision": "force_ask",
+  "reason": "The target resolves outside the repository root. Confirm with your pilot before continuing."
+}

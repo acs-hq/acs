@@ -1,0 +1,4 @@
+{
+  "decision": "deny",
+  "reason": "src/lib.rs is claimed by sara@example.com (Claude Code, active 4 min). Work on other files, or ask your pilot to override."
+}

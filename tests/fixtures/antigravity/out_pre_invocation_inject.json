@@ -1,0 +1,7 @@
+{
+  "injectSteps": [
+    {
+      "ephemeralMessage": "ACS: you are seat ses_01 in /home/dev/proj. Claimed by others: src/payments/** (sara@example.com). Call acs_status for details."
+    }
+  ]
+}
