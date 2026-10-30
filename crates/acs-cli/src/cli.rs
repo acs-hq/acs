@@ -8,6 +8,7 @@ use std::process::ExitCode;
 use acs_core::Phase;
 use clap::{Args, Parser, Subcommand, ValueEnum};
 
+use crate::commands;
 use crate::commands::git_hook::{self, GitHookArgs};
 use crate::commands::mcp::{self, McpArgs};
 use crate::hook::{self, HookEnv};
@@ -30,6 +31,20 @@ pub struct Cli {
 pub enum Command {
     /// Handle one harness hook call: read the payload on stdin, write the decision on stdout.
     Hook(HookArgs),
+    /// Set the repository up: policy defaults, fetch refspec, git hooks, plugin hints.
+    Init(commands::init::InitArgs),
+    /// Show claims, sealed paths and whether the gate is on.
+    Status(commands::status::StatusArgs),
+    /// Claim files for yourself (the human seat).
+    Claim(commands::claim::ClaimArgs),
+    /// Release your claims.
+    Release(commands::release::ReleaseArgs),
+    /// Turn the gate off for this repository on this machine (sealed paths still hold).
+    Off(commands::off::OffArgs),
+    /// Turn the gate back on.
+    On(commands::off::OnArgs),
+    /// Check the installation and repair what can be repaired.
+    Doctor(commands::doctor::DoctorArgs),
     /// Run the MCP server on stdio: the tools `acs_status`, `acs_claim`, `acs_release`,
     /// `acs_intent` and `acs_why` for agents.
     Mcp(McpArgs),
@@ -117,6 +132,13 @@ pub fn run_from_env() -> ExitCode {
 pub fn run(cli: Cli) -> ExitCode {
     match cli.command {
         Command::Hook(args) => run_hook(&args),
+        Command::Init(args) => commands::init::run(&args),
+        Command::Status(args) => commands::status::run(&args),
+        Command::Claim(args) => commands::claim::run(&args),
+        Command::Release(args) => commands::release::run(&args),
+        Command::Off(args) => commands::off::run_off(&args),
+        Command::On(args) => commands::off::run_on(&args),
+        Command::Doctor(args) => commands::doctor::run(&args),
         Command::Mcp(args) => mcp::run(&args),
         Command::GitHook(args) => git_hook::run(&args),
     }
@@ -206,6 +228,29 @@ mod tests {
     fn phase_names_map_to_the_spec_phases() {
         assert_eq!(Phase::from(PhaseArg::PromptSubmit), Phase::PromptSubmit);
         assert_eq!(Phase::from(PhaseArg::SessionStart), Phase::SessionStart);
+    }
+
+    #[test]
+    fn every_ws2_5_command_takes_json() {
+        for args in [
+            vec!["init", "--json"],
+            vec!["status", "--json"],
+            vec!["claim", "a.txt", "--json"],
+            vec!["release", "a.txt", "--json"],
+            vec!["release", "--all", "--json"],
+            vec!["off", "--json"],
+            vec!["on", "--json"],
+            vec!["doctor", "--fix", "--json"],
+        ] {
+            assert!(parse(&args).is_ok(), "{args:?}");
+        }
+    }
+
+    #[test]
+    fn claim_and_release_need_paths_and_release_all_takes_none() {
+        assert!(parse(&["claim"]).is_err());
+        assert!(parse(&["release"]).is_err());
+        assert!(parse(&["release", "--all", "a.txt"]).is_err());
     }
 
     #[test]

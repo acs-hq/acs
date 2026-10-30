@@ -5,5 +5,12 @@
 //! [`crate::cli::Command`] and one arm to [`crate::cli::run`]. Commands call the shared
 //! operations in [`crate::runtime`] instead of reimplementing them.
 
+pub mod claim;
+pub mod doctor;
 pub mod git_hook;
+pub mod init;
 pub mod mcp;
+pub mod off;
+pub mod release;
+pub mod status;
+mod support;
