@@ -8,6 +8,7 @@ use std::process::ExitCode;
 use acs_core::Phase;
 use clap::{Args, Parser, Subcommand, ValueEnum};
 
+use crate::commands::mcp::{self, McpArgs};
 use crate::hook::{self, HookEnv};
 
 /// The `acs` command line.
@@ -28,6 +29,9 @@ pub struct Cli {
 pub enum Command {
     /// Handle one harness hook call: read the payload on stdin, write the decision on stdout.
     Hook(HookArgs),
+    /// Run the MCP server on stdio: the tools `acs_status`, `acs_claim`, `acs_release`,
+    /// `acs_intent` and `acs_why` for agents.
+    Mcp(McpArgs),
 }
 
 /// A hook phase on the command line (the names of the spec's `phase` field).
@@ -105,6 +109,7 @@ pub fn run_from_env() -> ExitCode {
 pub fn run(cli: Cli) -> ExitCode {
     match cli.command {
         Command::Hook(args) => run_hook(&args),
+        Command::Mcp(args) => mcp::run(&args),
     }
 }
 
@@ -145,7 +150,9 @@ mod tests {
     #[test]
     fn canonical_takes_a_phase() {
         let cli = parse(&["hook", "--canonical", "pre_tool"]).unwrap();
-        let Command::Hook(args) = cli.command;
+        let Command::Hook(args) = cli.command else {
+            unreachable!("not a hook command")
+        };
         assert_eq!(args.canonical, Some(PhaseArg::PreTool));
         assert!(args.harness.is_none());
         assert!(parse(&["hook", "--canonical", "pre-tool"]).is_ok());
@@ -154,7 +161,9 @@ mod tests {
     #[test]
     fn harness_form_takes_an_optional_phase() {
         let cli = parse(&["hook", "claude-code", "--phase", "session_end"]).unwrap();
-        let Command::Hook(args) = cli.command;
+        let Command::Hook(args) = cli.command else {
+            unreachable!("not a hook command")
+        };
         assert_eq!(args.harness.as_deref(), Some("claude-code"));
         assert_eq!(args.phase, Some(PhaseArg::SessionEnd));
         assert!(parse(&["hook", "claude-code"]).is_ok());
@@ -165,6 +174,23 @@ mod tests {
         assert!(parse(&["hook"]).is_err());
         assert!(parse(&["hook", "--canonical", "pre_tool", "claude-code"]).is_err());
         assert!(parse(&["hook", "--canonical", "teleport"]).is_err());
+    }
+
+    #[test]
+    fn mcp_takes_an_optional_harness() {
+        let cli = parse(&["mcp"]).unwrap();
+        assert!(matches!(
+            cli.command,
+            Command::Mcp(McpArgs {
+                harness: None,
+                structured_content: false
+            })
+        ));
+        let cli = parse(&["mcp", "--harness", "antigravity"]).unwrap();
+        let Command::Mcp(args) = cli.command else {
+            unreachable!("not an mcp command")
+        };
+        assert_eq!(args.harness.as_deref(), Some("antigravity"));
     }
 
     #[test]
