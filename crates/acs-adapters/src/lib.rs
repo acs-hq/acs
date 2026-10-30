@@ -13,6 +13,8 @@
 
 use acs_core::{Decision, Phase, ToolEvent};
 
+pub mod antigravity;
+
 /// What the hook process should write and exit with.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct HookOutput {
@@ -107,7 +109,7 @@ pub trait Adapter: Sync {
 }
 
 /// Every adapter, in the order `acs hook --help` lists them. A harness adapter adds one entry.
-static ADAPTERS: &[&dyn Adapter] = &[&canonical::Canonical];
+static ADAPTERS: &[&dyn Adapter] = &[&canonical::Canonical, &antigravity::Antigravity];
 
 /// The adapter for `name` (case-insensitive), if there is one.
 #[must_use]
@@ -181,7 +183,7 @@ mod tests {
         assert_eq!(by_name("canonical").map(|a| a.name()), Some("canonical"));
         assert_eq!(by_name("Canonical").map(|a| a.name()), Some("canonical"));
         assert!(by_name("no-such-harness").is_none());
-        assert_eq!(names(), vec!["canonical"]);
+        assert_eq!(names(), vec!["canonical", "antigravity"]);
     }
 
     #[test]

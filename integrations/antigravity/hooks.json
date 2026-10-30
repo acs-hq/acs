@@ -1,0 +1,23 @@
+{
+  "acs": {
+    "PreToolUse": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          { "type": "command", "command": "acs hook antigravity --phase pre_tool", "timeout": 10 }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          { "type": "command", "command": "acs hook antigravity --phase post_tool", "timeout": 10 }
+        ]
+      }
+    ],
+    "PreInvocation": [
+      { "type": "command", "command": "acs hook antigravity --phase prompt_submit", "timeout": 10 }
+    ]
+  }
+}

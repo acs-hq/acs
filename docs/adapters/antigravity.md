@@ -1,6 +1,8 @@
 # Antigravity adapter: formats relied on
 
-Work package WP2.3, stage 1 (research). Accessed **2026-10-30**. Antigravity CLI `agy` was at
+Work package WP2.3. Stages 1 (research) and 2 (adapter and plugin) are done; the "As implemented"
+section below says what the code does and lists the manual verification a human must still run.
+Accessed **2026-10-30**. Antigravity CLI `agy` was at
 version **1.4.11** that day.
 
 Read this first:
@@ -171,8 +173,8 @@ and must print a rendered decision even for internal errors.
 1.4.7), but the desktop app honours it and treats it as approval without a prompt [S5, S14].
 Emitting `allow` could therefore silently disable the user's own permission prompts in the app,
 which ACS must not do. Two independent integrators emit `{"decision":"ask"}` instead as "no
-objection, continue with Antigravity's own permission flow" [S13, S14]. **Proposal:** ACS `allow`
-renders as `{"decision":"ask"}` (default), with an environment override to emit `allow`; confirm
+objection, continue with Antigravity's own permission flow" [S13, S14]. **Decision (orchestrator, stage 2):** ACS `allow`
+renders as `{"decision":"ask"}`, with no override; confirm
 in a live run that `ask` does not force a prompt for tools Antigravity would run unprompted
 (reads, auto mode). If it does, narrow the matcher to side-effecting tools (section 4).
 
@@ -203,7 +205,9 @@ always blocks is capped after a configurable number of consecutive continuations
 - Whether an `ephemeralMessage` stays visible on later turns, and whether it works in interactive
   TUI sessions and on resume, was not verified [S11].
 
-### 2.7 Mapping events to ACS phases (proposal for stage 2)
+### 2.7 Mapping events to ACS phases
+
+**Settled in stage 2 (section 13): no `Stop` hook; `PreInvocation` is `session_start` for the first invocation and `prompt_submit` after.** The table below is the original proposal.
 
 Hooks carry the event only by command line, so the command line must carry the ACS phase.
 
@@ -212,7 +216,7 @@ Hooks carry the event only by command line, so the command line must carry the A
 | `PreToolUse` | `acs hook antigravity --phase pre_tool` | `pre_tool` |
 | `PostToolUse` | `acs hook antigravity --phase post_tool` | `post_tool` |
 | `PreInvocation` | `acs hook antigravity --phase prompt_submit` | `prompt_submit` (`prompt` = `lastUserInput` when present). The first one in a conversation doubles as session start: seats are created lazily from any event. |
-| `Stop` | `acs hook antigravity --phase session_end` or no hook | `Stop` is the end of an **agent turn**, not of the session (it fires with `executionNum`/`fullyIdle`). Mapping it to `session_end` releases the seat's claims every time the agent goes idle waiting for the user, and the next event must re-open the seat. This is only right if WP2.1 seat resolution revives an ended seat for the same `harness_session_id`; otherwise register no `Stop` hook and rely on claim TTL and crashed-session detection. **Open question for the orchestrator.** |
+| `Stop` | `acs hook antigravity --phase session_end` or no hook | `Stop` is the end of an **agent turn**, not of the session (it fires with `executionNum`/`fullyIdle`). Mapping it to `session_end` releases the seat's claims every time the agent goes idle waiting for the user, and the next event must re-open the seat. This is only right if WP2.1 seat resolution revives an ended seat for the same `harness_session_id`; otherwise register no `Stop` hook and rely on claim TTL and crashed-session detection. Resolved: do not register `Stop`. |
 
 There is no true session-end signal in Antigravity.
 
@@ -431,7 +435,7 @@ agent in the workspace could edit to switch ACS off or bypass it. The current de
 `.agents/**/hooks*.json` is **still the right location** (`**` matches zero segments, so it
 covers `.agents/hooks.json`); it only misses the legacy `.agent/` directory.
 
-**Required (propose adding to `DEFAULT_SEALED`):**
+**Required (proposed in stage 1; the orchestrator applies `**/`-prefixed `.agents`/`.agent` hooks and plugins globs to `DEFAULT_SEALED` and not `mcp_config*` or the root `.antigravity-plugin/`, `.gemini-plugin/` folders):**
 
 ```
 .agents/**/hooks*.json
@@ -498,7 +502,88 @@ that write there; list it in the threat model.
     unknown-payload path (decision 0011 §3) must stay allow-with-warning. Note the interplay with
     section 2.5: an adapter that fails to parse must still print a valid explicit decision.
 
-## 13. Support tier (plan section 9.2)
+## 13. As implemented (stage 2)
+
+Code: `crates/acs-adapters/src/antigravity.rs` (registered as `antigravity`); tests:
+`crates/acs-adapters/tests/antigravity_fixtures.rs` (every file in `tests/fixtures/antigravity/`
+is parsed or rendered; a test fails when a new fixture is not covered). Plugin:
+`integrations/antigravity/`. Decisions: `docs/decisions/0014-antigravity-adapter.md`.
+
+**A real Antigravity run was not possible** (not installed, `antigravity.google` blocked), so the
+code is verified against documented and third-party payloads only. The binary was driven by hand
+with the fixtures (`acs hook antigravity --phase ...` in a temporary repository) and printed the
+shapes below, but that tests ACS, not Antigravity.
+
+Resolved from the proposals above (orchestrator answers):
+
+- `Stop` is **not** mapped and no `Stop` hook is registered. Claims expire by TTL; crashed-session
+  detection covers the rest.
+- ACS `allow` renders `{"decision":"ask"}`; `ask` renders `{"decision":"force_ask","reason":...}`;
+  `deny` and `queue` render `{"decision":"deny","reason":...}`. Warnings are appended to the
+  reason of a deny or ask and dropped on an allow. Exactly one JSON object, exit 0, always. An
+  unparseable payload renders `{"decision":"ask"}` (the adapter does not know the event then, and
+  `PreToolUse` fails closed on anything else).
+- `PreInvocation` is `session_start` when `invocationNum <= 1` and `initialNumSteps <= 1` (a
+  missing field does not count against it; with neither field, `prompt_submit`), else
+  `prompt_submit`. Output is `{"injectSteps":[{"ephemeralMessage":"<context, then warnings>"}]}`
+  when the decision has context or warnings, else `{}`. The rule is a guess: both numbers' exact
+  meaning is undocumented.
+- `PostToolUse` result: `success = (error == "")`, no exit code; absent `error` leaves the result
+  unset. The pipeline never reads it.
+- **Subagents** are separate seats (their hook `conversationId` is their own). The root id could
+  only be derived from `transcriptPath` if the subagent's transcript lives under the parent's
+  conversation directory; the only hint is the changelog naming a `.system_generated/subagents`
+  directory (1.2.2), which does not document the transcript location. Known gap.
+- Without `--phase` the phase is inferred (`toolCall` plus an `error` key is post-tool, `toolCall`
+  alone is pre-tool, `invocationNum` is `prompt_submit`); this is a fallback, the plugin always
+  passes `--phase`.
+
+Rendered output, by phase:
+
+| Phase | Allow | Ask | Deny / queue |
+| --- | --- | --- | --- |
+| `pre_tool` (and unparsed) | `{"decision":"ask"}` | `{"decision":"force_ask","reason":"..."}` | `{"decision":"deny","reason":"..."}` |
+| `session_start`, `prompt_submit` | `{}` or `{"injectSteps":[...]}` | same as allow | same as allow (never produced) |
+| `post_tool`, `session_end` | `{}` | `{}` | `{}` |
+
+### Manual verification checklist (for a human with `agy` installed)
+
+1. `agy --version`; note it. Allow `antigravity.google` and re-read the hooks, plugin and MCP
+   pages against section 2 to 7; fix this document first if they differ.
+2. `agy plugin validate --strict integrations/antigravity` passes (manifest fields, hook matcher
+   `.*`, `hooks.json` at the plugin root). Then `agy plugin install integrations/antigravity`;
+   `/hooks` lists the `acs` hooks; `/mcp` shows `acs_acs` ready.
+3. Record one real payload per event (a hook that tees stdin to a file): `PreToolUse` for
+   `run_command` and a file write, `PostToolUse`, `PreInvocation`. Compare field names with the
+   fixtures (camelCase, `conversationId`, `workspacePaths`, `toolCall.args` keys, tool names for
+   the installed version). Add them as fixtures before changing code.
+4. Denial: have two sessions (or `acs claim` from a shell) hold `src/a.rs`, then ask the agent to
+   edit it. The call is blocked and the agent quotes the reason. Repeat with a plugin-installed
+   hook and with a workspace `.agents/hooks.json` hook: if only the workspace one gates, switch
+   to the fallback in `integrations/antigravity/README.md`.
+5. **`ask` as "no objection".** With the default permission mode, a file edit and a shell command
+   that Antigravity would normally approve (or that your settings always allow) must behave as
+   without ACS: no extra prompt for reads or for always-allowed commands, in the CLI, in
+   `--mode auto`, and in the desktop app. If `ask` forces prompts, escalate: the alternatives are
+   narrowing the matcher to side-effecting tools or emitting `allow` where the surface ignores it.
+6. `force_ask`: trigger a `path_escapes_repo` ask (write outside the repository); a human prompt
+   appears with the reason, and a headless run (`agy -p`) denies.
+7. Fail-closed check: temporarily rename the `acs` binary; every tool call must be denied (this is
+   expected, and why `acs doctor` must verify `acs` is on `PATH`). Restore it.
+8. Context: start a conversation; confirm the first model call receives the ACS status
+   (`ephemeralMessage`), whether it stays visible on later turns, and whether `invocationNum`
+   restarts each turn (if it does, status repeats every turn and the first-invocation rule needs
+   `initialNumSteps` alone).
+9. MCP binding: call `acs_status` and confirm the server sees
+   `params._meta["antigravity.google/root_conversation_id"]` and that it equals the hooks'
+   `conversationId` for the main agent. Confirm whether `ANTIGRAVITY_CONVERSATION_ID` is in the
+   MCP server's environment. Check subagent calls carry a different `conversationId` in hooks.
+10. Windows: `run_command` runs PowerShell; confirm a `Remove-Item` is denied outside claims
+    (the adapter names the tool `run_command (powershell)`).
+11. The rule `.agents/rules/acs.md` (installed from the plugin's `rules/`) loads: ask the agent
+    "what does the ACS rule say?" without ACS hooks, and check it calls `acs_status` first.
+
+## 14. Support tier (plan section 9.2)
 
 **Verdict: tier A with caveats, plus the tier B rule as belt and braces.**
 
