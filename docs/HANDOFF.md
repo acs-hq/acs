@@ -83,6 +83,10 @@ New in Phase 2:
    `publish = false` (path dependencies are otherwise "wildcards").
 8. Performance assertions in debug-build tests flake on Windows runners (antivirus scans new
    files); keep them as sanity bounds and leave real budgets to WP10.1's release benchmarks.
+9. On Windows, cargo puts the target directory on `PATH` for test processes, so the freshly built
+   `acs.exe` is "installed" in every test. Tests that need `acs` absent must filter `PATH`
+   (see `path_without_acs` in `crates/acs-git/tests/hooks.rs`). Reproduce on Linux with
+   `PATH=$PWD/target/debug:$PATH cargo test`.
 
 ## 3. Must-know items for the next phases
 
