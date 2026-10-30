@@ -81,9 +81,21 @@ fn default_guards() {
         (".github/workflows/ci.yml", ".github/workflows/**"),
         (".env", "**/.env*"),
         ("services/api/.env.production", "**/.env*"),
-        (".claude/settings.json", ".claude/settings*.json"),
-        (".claude/settings.local.json", ".claude/settings*.json"),
-        (".agents/foo/hooks.json", ".agents/**/hooks*.json"),
+        (".claude/settings.json", "**/.claude/settings*.json"),
+        (".claude/settings.local.json", "**/.claude/settings*.json"),
+        (
+            "apps/web/.claude/settings.json",
+            "**/.claude/settings*.json",
+        ),
+        (".claude/hooks/guard.sh", "**/.claude/hooks/**"),
+        (".agents/hooks.json", "**/.agents/**/hooks*.json"),
+        (".agents/foo/hooks.json", "**/.agents/**/hooks*.json"),
+        (".agent/hooks.json", "**/.agent/**/hooks*.json"),
+        (".agents/plugins/acs/plugin.json", "**/.agents/plugins/**"),
+        (".agent/plugins/x/hooks.json", "**/.agent/**/hooks*.json"),
+        (".agent/plugins/x/plugin.json", "**/.agent/plugins/**"),
+        (".agents/plugins.json", "**/.agents/plugins.json"),
+        (".agent/plugins.json", "**/.agent/plugins.json"),
     ];
     for (path, glob) in sealed_paths {
         assert_eq!(policy.sealed_match(&rp(path)), Some(glob), "{path}");
@@ -93,10 +105,13 @@ fn default_guards() {
         "docs/env.md",
         ".github/CODEOWNERS",
         ".claude/other.json",
+        ".claude/worktrees/wp/src/main.rs",
+        ".mcp.json",
+        ".agents/rules/acs.md",
     ] {
         assert_eq!(policy.sealed_match(&rp(path)), None, "{path}");
     }
-    assert_eq!(DEFAULT_SEALED.len(), 6, "update the table above");
+    assert_eq!(DEFAULT_SEALED.len(), 12, "update the table above");
 
     // Protected branches.
     for branch in ["main", "release/1.0", "release/v2"] {
@@ -1174,7 +1189,7 @@ fn corrupt_or_foreign_cache_is_ignored() {
 
     // A different format or version is silently stale.
     let entry = fs::read_to_string(&path).unwrap();
-    fs::write(&path, entry.replace("\"format\":1", "\"format\":99")).unwrap();
+    fs::write(&path, entry.replace("\"format\":2", "\"format\":99")).unwrap();
     let outcome = load_cached(policy.path(), cache.path(), CS);
     assert_eq!(outcome.origin, Origin::Fresh);
     assert!(outcome.warnings.is_empty());

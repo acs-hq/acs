@@ -3,8 +3,14 @@ sealed = [
   ".acs/**",
   ".github/workflows/**",
   "**/.env*",
-  ".claude/settings*.json",
-  ".agents/**/hooks*.json",
+  "**/.claude/settings*.json",
+  "**/.claude/hooks/**",
+  "**/.agents/**/hooks*.json",
+  "**/.agent/**/hooks*.json",
+  "**/.agents/plugins/**",
+  "**/.agent/plugins/**",
+  "**/.agents/plugins.json",
+  "**/.agent/plugins.json",
 ]
 protected_branches = ["main", "release/*"]
 

@@ -211,8 +211,14 @@ Every key defaults to empty (zero for the numeric limits noted); the built-in de
 .acs/**
 .github/workflows/**
 **/.env*
-.claude/settings*.json
-.agents/**/hooks*.json
+**/.claude/settings*.json
+**/.claude/hooks/**
+**/.agents/**/hooks*.json
+**/.agent/**/hooks*.json
+**/.agents/plugins/**
+**/.agent/plugins/**
+**/.agents/plugins.json
+**/.agent/plugins.json
 ```
 
 ### 5.3 `territory.toml`

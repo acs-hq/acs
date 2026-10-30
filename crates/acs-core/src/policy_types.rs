@@ -23,8 +23,14 @@ pub const DEFAULT_SEALED: &[&str] = &[
     ".acs/**",
     ".github/workflows/**",
     "**/.env*",
-    ".claude/settings*.json",
-    ".agents/**/hooks*.json",
+    "**/.claude/settings*.json",
+    "**/.claude/hooks/**",
+    "**/.agents/**/hooks*.json",
+    "**/.agent/**/hooks*.json",
+    "**/.agents/plugins/**",
+    "**/.agent/plugins/**",
+    "**/.agents/plugins.json",
+    "**/.agent/plugins.json",
 ];
 
 const DEFAULT_CLAIM_TTL_SECS: NonZeroU64 = non_zero(900);
