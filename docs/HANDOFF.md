@@ -1,151 +1,165 @@
-# Orchestrator handoff (after Phase 1)
+# Orchestrator handoff (after Phase 2)
 
-Written 2026-10-29 at the end of the session that built Phase 0 and Phase 1. Read this together
-with the implementation plan and `docs/decisions/` before starting Phase 2. It records what exists,
-what was decided beyond the plan, and what the next phases must not miss.
+Written 2026-10-30 at the end of the session that built Phase 2. It replaces the handoff written
+after Phase 1; that version is in git history (`git show 49c2cf0:docs/HANDOFF.md`) and its process
+lessons still apply (summarized in section 2). Read this with the implementation plan and
+`docs/decisions/` before starting the next phase.
 
 ## 1. Where things stand
 
-- `main` has Phase 0 (WP0.1–0.3) and Phase 1 (WP1.1–1.6). CI (fmt, clippy `-D warnings`, tests on
-  Linux/macOS/Windows, cargo-deny) is green on all three OSes.
-- **Frozen contracts:** `spec/SPEC.md` (draft 0.1), `spec/schemas/` (generated; a drift test fails
-  on any change), `crates/acs-core` public types, and `crates/acs-core/src/gate.rs` (in-process
-  interfaces between components, decision 0004). Only the orchestrator changes them; regenerate
-  schemas with `ACS_UPDATE_SCHEMAS=1 cargo test -p acs-core --test schemas`.
-- Decision records `0001`–`0010` cover every choice made beyond the plan. **0002** (contracts),
-  **0004** (gate interfaces and cross-component rules) and the per-crate records are required
-  reading for any Phase 2 subagent.
+- `main` has Phase 0, Phase 1 and **Phase 2 (WP2.1–WP2.6)**. Fmt, clippy `-D warnings`, the
+  workspace tests (Linux, macOS, Windows) and cargo-deny pass in CI.
+- **Frozen contracts:** `spec/SPEC.md` (draft 0.1), `spec/schemas/` (drift test), `crates/acs-core`
+  public types and `gate.rs`, and the Phase 2 cross-WP interfaces in decision **0011** (crate roles,
+  CLI surface, markers, MCP seat binding). Only the orchestrator changes them.
+- Phase 2 decision records: **0011** architecture (orchestrator), **0012** hook pipeline, **0013**
+  Claude Code adapter, **0014** Antigravity adapter, **0015** git backstop, **0016** MCP server,
+  **0017** harness paths in the default sealed list (orchestrator, with an amendment for
+  `.husky/**`), **0018** CLI.
+- Shared rules handed to every Phase 2 subagent: `docs/phase2-rules.md` (reuse it for Phase 3+,
+  updating the reading list and decision numbers).
 
 | Crate | WP | Entry points |
 | --- | --- | --- |
-| acs-core | 0.2, 1.5 | types, `gate::*`, `engine::decide(&GateInput, &dyn PolicyView) -> GateOutput` |
-| acs-policy | 1.1 | `load_cached(policy_dir, cache_dir, LoadOptions) -> LoadOutcome`, `CompiledPolicy: PolicyView`, `glob::Glob` |
-| acs-paths | 1.3 | `PathResolver::{new, resolve, resolve_entry, resolve_recursive_report, expand_recursive, expand_glob}` |
-| acs-shell | 1.4 | `analyze(command, Dialect) -> ShellAnalysis` |
-| acs-store | 0.3, 1.2, 1.6 | `AcsHome`, `RepoIdentity::resolve`, `StateDb`, `SnapshotStore` |
+| acs-adapters | 2.1–2.3 | `Adapter` trait, `by_name`, `canonical`, `claude_code::ClaudeCode`, `antigravity::Antigravity` |
+| acs-git | 2.1, 2.4 | `repo::discover`, `status::scan_changes`, `hooks::{install, uninstall, status}`, `trailers` |
+| acs-store | 2.1 adds | migration 0003: `SeatInfo` (session id, intent), last decision, flags (`gate_off`), attributions, `stale_live_seats` |
+| acs-mcp | 2.6 | `Backend` trait, `serve_stdio` (rmcp 3.8, the only async runtime in the binary) |
+| acs-cli | 2.1, 2.4–2.6 | `runtime` (`RepoContext`, seats, `status`/`claim_paths`/`release_paths`/`set_intent`/`last_decision`), `hook`, `cli`, `commands/{init,status,claim,release,off,doctor,git_hook,mcp}` |
 
-## 2. Process lessons (for the orchestrator)
+Commands: `acs hook --canonical <phase>`, `acs hook <claude-code|antigravity|canonical>`,
+`acs mcp [--harness]`, `acs git-hook <name>`, `acs init|status|claim|release|off|on|doctor`
+(each with `--json`).
 
-1. **Worktree subagents branch from `main`, not from your working branch.** In Phase 1 the
-   interface commit was only on the session branch, so subagents started without `gate.rs` and had
-   to fast-forward. Before fanning out, merge or push every contract commit to `main` (or tell each
-   subagent to `git merge --ff-only <sha>` first and verify `git log`).
-2. **Shared-file conflicts are routine:** every WP adds to root `[workspace.dependencies]` and
-   `Cargo.lock`. Resolve `Cargo.toml` by taking the union of both sides (watch for the same crate
-   added twice with different specs), then `git checkout --ours Cargo.lock && cargo metadata
-   --format-version 1 >/dev/null` to re-lock, then run the full checks. Two WPs sharing a crate
-   (`acs-store` in Phase 1) also conflict in its `lib.rs` and `Cargo.toml`; resolve by hand.
-3. **Windows CI is the real test for path, filesystem and locking code.** Phase 1's only CI
-   failure was a junction bug (fixed in `799f4ef`) that Linux could not show. Before pushing
-   Windows-specific code, type-check it locally:
-   `rustup target add x86_64-pc-windows-gnu` then
-   `cargo clippy -p <crate> --tests --target x86_64-pc-windows-gnu -- -D warnings`
-   (works for crates without C dependencies: acs-core, acs-policy, acs-paths, acs-shell's Rust).
-4. CI cancels a running run when the same branch is pushed again (`concurrency`); don't push a
-   follow-up commit while waiting for a run you need.
-5. Six parallel subagents on a 4-CPU box worked (tell them `CARGO_BUILD_JOBS=2`). Most WPs took
-   10–18 min; WP1.4 (shell analysis) took ~40 min. A long run is not necessarily a loop: check the
-   worktree's commit times and file mtimes before stopping one.
-6. Subagents' commit trailers name their own model (their harness attribution reminder overrides
-   the brief). That is expected; don't rewrite history for it. Give merge commits an explicit
-   message with the attribution trailer (`git merge --no-edit` drops it).
-7. Hand each subagent: a shared rules file (reading list, ownership, definition of done, commit
-   rules — the Phase 1 one is reproduced in §5), its WP, the decision-record number to use, and the
-   exact interfaces it produces or consumes. Ask for a report with API, acceptance evidence,
-   decisions, contract change requests and untested platforms.
+Integrations: `integrations/claude-code/` (plugin `acs`, marketplace `acs-plugins` in the root
+`.claude-plugin/marketplace.json`) and `integrations/antigravity/` (plugin `acs`, always-on rule).
+Both carry an **interim** `acs-usage` skill; WP5.1 owns the canonical skills and must keep the
+plugin copies in sync.
 
-## 3. Must-know items for Phase 2 (WP2.1 hook pipeline and the adapters)
+### Acceptance evidence worth knowing
 
-**Pipeline glue (WP2.1)** — the engine is pure; the pipeline owns all of this:
-- Pass an **absolute** `cwd` to `PathResolver` (relative → `Unresolvable`).
-- Use `resolve_entry` for `rm`/`mv` sources (a link in the last component is the thing deleted),
-  `resolve` for writes, and `resolve_recursive_report` for recursive targets (its `truncated` flag
-  is not in `ResolvedPath`; treat truncated as "may reach more").
-- Expand every recursive and glob target into `Expansion` (`expand_recursive`, `expand_glob`). A
-  recursive delete **without** an expansion makes the engine ask (`destructive_unknown_targets`).
-  The repository root is `RepoPath(".")`, which no glob matches — always expand it.
-- Shell `Pattern` targets must be expanded; `Partial` targets stay unknown. A git ref containing
-  `$` is unknown.
-- **Local-only repos:** `StateDb::claims_snapshot` reports `remote_stale = true` when no fetch ever
-  happened, and the engine then warns on every claim-checking event. Set
-  `ClaimsSnapshot.remote_stale = false` when the repository has no remote / sync is not set up.
-- `try_acquire(seat, requests, now, stale_after)` with `stale_after = 3 × sync_interval_secs`; call
-  it only for `allow`/`ask`; on `deny` just `record_event`. Map `StoreError::is_state_unavailable()`
-  to `GateState::state_unavailable`.
-- The engine requests a snapshot for every write/delete target; skip paths that don't exist. Call
-  `SnapshotStore::drop_session` when a session ends, or its blobs are only reclaimed by budget.
-- Surface `acs_policy::LoadOutcome::warnings` in `Decision.warnings` — otherwise an invalid policy
-  silently degrades to last-valid/defaults.
-- `decide` returns allow/`ok` for non-`pre_tool` phases; session start/prompt/end handling is the
-  pipeline's. The lore injection seam is marked in `engine` `collect_context` (Phase 6).
-- Reusable test helpers: `crates/acs-core/tests/common/mod.rs` (`FakePolicy`, fixture builders).
-- WP1.2 has no API yet for crashed-session detection (seats without `ended_at` and an old
-  `last_seen_at`) or history pruning; WP2.1/WP4.1 must add them to `acs-store`.
+- **Real Claude Code run** (`claude -p` 2.1.314 with the plugin via `--plugin-dir`): an edit of a
+  file claimed by another seat was denied and the model quoted the guidance naming the holder
+  (`docs/adapters/claude-code.md` §17). Separately, `claude -p` with `acs mcp` listed and called
+  all five tools (decision 0016). Hooks and MCP were not yet exercised together in one real session.
+- **Antigravity was never run** (not installable here; `antigravity.google` is blocked by this
+  environment's network policy). Its adapter rests on Google's GitHub repos and integrators'
+  reports; `docs/adapters/antigravity.md` lists 12 source disagreements and an 11-step manual
+  checklist. Treat it as unverified until someone runs that checklist.
+- **Budgets** (release, Linux, 4 shared vCPUs; `cargo test --release -p acs-cli --test perf --
+  --ignored --nocapture`): pre-tool edit p50 8.7 ms / p99 18.4 ms; post-tool shell at 100k files
+  p50 16 ms / p99 47 ms **only with the scoped scan**. A full `git status` scan of 100k files
+  missed (p50 147 ms), so above 20,000 index entries the scan is scoped to predicted targets,
+  claims and nearby directories (decision 0012) and opaque scripts writing elsewhere go unseen.
 
-**Adapters (WP2.2, WP2.3) and anything that changes built-in defaults:**
-- Adapter WPs add their harness's hook/settings files to `DEFAULT_SEALED` in acs-core (an
-  orchestrator change: regenerate schemas, update the SPEC table — `tests/spec_doc.rs` checks it)
-  **and bump `CACHE_FORMAT` in `crates/acs-policy/src/cache.rs`**, or stale cached policies keep the
-  old defaults.
-- Ban matching is case-sensitive and applies to `SimpleCommand.words` joined by spaces. acs-shell
-  strips wrappers (`sudo`, `env`, ...) and system bin dirs, and lowercases/strips `.exe` only for the
-  PowerShell/cmd dialects — pick the dialect from the harness's shell on Windows.
-- Default bans were changed to full-match globs: `git push --force*`, `git reset --hard*`,
-  `git clean -f*` (decision 0005). `git push origin main --force` does not match a ban; it is caught
-  by `GitInvocation.force_push` + protected branches.
+## 2. Process lessons
 
-**Behavior to watch when dogfooding (§0 rule 6):**
-- With the default `max_files_deleted_outside_claims = 0`, an agent can delete only files its seat
-  claimed earlier (by editing them or via `acs_claim`). The usage skill (WP5.1) and the MCP
-  `acs_claim` tool description (WP2.6) must make this obvious. Deleting a file another seat claims
-  reports `delete_outside_claims` (guards run before claims); consider naming the holder in that
-  message.
-- Owned zones behave as shared until WP7.1; `queue`/`claim_queued` stay reserved until Phase 8.
+From Phase 1 (still true): subagent worktrees must start from a commit that has every contract
+change; `Cargo.toml`/`Cargo.lock` conflicts are routine (union, then re-lock); Windows CI is the
+real test for path/filesystem code; don't push while waiting on a CI run you need (concurrency
+cancels it); give merge commits an explicit message with the attribution trailer.
+
+New in Phase 2:
+
+1. **Create worktrees yourself** (`git worktree add -b <wp> .claude/worktrees/<wp> <sha>`) and
+   tell each subagent its absolute path. This keeps `main` untouched until the end and makes the
+   base commit explicit. Don't `cd` into a worktree from the orchestrator shell (it moves the
+   session's working directory); use `git -C` or absolute paths.
+2. **Split adapter WPs into research and code stages.** Research (docs, real payload capture,
+   sealed-path proposals) does not need the pipeline, so it ran in parallel with WP2.1 and its
+   findings fed WP2.1 mid-flight (resume semantics, SessionEnd budget, detached-child stdio).
+   Resume the same agent for stage 2 with `SendMessage` so it keeps its context.
+3. **Start downstream WPs early with a stub.** WP2.5 started before WP2.4 landed, with the hook
+   installer behind one stubbed call, and got the API by message later.
+4. **Merges break each other's tests, not just code.** Run the *whole* workspace test suite after
+   every merge: fixture-coverage tests (WP2.3) caught a fixture added by WP2.6, and a hardcoded
+   sealed-glob count (WP2.5) broke when the defaults grew.
+5. **Use unique scratchpad directory names per subagent** (`wp22-e2e`, not `e2e`); two agents
+   clobbered each other's scratch repo.
+6. Tell subagents that `assert_cmd` is not available offline; the tests use
+   `std::process::Command` with `CARGO_BIN_EXE_acs` and the `World` fixture in
+   `crates/acs-cli/tests/common/`.
+7. `cargo-deny` is not installed locally; CI's deny job is the only check. Every crate must be
+   `publish = false` (path dependencies are otherwise "wildcards").
+8. Performance assertions in debug-build tests flake on Windows runners (antivirus scans new
+   files); keep them as sanity bounds and leave real budgets to WP10.1's release benchmarks.
+
+## 3. Must-know items for the next phases
+
+**WP3.1 (sync)** — the seam is `hook::post::maybe_spawn_sync`; the child **must** get null
+stdin/stdout/stderr and must not be waited on (an inherited pipe makes Claude Code block).
+`remote_stale` is forced false until a remote exists *and* a sync was attempted
+(`record_sync_success`/`record_sync_failure`; staleness keys off `last_attempt_at`). Reuse
+`commands::init::remotes` for refspecs; `acs status` already renders `RemoteView` (stale, last
+error). SPEC §8 wording on "stale" (strictly older than 3× interval; never-fetched is stale) is
+still pending (see section 4).
+
+**WP4.1 (records)** — `stale_live_seats(before)` finds crashed sessions (human seats excluded);
+aggregate `files_changed` as the first `pre_hash` and last `post_hash` per path from
+`attributions`. A missing pre-image entry means "unknown", not "did not exist". Redact event
+`detail` again before it goes into a record. Intent text needs the redaction pass (plan §9.2).
+
+**WP4.2 (blame)** — `acs_git::trailers::session_ids(message, comment_char)`; uncommitted lines come
+from `path_attributions`.
+
+**WP4.3 (undo)** — unpredicted shell changes record the *staged* content as pre-image (committed
+content above 20k entries); wrong only if the file already had unstaged edits. Snapshots of ended
+sessions are kept (no `drop_session` at session end) and evicted by budget only.
+
+**WP5.1 (skills)** — sync the interim plugin skills; MCP tool names are
+`mcp__plugin_acs_acs__<tool>` in Claude Code; in Antigravity the plugin's server is renamed
+`acs_acs` and tools are reached through `call_mcp_tool` (or directly, via `alwaysLoad`).
+Make the "deletes need a claim first" rule obvious (default `max_files_deleted_outside_claims = 0`).
+
+**WP5.2 (distribution)** — `acs plugin install` replaces the printed commands in
+`commands::init::harness::HARNESSES` and doctor's `plugin_*` hints. Antigravity **fails closed**
+(every tool call denied) when the hook binary is missing; installers must put `acs` on PATH before
+the plugin is enabled. Claude Code fails open; an optional strict mode (`onFailure: block`) is
+recorded in 0013.
+
+**WP7.2 (hardening)** — known bypasses: an agent starting a nested harness with hooks disabled
+(`claude --bare -p`, `claude --settings '{"disableAllHooks":true}'`); writes to harness config
+outside the repo (`~/.claude/settings.json`, `~/.gemini/config/hooks.json`), which repository globs
+cannot seal (file tools get `path_escapes_repo` ask; shell writes are uncovered); agents running
+`acs off`. Classify agent CLIs as unknown-target commands.
+
+**Known gaps and sharp edges**
+
+- Antigravity: no session start/end or prompt events (`PreInvocation` stands in, its first-call
+  rule is a guess); ACS `allow` renders as Antigravity `ask` ("no objection") — verify it doesn't
+  force prompts; subagent conversations are separate seats and can conflict with their parent.
+- Claude Code: `CLAUDE_CODE_SESSION_ID` is stale after `--continue` and `/clear`; MCP falls back
+  to the most recent live seat in the worktree and warns on ambiguity. Persisting
+  `tool_use_id → seat` from pre-tool events (the `_meta["claudecode/toolUseId"]` is already
+  extracted) would remove the ambiguity.
+- Git backstop: a worktree whose checkout has no `.acs/policy/` (for example before the adoption
+  commit) gets no backstop, even when ACS state exists for the repo — consider keying on the state
+  instead. A stale commit marker (agent commit rejected by a later user hook) can make a human
+  commit within 10 minutes look like an agent's.
+- Human claims (`acs claim`) are never heartbeated; they expire after `claim_ttl_secs` until WP7.3
+  or WP7.4 refreshes them.
+- `acs-cli` could not be type-checked for Windows locally (C dependencies need mingw); Windows CI
+  is the check.
 
 ## 4. Candidate contract changes (decide before the WP that needs them)
 
 | Change | Needed by | Source |
 | --- | --- | --- |
-| `ResolvedPath.linked_truncated: bool` | WP2.1 (optional) | WP1.3 report |
-| `SimpleCommand.wrappers: Vec<String>` so bans can match `sudo *` | WP7.2 hardening | WP1.4 report |
-| Optional `[lore]` config keys (inject cap 4,000 chars, stale threshold 30%) | WP6.1, WP6.2 | plan §7; decision 0002 review |
-| SPEC §8: state that "stale" is strictly older than 3 × interval and never-fetched is stale | WP3.1 | WP1.2 report |
-| Adapter sealed paths in `DEFAULT_SEALED` | WP2.2, WP2.3 | plan §4.3 |
+| `SimpleCommand.wrappers` so bans can match `sudo *`; agent-CLI classification | WP7.2 | WP1.4, WP2.2 |
+| Optional `[lore]` config keys (inject cap 4,000 chars, stale threshold 30%) | WP6.1, WP6.2 | plan §7 |
+| SPEC §8: "stale" is strictly older than 3× interval; never-fetched is stale | WP3.1 | WP1.2 |
+| `FileChange` cannot say "pre-hash unknown" vs "did not exist" | WP4.1 | WP2.1 |
+| Expose the engine's claim-message helpers (`age`, holder) from `acs-core` | any | WP2.4 duplicated them |
+| `ResolvedPath.linked_truncated` | optional | WP1.3 |
 
-Later-phase reminders: WP4.3 undo must compare current content with the session's post-image
-before calling `SnapshotStore::restore` (which overwrites unconditionally); an evicted snapshot is
-`SnapshotError::Evicted` ("snapshot evicted"). acs-lore (Phase 6) should reuse `acs_policy::glob`
-for scopes rather than adding a second matcher. Windows file permissions under `ACS_HOME` rely on
-inherited ACLs (decision 0003); `acs doctor` (WP2.5) is the place to warn.
+## 5. For the human
 
-## 5. Shared rules given to every Phase 1 subagent
-
-Each subagent got these rules, adapted per phase:
-
-- **Reading list:** plan §0, §3, §4, §5, §9 and its WP; `spec/SPEC.md`; all of
-  `docs/decisions/`; the `acs-core` types it touches.
-- **Ownership:** edit only the paths the WP owns, plus its tests and its decision record. Shared
-  files may only gain entries: root `[workspace.dependencies]`, `Cargo.lock`, and the WP's own
-  crate `Cargo.toml`. Contract changes go into the report, not the code.
-- **Dependency order:** a crate may only depend on crates listed before it in plan §5.
-- **Definition of done:** fmt, clippy `-D warnings`, workspace tests and `cargo deny check` all
-  pass; public items are documented; no `unwrap`/`expect` outside tests; tests are hermetic and
-  cross-platform, with `cfg` gates for OS-specific checks; the WP's own acceptance checks are met;
-  a decision record exists.
-- **Commits:** commit as you go, with the attribution trailer. Never push and never open PRs.
-- **Resources:** run cargo with `CARGO_BUILD_JOBS=2`, and avoid `--release` builds except for
-  performance checks.
-- **Report:** commits, public API, acceptance evidence with numbers, decisions, contract change
-  requests, untested platforms, and notes for later phases.
-
-## 6. For the human
-
-- **Set the repository's default branch to `main`** (GitHub → Settings → General → Default branch).
-  It is currently the first branch pushed, `claude/trusting-cori-vcw7mq`.
-- Consider branch protection on `main` requiring the CI checks, and CODEOWNERS for `.acs/policy/`
-  and `spec/` once there are other contributors.
-- Open non-code tasks from plan §9.3 still apply: the name check for `acs` (crates.io, npm,
-  Homebrew), the home for the setup skill, and governance. The license is already set to
-  MIT OR Apache-2.0 (`LICENSE-MIT`, `LICENSE-APACHE`).
-- The release workflow (cargo-dist 0.33.1, tag-triggered) has never run. musl and aarch64-linux
-  builds with the C dependencies (SQLite, zstd, tree-sitter) are untested until WP5.2.
+- **Allow `antigravity.google`** in this environment's network settings (Allowed domains) if a
+  later session should verify the Antigravity adapter against the official docs.
+- **Run the Antigravity manual checklist** (`docs/adapters/antigravity.md`) on a machine with
+  Antigravity installed; record results in `docs/releases/`.
+- Still open from Phase 1: set the GitHub default branch to `main`; branch protection on `main`;
+  CODEOWNERS for `.acs/policy/` and `spec/`; the `acs` name check (crates.io, npm, Homebrew); the
+  home for the setup skill; governance. The release workflow has never run.
+- The marketplace command printed by `acs init` assumes the repository is `acs-hq/acs`
+  (`claude plugin marketplace add acs-hq/acs`).
