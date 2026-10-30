@@ -8,6 +8,7 @@ use std::process::ExitCode;
 use acs_core::Phase;
 use clap::{Args, Parser, Subcommand, ValueEnum};
 
+use crate::commands::git_hook::{self, GitHookArgs};
 use crate::commands::mcp::{self, McpArgs};
 use crate::hook::{self, HookEnv};
 
@@ -32,6 +33,9 @@ pub enum Command {
     /// Run the MCP server on stdio: the tools `acs_status`, `acs_claim`, `acs_release`,
     /// `acs_intent` and `acs_why` for agents.
     Mcp(McpArgs),
+    /// Run by the git hooks `acs init` installs (pre-commit, prepare-commit-msg, pre-push).
+    #[command(name = "git-hook")]
+    GitHook(GitHookArgs),
 }
 
 /// A hook phase on the command line (the names of the spec's `phase` field).
@@ -93,6 +97,10 @@ pub fn run_from_env() -> ExitCode {
             let _ = err.print();
             if !usage_error {
                 ExitCode::SUCCESS
+            } else if std::env::args().nth(1).as_deref() == Some("git-hook") {
+                // For a git hook any non-zero exit rejects the commit or push, and the backstop
+                // fails open (decision 0015): a misuse prints the usage and lets git proceed.
+                ExitCode::SUCCESS
             } else if std::env::args().nth(1).as_deref() == Some("hook") {
                 // clap's usual exit code 2 means "block the tool call" to some harnesses; a
                 // misconfigured hook must not do that.
@@ -110,6 +118,7 @@ pub fn run(cli: Cli) -> ExitCode {
     match cli.command {
         Command::Hook(args) => run_hook(&args),
         Command::Mcp(args) => mcp::run(&args),
+        Command::GitHook(args) => git_hook::run(&args),
     }
 }
 
@@ -197,5 +206,26 @@ mod tests {
     fn phase_names_map_to_the_spec_phases() {
         assert_eq!(Phase::from(PhaseArg::PromptSubmit), Phase::PromptSubmit);
         assert_eq!(Phase::from(PhaseArg::SessionStart), Phase::SessionStart);
+    }
+
+    #[test]
+    fn git_hook_passes_git_arguments_through() {
+        let cli = parse(&[
+            "git-hook",
+            "prepare-commit-msg",
+            ".git/COMMIT_EDITMSG",
+            "message",
+        ])
+        .unwrap();
+        let Command::GitHook(args) = cli.command else {
+            panic!("not a git-hook command")
+        };
+        assert_eq!(args.name, "prepare-commit-msg");
+        assert_eq!(args.args, [".git/COMMIT_EDITMSG", "message"]);
+        let cli = parse(&["git-hook", "pre-push", "origin", "-weird-url"]).unwrap();
+        let Command::GitHook(args) = cli.command else {
+            panic!("not a git-hook command")
+        };
+        assert_eq!(args.args, ["origin", "-weird-url"]);
     }
 }

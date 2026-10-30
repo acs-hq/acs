@@ -159,6 +159,17 @@ fn leave_markers(
             },
         );
     }
+    if pushes(norm) {
+        let _ = markers::write_push_marker(
+            ctx,
+            &CommitMarker {
+                session_id: info.session_id.to_string(),
+                seat_id: info.seat.seat_id.to_string(),
+                harness: info.seat.harness.clone(),
+                created_at: now,
+            },
+        );
+    }
     if norm.creates_commit {
         let _ = markers::write_commit_marker(
             ctx,
@@ -170,4 +181,15 @@ fn leave_markers(
             },
         );
     }
+}
+
+/// Whether a shell command in the event runs `git push` (the `pre-push` git hook then knows the
+/// push comes from an agent session).
+fn pushes(norm: &crate::runtime::paths::Normalized) -> bool {
+    norm.shell.as_ref().is_some_and(|shell| {
+        shell
+            .commands
+            .iter()
+            .any(|c| c.git.as_ref().is_some_and(|g| g.subcommand == "push"))
+    })
 }

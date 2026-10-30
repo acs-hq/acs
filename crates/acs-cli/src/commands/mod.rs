@@ -5,4 +5,5 @@
 //! [`crate::cli::Command`] and one arm to [`crate::cli::run`]. Commands call the shared
 //! operations in [`crate::runtime`] instead of reimplementing them.
 
+pub mod git_hook;
 pub mod mcp;
