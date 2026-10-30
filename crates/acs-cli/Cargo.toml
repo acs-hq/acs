@@ -22,6 +22,7 @@ workspace = true
 acs-adapters = { path = "../acs-adapters" }
 acs-core = { path = "../acs-core" }
 acs-git = { path = "../acs-git" }
+acs-mcp = { path = "../acs-mcp" }
 acs-paths = { path = "../acs-paths" }
 acs-policy = { path = "../acs-policy" }
 acs-shell = { path = "../acs-shell" }

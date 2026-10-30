@@ -17,6 +17,7 @@ dependencies = [
  "acs-adapters",
  "acs-core",
  "acs-git",
+ "acs-mcp",
  "acs-paths",
  "acs-policy",
  "acs-shell",
