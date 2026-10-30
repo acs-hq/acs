@@ -7,7 +7,9 @@
 
 pub mod claim;
 pub mod doctor;
+pub mod git_hook;
 pub mod init;
+pub mod mcp;
 pub mod off;
 pub mod release;
 pub mod status;

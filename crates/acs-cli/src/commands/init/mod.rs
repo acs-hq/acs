@@ -168,7 +168,7 @@ pub fn initialize(layout: &acs_git::RepoLayout) -> Result<InitReport, String> {
         || remote_reports
             .iter()
             .any(|r| r.action == RemoteAction::Added)
-        || matches!(&git_hooks, HooksInstall::Done { hooks } if hooks.iter().any(|h| h.action != "unchanged"));
+        || matches!(&git_hooks, HooksInstall::Done { hooks, .. } if hooks.iter().any(|h| h.action != "unchanged"));
     Ok(InitReport {
         ok: errors.is_empty(),
         changed,
@@ -229,9 +229,12 @@ pub fn render(report: &InitReport) -> String {
 
     out.push_str("\nGit hooks\n");
     match &report.git_hooks {
-        HooksInstall::Done { hooks } => {
+        HooksInstall::Done { hooks, note } => {
             for hook in hooks {
                 let _ = writeln!(out, "  {:<10}{}", hook.action, hook.name);
+            }
+            if let Some(note) = note {
+                out.push_str(&wrap(note, "  ", "  "));
             }
         }
         HooksInstall::Pending { note } => out.push_str(&wrap(note, "  ", "  ")),

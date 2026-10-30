@@ -52,7 +52,7 @@ fn a_healthy_repository_passes() {
     ] {
         assert_eq!(status_of(&doc, id), "pass", "{id}: {}", check(&doc, id));
     }
-    assert!(check(&doc, "git_hooks")["status"] != "fail");
+    assert_eq!(status_of(&doc, "git_hooks"), "pass");
 
     let out = acs(&world, &["doctor"]);
     assert_success(&out);
@@ -269,4 +269,55 @@ fn outside_a_repository_only_the_global_checks_run() {
             .all(|c| c["id"] != "state_db")
     );
     assert_success(&acs_in(&world, &plain, &["doctor"]));
+}
+
+#[test]
+fn doctor_detects_a_removed_git_hook_and_fix_reinstalls_it() {
+    let world = started();
+    let hook = world.repo.join(".git/hooks/pre-push");
+    assert!(hook.is_file());
+    fs::remove_file(&hook).unwrap();
+
+    let out = acs(&world, &["doctor", "--json"]);
+    assert_failure(&out);
+    let doc = json(&out);
+    assert_eq!(status_of(&doc, "git_hooks"), "fail");
+    let message = check(&doc, "git_hooks")["message"].as_str().unwrap();
+    assert!(
+        message.contains("pre-push") && !message.contains("pre-commit"),
+        "{message}"
+    );
+    let text = stdout(&acs(&world, &["doctor"]));
+    assert!(text.contains("FAIL  Git hooks"), "{text}");
+    assert!(text.contains("acs doctor --fix"), "{text}");
+    assert_fits_80(&text);
+
+    let out = acs(&world, &["doctor", "--fix", "--json"]);
+    assert_success(&out);
+    let doc = json(&out);
+    assert_eq!(check(&doc, "git_hooks")["fixed"], true);
+    assert!(hook.is_file());
+    assert_eq!(
+        status_of(&json(&acs(&world, &["doctor", "--json"])), "git_hooks"),
+        "pass"
+    );
+}
+
+#[test]
+fn doctor_detects_an_outdated_or_stripped_hook_block() {
+    let world = started();
+    // What `husky` or `pre-commit install` do: rewrite the file without the ACS block.
+    fs::write(
+        world.repo.join(".git/hooks/pre-commit"),
+        "#!/bin/sh\necho regenerated\n",
+    )
+    .unwrap();
+    let doc = json(&acs(&world, &["doctor", "--json"]));
+    assert_eq!(status_of(&doc, "git_hooks"), "fail");
+    assert!(
+        check(&doc, "git_hooks")["message"]
+            .as_str()
+            .unwrap()
+            .contains("ACS block is missing")
+    );
 }

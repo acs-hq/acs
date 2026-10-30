@@ -82,6 +82,10 @@ fn init_creates_policy_and_refspec_and_is_idempotent() {
         assert!(specs.len() >= 2, "the default refspec is kept: {specs:?}");
     }
 
+    for hook in ["pre-commit", "prepare-commit-msg", "pre-push"] {
+        let text = fs::read_to_string(world.repo.join(".git/hooks").join(hook)).unwrap();
+        assert!(text.contains("acs git-hook"), "{hook}: {text}");
+    }
     let before = snapshot(&world);
     let second = acs(&world, &["init", "--json"]);
     assert_success(&second);
@@ -104,6 +108,12 @@ fn init_creates_policy_and_refspec_and_is_idempotent() {
             .all(|r| r["action"] == "present")
     );
     assert_eq!(fetch_specs(&world, "origin").len(), 2);
+    let hooks = report["git_hooks"]["hooks"].as_array().unwrap();
+    assert_eq!(hooks.len(), 3);
+    assert!(
+        hooks.iter().all(|h| h["action"] == "unchanged"),
+        "{hooks:?}"
+    );
 
     // The policy `init` wrote is accepted by everything else.
     let status = acs(&world, &["status", "--json"]);
@@ -211,4 +221,61 @@ fn init_works_from_a_subdirectory_and_outside_a_repository_it_fails() {
     assert_eq!(error["ok"], false);
     assert_eq!(error["error"]["code"], "not_a_repo");
     assert!(stderr(&out).is_empty());
+}
+
+#[test]
+fn init_installs_the_git_hooks_and_chains_an_existing_one() {
+    let world = World::new();
+    let hook = world.repo.join(".git/hooks/pre-commit");
+    fs::create_dir_all(hook.parent().unwrap()).unwrap();
+    let original = "#!/bin/sh\necho my own pre-commit\n";
+    fs::write(&hook, original).unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&hook, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+
+    let report = json(&acs(&world, &["init", "--json"]));
+    assert_eq!(report["ok"], true);
+    assert_eq!(report["changed"], true);
+    let actions: Vec<(&str, &str)> = report["git_hooks"]["hooks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|h| (h["name"].as_str().unwrap(), h["action"].as_str().unwrap()))
+        .collect();
+    assert_eq!(
+        actions,
+        vec![
+            ("pre-commit", "injected"),
+            ("prepare-commit-msg", "created"),
+            ("pre-push", "created")
+        ]
+    );
+    let text = fs::read_to_string(&hook).unwrap();
+    assert!(text.contains("echo my own pre-commit") && text.contains("acs git-hook pre-commit"));
+
+    let human = stdout(&acs(&world, &["init"]));
+    assert!(human.contains("unchanged pre-commit"), "{human}");
+    assert_fits_80(&human);
+}
+
+#[test]
+fn init_notes_that_husky_9_hook_files_are_committed() {
+    let world = World::new();
+    let stubs = world.repo.join(".husky/_");
+    fs::create_dir_all(&stubs).unwrap();
+    fs::write(stubs.join("h"), "#!/usr/bin/env sh\n").unwrap();
+    git(
+        &world.repo,
+        &world.git_config,
+        &["config", "core.hooksPath", ".husky/_"],
+    );
+    let out = acs(&world, &["init"]);
+    assert_success(&out);
+    let text = stdout(&out);
+    assert!(text.contains("husky 9 detected"), "{text}");
+    assert!(world.repo.join(".husky/pre-commit").is_file());
+    assert_fits_80(&text);
 }

@@ -352,6 +352,8 @@ fn every_fixture_is_covered_by_a_test() {
         "out_empty_object",
         "out_stop_continue",
         "mcp_tools_call_meta",
+        // Replayed by the MCP server tests (`crates/acs-cli/tests/mcp.rs`), not by the adapter.
+        "mcp_tools_call.documented",
     ];
     let mut on_disk: Vec<String> = fs::read_dir(dir())
         .unwrap()

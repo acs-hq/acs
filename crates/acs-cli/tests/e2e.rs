@@ -556,3 +556,30 @@ fn concurrent_hooks_never_double_grant_a_claim() {
     );
     assert_eq!(outcomes.iter().filter(|o| **o == Outcome::Deny).count(), 5);
 }
+
+#[test]
+fn an_uneventful_allow_keeps_the_last_decision_for_acs_why() {
+    let world = World::new();
+    world.write("src/lib.rs", "pub fn f() {}\n");
+    let holder = Agent::new(&world, "claude-code", "holder");
+    let asker = Agent::new(&world, "antigravity", "asker");
+    holder.start();
+    asker.start();
+    assert_eq!(holder.pre_edit("src/lib.rs").outcome, Outcome::Allow);
+    assert_eq!(asker.pre_edit("src/lib.rs").outcome, Outcome::Deny);
+
+    // The agent then calls an MCP tool (`acs_why`), which the harness's pre-tool hook also sees:
+    // no paths, no command. It must not replace the denial the agent is asking about.
+    let d = asker.pre_tool("mcp__plugin_acs_acs__acs_why", "other", &[]);
+    assert_eq!(d.outcome, Outcome::Allow);
+    let last = world.db().last_decision(&asker.seat_id()).unwrap().unwrap();
+    assert_eq!(
+        (last.outcome, last.reason_code),
+        (Outcome::Deny, ReasonCode::ClaimConflict)
+    );
+
+    // A real action replaces it.
+    assert_eq!(asker.pre_edit("src/other.rs").outcome, Outcome::Allow);
+    let last = world.db().last_decision(&asker.seat_id()).unwrap().unwrap();
+    assert_eq!(last.outcome, Outcome::Allow);
+}
