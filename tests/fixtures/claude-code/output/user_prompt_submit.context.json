@@ -1,0 +1,6 @@
+{
+  "hookSpecificOutput": {
+    "hookEventName": "UserPromptSubmit",
+    "additionalContext": "ACS notice: sara@example.com released src/payments/refund.ts."
+  }
+}

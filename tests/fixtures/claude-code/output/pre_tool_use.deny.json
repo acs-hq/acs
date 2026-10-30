@@ -1,0 +1,7 @@
+{
+  "hookSpecificOutput": {
+    "hookEventName": "PreToolUse",
+    "permissionDecision": "deny",
+    "permissionDecisionReason": "src/payments/refund.ts is claimed by sara@example.com (Claude Code, active 4 min). Work on other files, or ask your pilot to override."
+  }
+}

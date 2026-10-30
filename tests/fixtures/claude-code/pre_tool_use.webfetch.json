@@ -1,0 +1,14 @@
+{
+  "session_id": "5b2e6f0a-3c1d-4e7a-9a58-0d2f6c1b7e34",
+  "transcript_path": "/home/dev/.claude/projects/-home-dev-project/5b2e6f0a-3c1d-4e7a-9a58-0d2f6c1b7e34.jsonl",
+  "cwd": "/home/dev/project",
+  "prompt_id": "0b7d1c52-8a14-4f0e-9c3a-6d51e2f4a9b8",
+  "permission_mode": "default",
+  "hook_event_name": "PreToolUse",
+  "tool_name": "WebFetch",
+  "tool_input": {
+    "url": "https://example.com/api",
+    "prompt": "Extract the API endpoints"
+  },
+  "tool_use_id": "toolu_01DOCEXAMPLE0000000000"
+}
