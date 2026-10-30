@@ -109,7 +109,11 @@ pub trait Adapter: Sync {
 }
 
 /// Every adapter, in the order `acs hook --help` lists them. A harness adapter adds one entry.
-static ADAPTERS: &[&dyn Adapter] = &[&canonical::Canonical, &antigravity::Antigravity];
+static ADAPTERS: &[&dyn Adapter] = &[
+    &canonical::Canonical,
+    &claude_code::ClaudeCode,
+    &antigravity::Antigravity,
+];
 
 /// The adapter for `name` (case-insensitive), if there is one.
 #[must_use]
@@ -125,6 +129,8 @@ pub fn by_name(name: &str) -> Option<&'static dyn Adapter> {
 pub fn names() -> Vec<&'static str> {
     ADAPTERS.iter().map(|adapter| adapter.name()).collect()
 }
+
+pub mod claude_code;
 
 pub mod canonical {
     //! The canonical adapter: stdin is a [`ToolEvent`] as JSON, stdout is a [`Decision`] as JSON,
@@ -183,7 +189,7 @@ mod tests {
         assert_eq!(by_name("canonical").map(|a| a.name()), Some("canonical"));
         assert_eq!(by_name("Canonical").map(|a| a.name()), Some("canonical"));
         assert!(by_name("no-such-harness").is_none());
-        assert_eq!(names(), vec!["canonical", "antigravity"]);
+        assert_eq!(names(), vec!["canonical", "claude-code", "antigravity"]);
     }
 
     #[test]

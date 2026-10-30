@@ -1,0 +1,12 @@
+{
+  "name": "acs-plugins",
+  "description": "Plugins for the Agent Coordination Standard (ACS).",
+  "owner": { "name": "ACS contributors" },
+  "plugins": [
+    {
+      "name": "acs",
+      "source": "./integrations/claude-code",
+      "description": "Claims and guidance so several agents can work in one repository without overwriting each other."
+    }
+  ]
+}

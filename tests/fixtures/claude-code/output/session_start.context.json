@@ -1,0 +1,6 @@
+{
+  "hookSpecificOutput": {
+    "hookEventName": "SessionStart",
+    "additionalContext": "ACS: 2 live claims in this repository (src/payments/** held by sara@example.com). Call acs_intent first."
+  }
+}

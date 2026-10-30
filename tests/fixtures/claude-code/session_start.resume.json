@@ -1,0 +1,12 @@
+{
+  "session_id": "5b2e6f0a-3c1d-4e7a-9a58-0d2f6c1b7e34",
+  "transcript_path": "/home/dev/.claude/projects/-home-dev-project/5b2e6f0a-3c1d-4e7a-9a58-0d2f6c1b7e34.jsonl",
+  "cwd": "/home/dev/project",
+  "scratchpad_dir": "/tmp/claude-1000/-home-dev-project/5b2e6f0a-3c1d-4e7a-9a58-0d2f6c1b7e34/scratchpad",
+  "hook_event_name": "SessionStart",
+  "source": "resume",
+  "seconds_since_last_response": 54,
+  "context_tokens": 37271,
+  "prompt_cache_likely_expired": false,
+  "estimated_cache_write_usd": 0.3727
+}

@@ -1,0 +1,18 @@
+{
+  "session_id": "5b2e6f0a-3c1d-4e7a-9a58-0d2f6c1b7e34",
+  "transcript_path": "/home/dev/.claude/projects/-home-dev-project/5b2e6f0a-3c1d-4e7a-9a58-0d2f6c1b7e34.jsonl",
+  "cwd": "/home/dev/project",
+  "scratchpad_dir": "/tmp/claude-1000/-home-dev-project/5b2e6f0a-3c1d-4e7a-9a58-0d2f6c1b7e34/scratchpad",
+  "prompt_id": "0b7d1c52-8a14-4f0e-9c3a-6d51e2f4a9b8",
+  "permission_mode": "acceptEdits",
+  "effort": {
+    "level": "medium"
+  },
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "mv free.txt moved.txt",
+    "description": "Rename free.txt to moved.txt"
+  },
+  "tool_use_id": "toolu_01J16uQEhsGQeENDnZE4M8gU"
+}

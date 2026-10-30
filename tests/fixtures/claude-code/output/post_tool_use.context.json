@@ -1,0 +1,6 @@
+{
+  "hookSpecificOutput": {
+    "hookEventName": "PostToolUse",
+    "additionalContext": "ACS: this edit was attributed to your session and added to your claim on src/payments/refund.ts."
+  }
+}
