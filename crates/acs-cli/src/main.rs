@@ -1,20 +1,8 @@
-//! The `acs` binary: commands and hook entrypoints.
+//! The `acs` binary. All logic lives in the `acs_cli` library; this only parses arguments and
+//! dispatches.
 
-/// Returns the version banner printed by `acs --version`.
-fn version_banner() -> String {
-    format!("acs {}", env!("CARGO_PKG_VERSION"))
-}
+use std::process::ExitCode;
 
-fn main() {
-    println!("{}", version_banner());
-}
-
-#[cfg(test)]
-mod tests {
-    use super::version_banner;
-
-    #[test]
-    fn banner_has_name_and_version() {
-        assert!(version_banner().starts_with("acs "));
-    }
+fn main() -> ExitCode {
+    acs_cli::cli::run_from_env()
 }

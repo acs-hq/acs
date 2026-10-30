@@ -163,6 +163,7 @@ impl Default for DbConfig {
 const MIGRATIONS: &[&str] = &[
     include_str!("migrations/0001_local_state.sql"),
     include_str!("migrations/0002_remote_claims.sql"),
+    include_str!("migrations/0003_hook_pipeline.sql"),
 ];
 
 /// The schema version this build reads and writes.
