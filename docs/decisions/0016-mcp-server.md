@@ -105,9 +105,8 @@ tool_use_id }`; the backend (`acs-cli`) resolves it, per call, in this order (de
 4. Else no seat (see above). `human` seats are never bound.
 
 The server's work tree is the repository around its current directory, else around
-`CLAUDE_PROJECT_DIR`. A seat in another work tree of the same repository (Claude Code's
-`EnterWorktree`) is only found by an exact session id match... and only if the repository around
-the server is the same one; see Consequences.
+`CLAUDE_PROJECT_DIR`. A seat is found by an exact session id whatever its work tree
+(the state database is per repository); only the fallback is limited to the server's work tree.
 
 `_meta["claudecode/toolUseId"]` is extracted into `Caller::tool_use_id` but **not used**: binding
 by it needs the hook pipeline to persist `(tool_use_id -> seat)` for MCP pre-tool events, which
