@@ -1,22 +1,34 @@
-# Orchestrator handoff (after Phase 3)
+# Orchestrator handoff (after WP5.1 and WP5.2)
 
 Written 2026-10-30 at the end of the session that built Phase 2, and updated 2026-10-31 after
-Phase 3 (WP3.1). It replaces the handoff written after Phase 1; that version is in git history
-(`git show 49c2cf0:docs/HANDOFF.md`) and its process lessons still apply (summarized in section 2).
-Read this with the implementation plan and `docs/decisions/` before starting the next phase.
+Phase 3 (WP3.1) and again after WP5.2 and WP5.1. It replaces the handoff written after Phase 1;
+that version is in git history (`git show 49c2cf0:docs/HANDOFF.md`) and its process lessons still
+apply (summarized in section 2). Read this with the implementation plan and `docs/decisions/`
+before starting the next phase.
 
 **Antigravity and GitLab are deferred (2026-10-31).** Section 6 says what changed and when the
 human must be reminded. Check its triggers before starting any WP.
 
 ## 1. Where things stand
 
-- `main` has Phase 0, Phase 1, **Phase 2 (WP2.1–WP2.6)** and **Phase 3 (WP3.1)**, including the
-  rule that the first of two machines' claims keeps the file. Fmt, clippy `-D warnings` and the
-  workspace tests pass locally on Windows (523 passed, 3 ignored), and the human reported CI green
-  at `a0baf6f` (2026-10-31).
-- **What comes next** (plan section 8.2): WP5.2, Claude Code only; then WP5.1, Claude Code only,
-  with the M1 parts of WP10.1 and WP10.2; then release M1. Only after M1 does this repo start
-  dogfooding, and the human runs `acs init` here (see section 2).
+- `main` has Phase 0, Phase 1, **Phase 2 (WP2.1–WP2.6)**, **Phase 3 (WP3.1)**, including the rule
+  that the first of two machines' claims keeps the file, and **WP5.2 and WP5.1 for Claude Code**
+  (decisions 0021, 0022). Fmt, clippy `-D warnings` and the workspace tests pass locally on Windows
+  (544 passed, 3 ignored). The human reported CI green at `a0baf6f` (2026-10-31); WP5.1 and WP5.2
+  are not CI-checked yet, because the human pushes. `.github/workflows/installers.yml` and
+  `scoop-manifest.yml` have had no YAML parser run over them, so GitHub is their first real check.
+- **Every M1 work package is built, but M1 is not released.** Between here and the v0.1 tag
+  (plan sections 8.2 and 8.3):
+  1. The M1 parts of WP10.1 and WP10.2 were left out of the WP5 session on purpose. There is no CI
+     perf job, and the budgets were last measured on Linux in Phase 2.
+  2. The M1 gate with real sessions: three Claude Code sessions with overlapping tasks. Only one
+     real session at a time has been run, and only scripted seats overlap
+     (`docs/releases/v0.1.0.md`).
+  3. The release setup only the human can do (`docs/releases/README.md`): name check, public
+     repository, Homebrew tap, npm scope and tokens. Every installer needs a public repository.
+  4. The first tag, which is the first real run of `release.yml` and `installers.yml`.
+- **Then dogfooding.** The human runs `acs init` here (see section 2). No release exists yet, so
+  `acs` comes from `cargo install --path crates/acs-cli --locked`.
 - The implementation plan is not in the repository. Its current copy is
   `C:\Users\omara\Downloads\ACS — Implementation Plan Updated.md`; `docs/phase2-rules.md` still
   names an old path.
@@ -27,7 +39,8 @@ human must be reminded. Check its triggers before starting any WP.
   Claude Code adapter, **0014** Antigravity adapter, **0015** git backstop, **0016** MCP server,
   **0017** harness paths in the default sealed list (orchestrator, with an amendment for
   `.husky/**`), **0018** CLI. Phase 3: **0020** team sync, including the GitHub push check and the
-  `acs-os` exception to `unsafe_code = forbid`.
+  `acs-os` exception to `unsafe_code = forbid`. Phase 5: **0021** distribution and `acs plugin
+  install`, **0022** skills.
 - Shared rules handed to every Phase 2 subagent: `docs/phase2-rules.md` (reuse it for Phase 3+,
   updating the reading list and decision numbers).
 
@@ -37,24 +50,25 @@ human must be reminded. Check its triggers before starting any WP.
 | acs-git | 2.1, 2.4, 3.1 | `repo::discover`, `status::scan_changes`, `hooks::{install, uninstall, status}`, `trailers`, `refs::{SyncStorage, CustomRefs}`, `sync::run` |
 | acs-store | 2.1 adds | migration 0003: `SeatInfo` (session id, intent), last decision, flags (`gate_off`), attributions, `stale_live_seats` |
 | acs-mcp | 2.6 | `Backend` trait, `serve_stdio` (rmcp 3.8, the only async runtime in the binary) |
-| acs-cli | 2.1, 2.4–2.6, 3.1 | `runtime` (`RepoContext`, seats, `status`/`claim_paths`/`release_paths`/`set_intent`/`last_decision`, `sync::{lock, spawn_if_due, spawn_now}`), `hook`, `cli`, `commands/{init,status,claim,release,off,doctor,git_hook,mcp,sync}` |
+| acs-cli | 2.1, 2.4–2.6, 3.1, 5.2 | `runtime` (`RepoContext`, seats, `status`/`claim_paths`/`release_paths`/`set_intent`/`last_decision`, `sync::{lock, spawn_if_due, spawn_now}`), `hook`, `cli`, `commands/{init,status,claim,release,off,doctor,git_hook,mcp,sync,plugin}` |
 | acs-os | 3.1 | `keep_stdio_from_children`; the only crate allowed `unsafe`, one Windows call (decision 0020) |
 
 Commands: `acs hook --canonical <phase>`, `acs hook <claude-code|antigravity|canonical>`,
 `acs mcp [--harness]`, `acs git-hook <name>`, `acs init|status|claim|release|off|on|doctor|sync`
-(each with `--json`).
+and `acs plugin install <harness>` (each with `--json`).
 
 Integrations: `integrations/claude-code/` (plugin `acs`, marketplace `acs-plugins` in the root
-`.claude-plugin/marketplace.json`) and `integrations/antigravity/` (plugin `acs`, always-on rule).
-Both carry an **interim** `acs-usage` skill; WP5.1 owns the canonical skills and must keep the
-plugin copies in sync.
+`.claude-plugin/marketplace.json`), `integrations/antigravity/` (plugin `acs`, always-on rule) and
+`integrations/scoop/` (the manifest template). The canonical skills are in `skills/`. The Claude
+Code plugin holds exact copies (`crates/acs-cli/tests/packaging.rs` fails otherwise); Antigravity
+keeps its **interim** `acs-usage` copy until the gate.
 
 ### Acceptance evidence worth knowing
 
 - **Real Claude Code run** (`claude -p` 2.1.314 with the plugin via `--plugin-dir`): an edit of a
   file claimed by another seat was denied and the model quoted the guidance naming the holder
   (`docs/adapters/claude-code.md` §17). Separately, `claude -p` with `acs mcp` listed and called
-  all five tools (decision 0016). Hooks and MCP were not yet exercised together in one real session.
+  all five tools (decision 0016). Hooks and MCP then ran together on Windows (`docs/adapters/claude-code.md` §18).
 - **Antigravity was never run** (not installable in the cloud environment, where
   `antigravity.google` is blocked by network policy). Its adapter rests on Google's GitHub repos
   and integrators' reports; `docs/adapters/antigravity.md` lists 12 source disagreements and an
@@ -125,6 +139,27 @@ New in Phase 3:
    the edit once. Hooks now start a real sync where a repository has a remote and `.acs/policy/`, so
    a test with an unreachable remote should not send session start or post-tool events.
 
+New in WP5:
+
+1. **Run the real thing, and test what the docs claim.** `dist plan` found that the release could
+   not have worked at all, and a run with `acs.cmd` showed the adapter doc's "`.cmd` shims do not
+   work" was wrong, which saved a guard against npm on Windows that was not needed. A green test
+   suite proves neither.
+2. **Real Claude Code from a session here, safely.** `claude plugin ...` needs no login, so run it
+   with `CLAUDE_CONFIG_DIR` in the scratchpad. A real `claude -p` needs the human's login and so
+   their real config: load the plugin with `--plugin-dir`, which changes no settings, and do not
+   leave a `.claude/settings.json` naming the plugin in the repository it runs in. To let an agent
+   run `acs plugin install` in such a session, put a `claude.cmd` shim first on `PATH` that sets
+   `CLAUDE_CONFIG_DIR`. Start the real `claude` by its absolute path.
+3. **`--allowedTools` swallows what follows it,** so put the prompt before it. `claude -p` warns
+   about stdin unless it gets `< /dev/null`. Pass `--session-id` in nested runs (adapter doc section
+   15).
+4. **A hook that cannot start fails open with no message to the agent:** an edit of a claimed file
+   went through. Claude Code then caches the MCP failure for 15 minutes, so a bad run can look like
+   an MCP bug in the next one.
+5. **`dist` 0.33.1 is at `target/tools/dist-0.33.1/` in this checkout,** with its checksum verified.
+   `target/` is not committed, so a fresh clone needs it again (the human approved the download).
+
 ## 3. Must-know items for the next phases
 
 **Any code that starts a detached process** — `Stdio::null()` is not enough on Windows, where a
@@ -152,19 +187,12 @@ from `path_attributions`.
 content above 20k entries); wrong only if the file already had unstaged edits. Snapshots of ended
 sessions are kept (no `drop_session` at session end) and evicted by budget only.
 
-**WP5.1 (skills)** — sync the interim plugin skills; MCP tool names are
-`mcp__plugin_acs_acs__<tool>` in Claude Code; in Antigravity the plugin's server is renamed
-`acs_acs` and tools are reached through `call_mcp_tool` (or directly, via `alwaysLoad`).
-Make the "deletes need a claim first" rule obvious (default `max_files_deleted_outside_claims = 0`).
-For now, build and verify for Claude Code only and leave the Antigravity skill copy as it is
-(section 6); it gets synced when Antigravity returns.
-
-**WP5.2 (distribution)** — `acs plugin install` replaces the printed commands in
-`commands::init::harness::HARNESSES` and doctor's `plugin_*` hints. Antigravity **fails closed**
-(every tool call denied) when the hook binary is missing; installers must put `acs` on PATH before
-the plugin is enabled. Claude Code fails open; an optional strict mode (`onFailure: block`) is
-recorded in 0013. For now, `acs plugin install` targets Claude Code only (section 6), and the
-PATH-before-plugin rule still applies when Antigravity returns.
+**The Antigravity gate (skills and plugin install)** — sync the skill copy from `skills/`; in
+Antigravity the plugin's server is renamed `acs_acs` and tools are reached through `call_mcp_tool`
+(or directly, via `alwaysLoad`). Add a row to the setup skill's harness table and an arm to
+`plugin::install`. Antigravity **fails closed** (every tool call denied) when the hook binary is
+missing, so the `acs`-on-`PATH` check there matters more than it does for Claude Code, which fails
+open; an optional strict mode (`onFailure: block`) is recorded in 0013.
 
 **WP7.2 (hardening)** — known bypasses: an agent starting a nested harness with hooks disabled
 (`claude --bare -p`, `claude --settings '{"disableAllHooks":true}'`); writes to harness config
@@ -209,12 +237,12 @@ cannot seal (file tools get `path_escapes_repo` ask; shell writes are uncovered)
   Antigravity installed and record results in `docs/releases/`.
 - After M1: run `acs init` in this repository to start dogfooding. Agents then cannot edit
   `.acs/**`, `.github/workflows/**` or the Claude settings files, so those changes fall to the human.
+- Release setup: `docs/releases/README.md` (name check, public repository, Homebrew tap, npm scope
+  and tokens). The first tag is the first real run of `release.yml` and `installers.yml`.
 - Still open from Phase 1: branch protection on `main`; CODEOWNERS for `.acs/policy/` and `spec/`;
-  the `acs` name check (crates.io, npm, Homebrew); the home for the setup skill; governance. The
-  release workflow has never run. The GitHub default branch is already `main` (checked
-  2026-10-31).
-- The marketplace command printed by `acs init` assumes the repository is `acs-hq/acs`
-  (`claude plugin marketplace add acs-hq/acs`).
+  the home for the setup skill (the README uses the raw GitHub URL, which needs a public
+  repository); governance. The GitHub default branch is already `main` (checked 2026-10-31).
+- `acs plugin install` assumes the repository is `acs-hq/acs`; `--marketplace` overrides it.
 
 ## 6. Deferred: Antigravity and GitLab
 

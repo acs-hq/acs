@@ -1,0 +1,133 @@
+# Tries every installer of a published release on a clean machine, then `acs plugin install` with
+# the real Claude Code. `dist` calls this from release.yml after the announcement
+# (`post-announce-jobs`); to check a release again, run it by hand with the tag.
+#
+# Installers download from public release URLs, so this needs a public repository.
+name: Installers
+
+on:
+  workflow_call:
+    inputs:
+      plan:
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: The release tag, for example v0.1.0
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  TAG: ${{ inputs.tag || fromJson(inputs.plan).announcement_tag }}
+  RELEASE: https://github.com/${{ github.repository }}/releases/download
+
+jobs:
+  shell:
+    name: shell installer (${{ matrix.name }})
+    runs-on: ${{ matrix.runner }}
+    container: ${{ matrix.image || null }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: ubuntu
+            runner: ubuntu-latest
+            image: ubuntu:24.04
+            prepare: apt-get update && apt-get install -y ca-certificates curl git xz-utils
+          - name: alpine, musl
+            runner: ubuntu-latest
+            image: alpine:3.22
+            prepare: apk add curl git xz
+          - name: macos
+            runner: macos-latest
+    steps:
+      - if: matrix.prepare
+        run: ${{ matrix.prepare }}
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - run: curl --proto '=https' --tlsv1.2 -LsSf "$RELEASE/$TAG/acs-cli-installer.sh" | sh
+      - run: echo "${CARGO_HOME:-$HOME/.cargo}/bin" >> "$GITHUB_PATH"
+      - run: sh .github/smoke.sh "$TAG"
+
+  powershell:
+    name: powershell installer
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - shell: powershell
+        run: |
+          irm "$env:RELEASE/$env:TAG/acs-cli-installer.ps1" | iex
+          "$env:USERPROFILE\.cargo\bin" | Out-File -Append -Encoding utf8 $env:GITHUB_PATH
+      - shell: bash
+        run: sh .github/smoke.sh "$TAG"
+
+  scoop:
+    name: scoop
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - shell: powershell
+        run: |
+          iex "& {$(irm get.scoop.sh)} -RunAsAdmin"
+          "$env:USERPROFILE\scoop\shims" | Out-File -Append -Encoding utf8 $env:GITHUB_PATH
+          & "$env:USERPROFILE\scoop\shims\scoop.cmd" install "$env:RELEASE/$env:TAG/acs.json"
+      - shell: bash
+        run: sh .github/smoke.sh "$TAG"
+
+  homebrew:
+    name: homebrew
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - run: brew install acs-hq/tap/acs
+      - run: sh .github/smoke.sh "$TAG"
+
+  npm:
+    name: npm
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - run: npx --yes "@acs-hq/acs@${TAG#v}" --version
+      - run: npm install --global "@acs-hq/acs@${TAG#v}"
+      - run: sh .github/smoke.sh "$TAG"
+
+  plugin:
+    name: acs plugin install, real Claude Code
+    runs-on: ubuntu-latest
+    env:
+      CLAUDE_CONFIG_DIR: ${{ github.workspace }}/../claude-config
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - run: curl --proto '=https' --tlsv1.2 -LsSf "$RELEASE/$TAG/acs-cli-installer.sh" | sh
+      - run: echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+      - run: npm install --global @anthropic-ai/claude-code
+      - name: Install the plugin in a fresh repository
+        run: |
+          mkdir -p "$CLAUDE_CONFIG_DIR"
+          claude plugin validate "$GITHUB_WORKSPACE"
+          repo=$(mktemp -d)
+          cd "$repo"
+          git init -q
+          git config user.email ci@example.com
+          git config user.name CI
+          acs plugin install claude-code --marketplace "$GITHUB_WORKSPACE"
+          acs plugin install claude-code --marketplace "$GITHUB_WORKSPACE" | grep -F "Nothing to change"
+          claude plugin list --json | grep -F '"acs@acs-plugins"'
+          acs init
+          acs doctor --json | grep -F '"plugin_claude-code"'
+          acs doctor

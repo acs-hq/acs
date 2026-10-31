@@ -3,11 +3,12 @@ resolver = "3"
 members = ["crates/*"]
 
 [workspace.package]
-version = "0.0.0"
+version = "0.1.0"
 edition = "2024"
 rust-version = "1.97"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/acs-hq/acs"
+homepage = "https://github.com/acs-hq/acs"
 
 [workspace.dependencies]
 # Dependencies are added by the work packages that need them.

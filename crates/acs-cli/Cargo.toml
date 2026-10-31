@@ -1,11 +1,12 @@
 [package]
 name = "acs-cli"
-description = "The `acs` binary: commands and hook entrypoints."
+description = "Agent Control System: coordinates coding agents and humans working in one repository"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+homepage.workspace = true
 publish = false
 
 [lib]
@@ -15,6 +16,10 @@ path = "src/lib.rs"
 [[bin]]
 name = "acs"
 path = "src/main.rs"
+
+# `publish = false` keeps the crate off crates.io and, unless overridden here, off dist too.
+[package.metadata.dist]
+dist = true
 
 [lints]
 workspace = true

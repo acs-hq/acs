@@ -1,5 +1,5 @@
 //! One module per command (decision 0011): `git_hook` (WP2.4), `init`, `status`, `claim`,
-//! `release`, `off`, `doctor` (WP2.5), `mcp` (WP2.6) and `sync` (WP3.1).
+//! `release`, `off`, `doctor` (WP2.5), `mcp` (WP2.6), `sync` (WP3.1) and `plugin` (WP5.2).
 //!
 //! This is the registration point: a work package adds one `pub mod` line here, one variant to
 //! [`crate::cli::Command`] and one arm to [`crate::cli::run`]. Commands call the shared
@@ -11,6 +11,7 @@ pub mod git_hook;
 pub mod init;
 pub mod mcp;
 pub mod off;
+pub mod plugin;
 pub mod release;
 pub mod status;
 mod support;
