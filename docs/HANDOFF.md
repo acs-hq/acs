@@ -159,8 +159,9 @@ cannot seal (file tools get `path_escapes_repo` ask; shell writes are uncovered)
   commit within 10 minutes look like an agent's.
 - Human claims (`acs claim`) are never heartbeated; they expire after `claim_ttl_secs` until WP7.3
   or WP7.4 refreshes them.
-- Team sync: claims taken on two machines inside one sync window leave both seats denied until one
-  lets go (section 4, decision 0020). `acs doctor` does not check sync yet.
+- Team sync: `acs doctor` does not check sync yet. Claims taken on two machines inside one sync
+  window are settled by the first claim keeping the file (SPEC section 6, decision 0020), but edits
+  made before either machine has fetched are only caught at commit time.
 - `acs-cli` could not be type-checked for Windows locally (C dependencies need mingw); Windows CI
   is the check.
 
@@ -170,7 +171,6 @@ cannot seal (file tools get `path_escapes_repo` ask; shell writes are uncovered)
 | --- | --- | --- |
 | `SimpleCommand.wrappers` so bans can match `sudo *`; agent-CLI classification | WP7.2 | WP1.4, WP2.2 |
 | Optional `[lore]` config keys (inject cap 4,000 chars, stale threshold 30%) | WP6.1, WP6.2 | plan §7 |
-| Tie-break for claims taken on two machines inside one sync window (today both are denied until one lets go): the earlier `acquired_at` keeps it | before a team relies on M1 | WP3.1, decision 0020 |
 | `FileChange` cannot say "pre-hash unknown" vs "did not exist" | WP4.1 | WP2.1 |
 | Expose the engine's claim-message helpers (`age`, holder) from `acs-core` | any | WP2.4 duplicated them |
 | `ResolvedPath.linked_truncated` | optional | WP1.3 |

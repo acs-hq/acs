@@ -279,6 +279,8 @@ A requested claim **conflicts** with an existing claim when **all** of the follo
 
 A conflict yields `deny` with `claim_conflict`; the message names the holder, their harness, how long the claim has been active, and what to do instead. Acquiring all claims an event needs MUST be atomic: either all are granted or none.
 
+**Simultaneous claims.** With no server, two machines can each grant a claim on one scope before either has fetched the other's. A seat that holds a live local claim on the scope is then not blocked by a conflicting remote claim that comes after its own: the earlier `acquired_at` comes first, then the lower `claim_id` in byte order. Implementations MUST compare nothing else, so that both machines reach the same answer; a difference between their clocks can change which claim comes first, never whether they agree. The later claim is not revoked: its seat is denied until the earlier claim ends, and then holds the scope. A third seat is blocked by both. The same rule applies to the check at commit time. Claims on one machine never need it, because they are acquired atomically.
+
 Territory is checked before claims: a `sealed` zone always denies agents; an `owned` zone denies non-owner agents unless a human override exists; a `shared` zone requires a claim; an `open` zone needs none.
 
 ## 7. Commit trailers
