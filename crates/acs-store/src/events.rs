@@ -33,8 +33,9 @@ pub struct NewEvent<'a> {
     pub reason_code: Option<ReasonCode>,
     /// What the gate decided, for `pre_tool` events.
     pub outcome: Option<Outcome>,
-    /// A short note, such as a command line for a notable denial. The caller MUST redact secrets
-    /// (records sync to the remote); the store cuts it to [`MAX_DETAIL_CHARS`].
+    /// A short note: for a collision what the seat was told, for another notable denial the command
+    /// line. The caller MUST redact secrets (records sync to the remote); the store cuts it to
+    /// [`MAX_DETAIL_CHARS`].
     pub detail: Option<&'a str>,
 }
 
@@ -62,6 +63,36 @@ pub struct StoredEvent {
     /// The note, if any.
     pub detail: Option<String>,
 }
+
+/// A call refused because another seat held a file, as read back with the refused seat's details.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Collision {
+    /// When it happened.
+    pub at: Timestamp,
+    /// The seat that was refused.
+    pub seat_id: SeatId,
+    /// That seat's pilot.
+    pub pilot: String,
+    /// That seat's harness.
+    pub harness: String,
+    /// The tool that was refused.
+    pub tool_name: Option<String>,
+    /// The paths of the refused call.
+    pub paths: Vec<String>,
+    /// What the seat was told, which names the holder.
+    pub detail: Option<String>,
+}
+
+/// A `Collision` row before its ids and timestamps are validated.
+type RawCollision = (
+    i64,
+    String,
+    String,
+    String,
+    Option<String>,
+    String,
+    Option<String>,
+);
 
 /// An `events` row before its enums, ids and timestamps are validated.
 type RawEvent = (
@@ -174,6 +205,63 @@ impl StateDb {
         rows.into_iter()
             .map(|(code, count)| Ok((enum_from_db(&code)?, u64::try_from(count).unwrap_or(0))))
             .collect()
+    }
+
+    /// The collisions since `since`, newest first, at most `limit` of them, and how many there were
+    /// in all.
+    ///
+    /// # Errors
+    ///
+    /// Any [`StoreError`].
+    pub fn collisions_since(
+        &self,
+        since: Timestamp,
+        limit: usize,
+    ) -> Result<(Vec<Collision>, u64), StoreError> {
+        let total: i64 = self
+            .conn
+            .prepare_cached(
+                "SELECT count(*) FROM events WHERE reason_code = 'claim_conflict' AND at >= ?1",
+            )?
+            .query_row(params![to_db(since)], |row| row.get(0))?;
+        let mut stmt = self.conn.prepare_cached(
+            "SELECT e.at, e.seat_id, s.pilot, s.harness, e.tool_name, e.paths, e.detail \
+             FROM events e JOIN seats s ON s.seat_id = e.seat_id \
+             WHERE e.reason_code = 'claim_conflict' AND e.at >= ?1 \
+             ORDER BY e.at DESC, e.id DESC LIMIT ?2",
+        )?;
+        let rows: Vec<RawCollision> = stmt
+            .query_map(
+                params![to_db(since), i64::try_from(limit).unwrap_or(i64::MAX)],
+                |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                        row.get(5)?,
+                        row.get(6)?,
+                    ))
+                },
+            )?
+            .collect::<Result<_, _>>()?;
+        let collisions = rows
+            .into_iter()
+            .map(|(at, seat, pilot, harness, tool_name, paths, detail)| {
+                Ok(Collision {
+                    at: from_db(at)?,
+                    seat_id: id_from_db(seat)?,
+                    pilot,
+                    harness,
+                    tool_name,
+                    paths: serde_json::from_str(&paths)
+                        .map_err(|err| StoreError::invalid("event paths", err))?,
+                    detail,
+                })
+            })
+            .collect::<Result<_, StoreError>>()?;
+        Ok((collisions, u64::try_from(total).unwrap_or(0)))
     }
 
     /// Deletes events older than `before`. Returns how many were deleted. The event log is a

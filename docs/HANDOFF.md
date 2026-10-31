@@ -1,10 +1,10 @@
-# Orchestrator handoff (after WP5.1 and WP5.2)
+# Orchestrator handoff (after the M1 parts of WP10.1 and WP10.2)
 
 Written 2026-10-30 at the end of the session that built Phase 2, and updated 2026-10-31 after
-Phase 3 (WP3.1) and again after WP5.2 and WP5.1. It replaces the handoff written after Phase 1;
-that version is in git history (`git show 49c2cf0:docs/HANDOFF.md`) and its process lessons still
-apply (summarized in section 2). Read this with the implementation plan and `docs/decisions/`
-before starting the next phase.
+Phase 3 (WP3.1), after WP5.2 and WP5.1, and after the M1 parts of WP10. It replaces the handoff
+written after Phase 1; that version is in git history (`git show 49c2cf0:docs/HANDOFF.md`) and
+its process lessons still apply (summarized in section 2). Read this with the implementation plan
+and `docs/decisions/` before starting the next phase.
 
 **Antigravity and GitLab are deferred (2026-10-31).** Section 6 says what changed and when the
 human must be reminded. Check its triggers before starting any WP.
@@ -14,20 +14,24 @@ human must be reminded. Check its triggers before starting any WP.
 - `main` has Phase 0, Phase 1, **Phase 2 (WP2.1–WP2.6)**, **Phase 3 (WP3.1)**, including the rule
   that the first of two machines' claims keeps the file, and **WP5.2 and WP5.1 for Claude Code**
   (decisions 0021, 0022). Fmt, clippy `-D warnings` and the workspace tests pass locally on Windows
-  (544 passed, 3 ignored). The human reported CI green at `a0baf6f` (2026-10-31); WP5.1 and WP5.2
-  are not CI-checked yet, because the human pushes. `.github/workflows/installers.yml` and
-  `scoop-manifest.yml` have had no YAML parser run over them, so GitHub is their first real check.
-- **Every M1 work package is built, but M1 is not released.** Between here and the v0.1 tag
-  (plan sections 8.2 and 8.3):
-  1. The M1 parts of WP10.1 and WP10.2 were left out of the WP5 session on purpose. There is no CI
-     perf job, and the budgets were last measured on Linux in Phase 2.
-  2. The M1 gate with real sessions: three Claude Code sessions with overlapping tasks. Only one
-     real session at a time has been run, and only scripted seats overlap
-     (`docs/releases/v0.1.0.md`).
-  3. The release setup only the human can do (`docs/releases/README.md`): name check, public
+  (559 passed, 1 ignored). The human reported CI green at `a0baf6f` (2026-10-31); WP5.1, WP5.2 and
+  WP10 are not CI-checked yet, because the human pushes. `.github/workflows/installers.yml`,
+  `scoop-manifest.yml` and the `perf` job in `ci.yml` have had no YAML parser run over them, so
+  GitHub is their first real check.
+- **Every M1 work package is built, the M1 parts of WP10.1 and WP10.2 are on `main` (decision 0023),
+  and the real M1 gate passed twice (`docs/releases/v0.1.0.md`). M1 is not released.** The `perf` job
+  has not run yet, and its first run is also the first time this code meets the budgets on Linux.
+  Between here and the v0.1 tag (plan sections 8.2 and 8.3):
+  1. **The Windows budgets, the human's call.** Every path misses them on the human's machine (pre-tool
+     p50 57 ms against 15), and process start alone is 18 ms. CI gates on Linux and only reports
+     macOS and Windows until this is settled. Decision 0023 has the numbers, the stage breakdown and a
+     reverted experiment that saved 14 ms. Unmeasured leads: `current_human_seat` starts `git config`
+     on every `acs status`, and post-tool has not been split into stages. The plan's fallback is
+     a warm server (section 9.2), which only the human can approve.
+  2. The release setup only the human can do (`docs/releases/README.md`): name check, public
      repository, npm scope and token. Every installer needs a public repository. Homebrew is built
      but not published until the human wants it (decision 0021).
-  4. The first tag, which is the first real run of `release.yml` and `installers.yml`.
+  3. The first tag, which is the first real run of `release.yml` and `installers.yml`.
 - **Then dogfooding.** The human runs `acs init` here (see section 2). No release exists yet, so
   `acs` comes from `cargo install --path crates/acs-cli --locked`.
 - The implementation plan is not in the repository. Its current copy is
@@ -75,11 +79,15 @@ keeps its **interim** `acs-usage` copy until the gate.
   and integrators' reports; `docs/adapters/antigravity.md` lists 12 source disagreements and an
   11-step manual checklist. Treat it as unverified until someone runs that checklist. `agy` 1.4.12
   is on the human's Windows machine, so the checklist can run there; it is deferred (section 6).
-- **Budgets** (release, Linux, 4 shared vCPUs; `cargo test --release -p acs-cli --test perf --
-  --ignored --nocapture`): pre-tool edit p50 8.7 ms / p99 18.4 ms; post-tool shell at 100k files
+- **Three real sessions at once:** `tests/e2e/real/three_sessions.sh`, run twice. Zero silent
+  overwrites and every collision in `acs status`, judged from Claude Code's own logs. Agents with the
+  ACS tools plan around each other, so `ACS_REAL_NO_MCP=1` is what makes the hooks do the blocking.
+- **Budgets:** `cargo bench -p acs-cli --bench hook_paths`. In Phase 2 (release, Linux, 4 shared
+  vCPUs, the old test): pre-tool edit p50 8.7 ms / p99 18.4 ms; post-tool shell at 100k files
   p50 16 ms / p99 47 ms **only with the scoped scan**. A full `git status` scan of 100k files
   missed (p50 147 ms), so above 20,000 index entries the scan is scoped to predicted targets,
   claims and nearby directories (decision 0012) and opaque scripts writing elsewhere go unseen.
+  Windows misses every budget (section 1).
 
 ## 2. Process lessons
 
@@ -161,6 +169,18 @@ New in WP5:
 5. **`dist` 0.33.1 is at `target/tools/dist-0.33.1/` in this checkout,** with its checksum verified.
    `target/` is not committed, so a fresh clone needs it again (the human approved the download).
 
+New in WP10:
+
+1. **A benchmark's first full run takes about 20 minutes here,** nearly all of it `git add` of 100k
+   files in a fresh repository. Keep other work off the machine while it measures, and use
+   `ACS_PERF_FILES=2000` to try a change.
+2. **The human does not want large side problems chased inside a work package.** Measure enough to
+   describe it, then hand over a brief.
+3. **`Path::join("a/b")` breaks `mklink` on Windows:** `cmd` reads `/b` as a switch. Join one part at
+   a time in test fixtures.
+4. **A real run can pass without testing anything.** Run 1 blocked no `Edit` at all. Read the calls
+   in the logs, not just the verdict.
+
 ## 3. Must-know items for the next phases
 
 **Any code that starts a detached process** — `Stdio::null()` is not enough on Windows, where a
@@ -214,6 +234,8 @@ cannot seal (file tools get `path_escapes_repo` ask; shell writes are uncovered)
   commit) gets no backstop, even when ACS state exists for the repo — consider keying on the state
   instead. A stale commit marker (agent commit rejected by a later user hook) can make a human
   commit within 10 minutes look like an agent's.
+- `acs_release` without `paths` is an error; two real sessions tried it first. A blocked session can
+  leave uncommitted work in a shared work tree (`docs/releases/v0.1.0.md`).
 - Human claims (`acs claim`) are never heartbeated; they expire after `claim_ttl_secs` until WP7.3
   or WP7.4 refreshes them.
 - Team sync: `acs doctor` does not check sync yet. Claims taken on two machines inside one sync

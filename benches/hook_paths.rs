@@ -1,0 +1,317 @@
+//! The latency budgets of plan section 4.7, measured against the built `acs` binary with process
+//! start included:
+//!
+//! ```text
+//! cargo bench -p acs-cli --bench hook_paths
+//! ```
+//!
+//! Criterion gives the trends; it reports means, so the percentiles the budgets are written in come
+//! from the individual calls recorded here. The run fails when a budget is missed.
+//!
+//! - `ACS_PERF_FILES`: files in the repository of the post-tool path (default 100,000).
+//! - `ACS_PERF_BASE_BIN`: a build of an earlier commit. Each call is then repeated with it, against
+//!   the same repository and with an `ACS_HOME` of its own, and the run fails when this build's p99
+//!   is over 20% worse. Taking turns on one machine keeps runner noise out of the comparison.
+//! - `ACS_PERF_NO_ASSERT=1`: print the numbers without failing.
+
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
+#[path = "../crates/acs-cli/tests/common/mod.rs"]
+mod common;
+
+use std::fs;
+use std::io::Write;
+use std::path::PathBuf;
+use std::process::{Command, ExitCode, Stdio};
+use std::time::{Duration, Instant};
+
+use common::{World, git};
+use criterion::{Criterion, SamplingMode};
+use serde_json::{Value, json};
+
+/// How much worse a p99 may get against `ACS_PERF_BASE_BIN`.
+const MAX_REGRESSION: f64 = 1.20;
+
+/// A build of `acs` under test, with its own state.
+struct Build {
+    bin: PathBuf,
+    home: PathBuf,
+}
+
+/// What one path measured.
+struct Measured {
+    label: String,
+    p50_budget_ms: f64,
+    p99_budget_ms: f64,
+    head: Vec<Duration>,
+    base: Vec<Duration>,
+}
+
+fn percentile(sorted: &[Duration], p: f64) -> f64 {
+    let index = ((sorted.len() as f64 - 1.0) * p).round() as usize;
+    sorted[index].as_secs_f64() * 1000.0
+}
+
+/// Times one `acs` call, from spawn to exit.
+fn timed(world: &World, build: &Build, args: &[&str], stdin: &[u8]) -> Duration {
+    let started = Instant::now();
+    let mut child = Command::new(&build.bin)
+        .args(args)
+        .current_dir(&world.repo)
+        .env("ACS_HOME", &build.home)
+        .env("GIT_CONFIG_GLOBAL", &world.git_config)
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    child.stdin.take().unwrap().write_all(stdin).unwrap();
+    let out = child.wait_with_output().unwrap();
+    let elapsed = started.elapsed();
+    assert!(out.status.success(), "acs {args:?}");
+    elapsed
+}
+
+fn event(world: &World, session: &str, phase: &str, extra: Value) -> Vec<u8> {
+    let mut base = json!({
+        "spec": "acs/0.1", "harness": "claude-code", "harness_session_id": session,
+        "phase": phase, "cwd": world.repo,
+    });
+    if let (Some(map), Value::Object(more)) = (base.as_object_mut(), extra) {
+        map.extend(more);
+    }
+    base.to_string().into_bytes()
+}
+
+fn hook(world: &World, build: &Build, session: &str, phase: &str, extra: Value) -> Duration {
+    let payload = event(world, session, phase, extra);
+    timed(world, build, &["hook", "--canonical", phase], &payload)
+}
+
+fn edit(path: &str) -> Value {
+    json!({"tool": {"name": "Edit", "kind": "edit"}, "paths": [path]})
+}
+
+fn shell() -> Value {
+    json!({"tool": {"name": "Bash", "kind": "shell"}, "command": "./build.sh"})
+}
+
+/// This run's build, plus `ACS_PERF_BASE_BIN` when set. Each gets its own `ACS_HOME`, so a build
+/// with a newer schema cannot get in the way of an older one.
+fn builds(world: &World) -> Vec<Build> {
+    let mut builds = vec![Build {
+        bin: common::acs_bin().into(),
+        home: world.home.clone(),
+    }];
+    if let Some(bin) = std::env::var_os("ACS_PERF_BASE_BIN") {
+        builds.push(Build {
+            bin: bin.into(),
+            home: world.tmp.path().join("acs-home-base"),
+        });
+    }
+    builds
+}
+
+/// Runs `call` for each build, turn about, as one criterion iteration, and keeps every duration.
+/// The warm-up runs through here too, so only the last `samples` calls are kept at the end.
+fn bench(
+    criterion: &mut Criterion,
+    label: &str,
+    (p50_budget_ms, p99_budget_ms): (f64, f64),
+    samples: usize,
+    builds: &[Build],
+    mut iteration: impl FnMut(&[Build]) -> Vec<Duration>,
+) -> Measured {
+    let (mut head, mut base) = (Vec::new(), Vec::new());
+    let mut group = criterion.benchmark_group("hook_paths");
+    group
+        .sampling_mode(SamplingMode::Flat)
+        .sample_size(samples)
+        .warm_up_time(Duration::from_millis(500))
+        // Short on purpose: each sample is then one call, and `samples` sets the run's length.
+        .measurement_time(Duration::from_millis(100));
+    group.bench_function(label, |b| {
+        b.iter_custom(|iters| {
+            let mut total = Duration::ZERO;
+            for _ in 0..iters {
+                let durations = iteration(builds);
+                total += durations[0];
+                head.push(durations[0]);
+                base.extend(durations.get(1).copied());
+            }
+            total
+        });
+    });
+    group.finish();
+    let keep = |all: Vec<Duration>| -> Vec<Duration> {
+        let skip = all.len().saturating_sub(samples);
+        let mut kept = all[skip..].to_vec();
+        kept.sort();
+        kept
+    };
+    Measured {
+        label: label.to_owned(),
+        p50_budget_ms,
+        p99_budget_ms,
+        head: keep(head),
+        base: keep(base),
+    }
+}
+
+fn pre_tool_file_edit(criterion: &mut Criterion) -> Measured {
+    let world = World::new();
+    for i in 0..50 {
+        world.write(&format!("src/f{i}.rs"), &format!("pub fn f{i}() {{}}\n"));
+    }
+    let builds = builds(&world);
+    for build in &builds {
+        hook(&world, build, "perf", "session_start", json!({}));
+        // The first calls create the claims, the policy cache and the snapshot blobs.
+        for i in 0..50 {
+            let path = format!("src/f{i}.rs");
+            hook(&world, build, "perf", "pre_tool", edit(&path));
+        }
+    }
+    let mut round = 0;
+    bench(
+        criterion,
+        "pre-tool file edit, warm",
+        (15.0, 40.0),
+        300,
+        &builds,
+        |builds| {
+            round += 1;
+            let path = format!("src/f{}.rs", round % 50);
+            builds
+                .iter()
+                .map(|build| hook(&world, build, "perf", "pre_tool", edit(&path)))
+                .collect()
+        },
+    )
+}
+
+fn post_tool_shell(criterion: &mut Criterion) -> Measured {
+    let files: usize = std::env::var("ACS_PERF_FILES")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(100_000);
+    let world = World::new();
+    let per_dir = 100;
+    for d in 0..files.div_ceil(per_dir) {
+        let dir = world.repo.join(format!("pkg{}/mod{}/src", d / 10, d % 10));
+        fs::create_dir_all(&dir).unwrap();
+        for f in 0..per_dir.min(files - d * per_dir) {
+            fs::write(dir.join(format!("file{f}.rs")), format!("// {d} {f}\n")).unwrap();
+        }
+    }
+    git(&world.repo, &world.git_config, &["add", "-A"]);
+    // No automatic repack: it would take minutes, and the budgets are about the hook.
+    git(
+        &world.repo,
+        &world.git_config,
+        &["-c", "gc.auto=0", "commit", "-q", "-m", "big"],
+    );
+
+    let builds = builds(&world);
+    for build in &builds {
+        hook(&world, build, "perf", "session_start", json!({}));
+    }
+    let mut round = 0;
+    bench(
+        criterion,
+        &format!("post-tool shell, {files} files"),
+        (60.0, 200.0),
+        100,
+        &builds,
+        |builds| {
+            round += 1;
+            for build in builds {
+                hook(&world, build, "perf", "pre_tool", shell());
+            }
+            std::thread::sleep(Duration::from_millis(30));
+            let changed = format!("// edit {round}\n");
+            fs::write(world.repo.join("pkg0/mod0/src/file0.rs"), changed).unwrap();
+            fs::write(world.repo.join(format!("generated{round}.txt")), "new\n").unwrap();
+            builds
+                .iter()
+                .map(|build| hook(&world, build, "perf", "post_tool", shell()))
+                .collect()
+        },
+    )
+}
+
+fn status(criterion: &mut Criterion) -> Measured {
+    let world = World::new();
+    let builds = builds(&world);
+    for build in &builds {
+        for seat in ["one", "two", "three"] {
+            hook(&world, build, seat, "session_start", json!({}));
+        }
+        for i in 0..50 {
+            let path = format!("src/f{i}.rs");
+            hook(&world, build, "one", "pre_tool", edit(&path));
+            hook(&world, build, "two", "pre_tool", edit(&path));
+        }
+    }
+    bench(
+        criterion,
+        "status, 50 claims and 50 collisions",
+        (50.0, 150.0),
+        200,
+        &builds,
+        |builds| {
+            builds
+                .iter()
+                .map(|build| timed(&world, build, &["status", "--json"], b""))
+                .collect()
+        },
+    )
+}
+
+/// Prints one path and returns what is wrong with it.
+fn judge(path: &Measured) -> Vec<String> {
+    let (p50, p99) = (percentile(&path.head, 0.50), percentile(&path.head, 0.99));
+    let label = &path.label;
+    let (p50_budget, p99_budget) = (path.p50_budget_ms, path.p99_budget_ms);
+    println!(
+        "{label}: n={} p50 {p50:.1} ms (budget {p50_budget}) p99 {p99:.1} ms (budget {p99_budget})",
+        path.head.len()
+    );
+    let mut problems = Vec::new();
+    if p50 >= p50_budget {
+        problems.push(format!("{label}: p50 {p50:.1} ms is over {p50_budget} ms"));
+    }
+    if p99 >= p99_budget {
+        problems.push(format!("{label}: p99 {p99:.1} ms is over {p99_budget} ms"));
+    }
+    if !path.base.is_empty() {
+        let base = percentile(&path.base, 0.99);
+        println!("  base build: p99 {base:.1} ms");
+        if p99 > base * MAX_REGRESSION {
+            problems.push(format!(
+                "{label}: p99 {p99:.1} ms is over 20% worse than the base build's {base:.1} ms"
+            ));
+        }
+    }
+    problems
+}
+
+fn main() -> ExitCode {
+    let mut criterion = Criterion::default().configure_from_args();
+    let measured = [
+        pre_tool_file_edit(&mut criterion),
+        post_tool_shell(&mut criterion),
+        status(&mut criterion),
+    ];
+    criterion.final_summary();
+    let problems: Vec<String> = measured.iter().flat_map(judge).collect();
+    for problem in &problems {
+        println!("FAILED {problem}");
+    }
+    if problems.is_empty() || std::env::var("ACS_PERF_NO_ASSERT").is_ok_and(|v| v == "1") {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    }
+}

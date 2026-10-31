@@ -30,7 +30,7 @@ pub use attributions::{Attribution, AttributionSource, StoredAttribution};
 pub use claims::{AcquireOutcome, Acquired, Conflict, SyncStatus};
 pub use db::{DEFAULT_BUSY_TIMEOUT, DbConfig, SCHEMA_VERSION, StateDb, StoreError};
 pub use decisions::LastDecision;
-pub use events::{NewEvent, StoredEvent};
+pub use events::{Collision, NewEvent, StoredEvent};
 pub use flags::FLAG_GATE_OFF;
 pub use home::{AcsHome, HomeError, Migration, RepoHome};
 pub use repo_id::{

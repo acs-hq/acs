@@ -27,7 +27,7 @@ use std::process::ExitCode;
 use std::time::Duration;
 
 use acs_core::gate::{ClaimSource, HeldClaim, gives_way};
-use acs_core::{RepoPath, SeatId, Timestamp, ZoneKind};
+use acs_core::{RepoPath, SeatId, Timestamp, ToolKind, ZoneKind};
 use acs_git::hooks::query::{self, StagedChange};
 use acs_git::trailers::{self, Trailer};
 use acs_store::{FLAG_GATE_OFF, SeatInfo, StateDb};
@@ -35,8 +35,8 @@ use clap::Args;
 
 use crate::hook::HookEnv;
 use crate::hook::markers::{self, CommitMarker};
-use crate::runtime::RepoContext;
-use crate::runtime::seats::HUMAN_HARNESS;
+use crate::runtime::seats::{HUMAN_HARNESS, current_human_seat};
+use crate::runtime::{RepoContext, record_collision};
 
 /// The most paths one rejection message names.
 const SHOWN: usize = 8;
@@ -219,7 +219,38 @@ fn pre_commit(ctx: &RepoContext, now: Timestamp) -> Verdict {
             let _ = markers::take_commit_marker(p, &ctx.layout.work_tree, now);
         }
     }
-    Verdict::Reject(rejection(&findings, marker.as_ref()))
+    let message = rejection(&findings, marker.as_ref());
+    record_collisions(ctx, &findings, marker.as_ref(), &message, now);
+    Verdict::Reject(message)
+}
+
+/// Puts a commit stopped by another seat's claims on record for `acs status`. Best effort.
+fn record_collisions(
+    ctx: &RepoContext,
+    findings: &[Finding],
+    marker: Option<&CommitMarker>,
+    message: &str,
+    now: Timestamp,
+) {
+    let paths: Vec<String> = findings
+        .iter()
+        .filter(|f| !f.sealed)
+        .map(|f| f.path.clone())
+        .collect();
+    let Ok(db) = ctx.db() else { return };
+    if paths.is_empty() {
+        return;
+    }
+    let seat = match marker {
+        Some(marker) => marker.seat_id.parse().ok(),
+        None => current_human_seat(ctx, db, now)
+            .ok()
+            .map(|seat| seat.info.seat.seat_id),
+    };
+    if let Some(seat) = seat {
+        let tool = ("git commit", ToolKind::Shell);
+        record_collision(db, &seat, tool, &paths, message, now);
+    }
 }
 
 fn sealed_findings(ctx: &RepoContext, paths: &[RepoPath]) -> Vec<Finding> {

@@ -10,7 +10,7 @@ use acs_core::{
     ClaimId, ClaimOrigin, ClaimScope, Outcome, Phase, ReasonCode, ReleaseReason, RepoPath, SeatId,
     SpecVersion, Timestamp, Tool, ToolEvent, ToolKind,
 };
-use acs_store::{FLAG_GATE_OFF, LastDecision, SeatInfo, StoreError};
+use acs_store::{Collision, FLAG_GATE_OFF, LastDecision, NewEvent, SeatInfo, StateDb, StoreError};
 use serde::Serialize;
 
 use super::gate::{GateParams, run_gate};
@@ -82,6 +82,69 @@ impl ClaimView {
     }
 }
 
+/// How far back `acs status` looks for collisions, in hours.
+pub const COLLISION_WINDOW_HOURS: i64 = 24;
+/// The most collisions a status view carries.
+const MAX_COLLISIONS: usize = 200;
+
+/// A call refused because another seat held a file.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct CollisionView {
+    /// When it happened.
+    pub at: Timestamp,
+    /// The paths of the refused call.
+    pub paths: Vec<String>,
+    /// The tool that was refused.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool: Option<String>,
+    /// The pilot of the seat that was refused.
+    pub pilot: String,
+    /// The harness of the seat that was refused.
+    pub harness: String,
+    /// The seat that was refused.
+    pub seat_id: String,
+    /// What the seat was told, which names the holder.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+}
+
+impl CollisionView {
+    fn of(collision: Collision) -> Self {
+        Self {
+            at: collision.at,
+            paths: collision.paths,
+            tool: collision.tool_name,
+            pilot: collision.pilot,
+            harness: collision.harness,
+            seat_id: collision.seat_id.to_string(),
+            message: collision.detail,
+        }
+    }
+}
+
+/// Records that `seat` was refused because of another seat's claim, so `acs status` can show it.
+/// Best effort: the refusal stands either way.
+pub fn record_collision(
+    db: &StateDb,
+    seat_id: &SeatId,
+    tool: (&str, ToolKind),
+    paths: &[String],
+    message: &str,
+    now: Timestamp,
+) {
+    let _ = db.record_event(&NewEvent {
+        seat_id,
+        at: now,
+        phase: Phase::PreTool,
+        tool_name: Some(tool.0),
+        tool_kind: Some(tool.1),
+        paths,
+        reason_code: Some(ReasonCode::ClaimConflict),
+        outcome: Some(Outcome::Deny),
+        detail: Some(message),
+    });
+}
+
 /// The seat a status view is for.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct SeatSummary {
@@ -145,6 +208,11 @@ pub struct StatusView {
     pub my_claims: Vec<ClaimView>,
     /// Live claims of every other seat on this machine, and the remote view's claims.
     pub other_claims: Vec<ClaimView>,
+    /// Calls refused on this machine in the last [`COLLISION_WINDOW_HOURS`] hours because another
+    /// seat held a file, newest first. Kept after both seats end, so a collision cannot go unseen.
+    pub collisions: Vec<CollisionView>,
+    /// How many there were, which can be more than [`StatusView::collisions`] lists.
+    pub collisions_total: u64,
     /// Globs of paths no agent may write (built-in defaults, `guards.toml`, sealed zones).
     pub sealed: Vec<String>,
     /// The link to the git remote.
@@ -248,6 +316,8 @@ pub fn status(ctx: &RepoContext, seat: Option<&SeatInfo>, now: Timestamp) -> Sta
         }),
         my_claims: Vec::new(),
         other_claims: Vec::new(),
+        collisions: Vec::new(),
+        collisions_total: 0,
         sealed,
         remote: RemoteView {
             configured: ctx.has_remote,
@@ -279,6 +349,14 @@ pub fn status(ctx: &RepoContext, seat: Option<&SeatInfo>, now: Timestamp) -> Sta
                 view.other_claims.push(item);
             }
         }
+        let since = Timestamp::from_second(
+            now.as_second()
+                .saturating_sub(COLLISION_WINDOW_HOURS * 3600),
+        )
+        .unwrap_or(now);
+        let (collisions, total) = db.collisions_since(since, MAX_COLLISIONS)?;
+        view.collisions = collisions.into_iter().map(CollisionView::of).collect();
+        view.collisions_total = total;
         let sync = db.remote_sync_status()?;
         let stale_after = files.config.sync_interval_secs.get().saturating_mul(3);
         view.remote.sync_ran = sync.last_attempt_at.is_some();
@@ -396,6 +474,17 @@ pub fn claim_paths(
             at: now,
         },
     );
+    if decision.reason_code == ReasonCode::ClaimConflict {
+        let tool = ("acs_claim", ToolKind::Write);
+        record_collision(
+            db,
+            &seat.seat.seat_id,
+            tool,
+            &norm.predicted,
+            &decision.message,
+            now,
+        );
+    }
     if decision.outcome != Outcome::Allow {
         return Ok(ClaimOutcome::Refused {
             reason_code: decision.reason_code,
