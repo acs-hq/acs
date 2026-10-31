@@ -1,0 +1,35 @@
+# Adds the Scoop manifest to a release's files. `dist` calls this from release.yml
+# (`global-artifacts-jobs`), and every artifact named `artifacts-*` ends up on the GitHub Release.
+name: Scoop manifest
+
+on:
+  workflow_call:
+    inputs:
+      plan:
+        required: true
+        type: string
+
+jobs:
+  manifest:
+    runs-on: ubuntu-22.04
+    env:
+      PLAN: ${{ inputs.plan }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Fetch the checksums of the Windows archives
+        uses: actions/download-artifact@v8
+        with:
+          pattern: artifacts-build-local-*
+          path: target/distrib/
+          merge-multiple: true
+      - name: Render the manifest
+        run: |
+          tag=$(echo "$PLAN" | jq --raw-output '.announcement_tag')
+          sh integrations/scoop/render-manifest.sh "${tag#v}" target/distrib > acs.json
+          cat acs.json
+      - uses: actions/upload-artifact@v7
+        with:
+          name: artifacts-scoop-manifest
+          path: acs.json

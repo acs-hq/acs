@@ -1,0 +1,17 @@
+{
+  "version": "@VERSION@",
+  "description": "Agent Control System: coordinates coding agents and humans working in one repository.",
+  "homepage": "https://github.com/acs-hq/acs",
+  "license": "MIT|Apache-2.0",
+  "architecture": {
+    "64bit": {
+      "url": "https://github.com/acs-hq/acs/releases/download/v@VERSION@/acs-cli-x86_64-pc-windows-msvc.zip",
+      "hash": "@HASH_X64@"
+    },
+    "arm64": {
+      "url": "https://github.com/acs-hq/acs/releases/download/v@VERSION@/acs-cli-aarch64-pc-windows-msvc.zip",
+      "hash": "@HASH_ARM64@"
+    }
+  },
+  "bin": "acs.exe"
+}

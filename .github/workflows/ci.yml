@@ -42,3 +42,13 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: EmbarkStudios/cargo-deny-action@v2
+
+  # The release workflow only runs on a tag, so its first failure would otherwise be a real
+  # release: `dist plan` fails if the package is not distributable or release.yml has drifted.
+  release-plan:
+    name: release plan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: curl --proto '=https' --tlsv1.2 -LsSf https://github.com/axodotdev/cargo-dist/releases/download/v0.33.1/cargo-dist-installer.sh | sh
+      - run: dist plan
