@@ -912,6 +912,35 @@ fn fresh_remote_claims_block_and_stale_ones_do_not() {
 }
 
 #[test]
+fn a_seat_keeps_its_claim_against_a_later_remote_claim_and_loses_to_an_earlier_one() {
+    let repo = TestRepo::new();
+    let db = repo.open();
+    let omar = seat(&db, "omar@example.com", "s2");
+    granted(acquire(&db, &omar.seat_id, &[want("a.rs")], 10));
+
+    let remote = |acquired| {
+        remote_claim(
+            "clm_remote1",
+            "seat_far",
+            "lina@example.com",
+            "a.rs",
+            acquired,
+            900,
+        )
+    };
+    db.replace_remote_claims("pilot-lina", &[remote(20)], at(30))
+        .unwrap();
+    db.record_sync_success(at(30)).unwrap();
+    granted(acquire(&db, &omar.seat_id, &[want("a.rs")], 31));
+
+    db.replace_remote_claims("pilot-lina", &[remote(5)], at(32))
+        .unwrap();
+    db.record_sync_success(at(32)).unwrap();
+    let blocked = conflict(acquire(&db, &omar.seat_id, &[want("a.rs")], 33));
+    assert_eq!(blocked.conflicts[0].source, ClaimSource::Remote);
+}
+
+#[test]
 fn remote_claims_expire_by_their_own_ttl_and_respect_the_branch() {
     let repo = TestRepo::new();
     let db = repo.open();

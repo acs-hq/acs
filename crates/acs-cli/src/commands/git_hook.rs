@@ -26,7 +26,7 @@ use std::path::Path;
 use std::process::ExitCode;
 use std::time::Duration;
 
-use acs_core::gate::{ClaimSource, HeldClaim};
+use acs_core::gate::{ClaimSource, HeldClaim, gives_way};
 use acs_core::{RepoPath, SeatId, Timestamp, ZoneKind};
 use acs_git::hooks::query::{self, StagedChange};
 use acs_git::trailers::{self, Trailer};
@@ -264,7 +264,8 @@ fn claim_findings(
     }
     let this_worktree = ctx.worktree_str();
     let mut seats: HashMap<SeatId, Option<SeatInfo>> = HashMap::new();
-    let mut findings: Vec<Finding> = Vec::new();
+    let mut mine: Vec<&HeldClaim> = Vec::new();
+    let mut others: Vec<&HeldClaim> = Vec::new();
     for held in &snapshot.claims {
         let seat = match held.source {
             ClaimSource::Remote => None,
@@ -285,13 +286,21 @@ fn claim_findings(
             None => seat.is_none_or(|s| s.seat.worktree != this_worktree),
         };
         if blocks {
-            findings.push(Finding {
-                path: held.claim.scope.path().to_string(),
-                reason: format!("is claimed by {}", describe_holder(held, now)),
-                sealed: false,
-            });
+            others.push(held);
+        } else {
+            mine.push(held);
         }
     }
+    let mut findings: Vec<Finding> = others
+        .into_iter()
+        // The gate lets the earlier of two machines' claims go on; so must its commit.
+        .filter(|held| !mine.iter().any(|own| gives_way(held, own, now)))
+        .map(|held| Finding {
+            path: held.claim.scope.path().to_string(),
+            reason: format!("is claimed by {}", describe_holder(held, now)),
+            sealed: false,
+        })
+        .collect();
     findings.sort_by(|a, b| a.path.cmp(&b.path));
     Ok((findings, stale))
 }

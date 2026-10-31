@@ -156,6 +156,14 @@ impl Claim {
         let ttl = SignedDuration::from_secs(i64::try_from(self.ttl_secs).unwrap_or(i64::MAX));
         now.duration_since(self.heartbeat_at) >= ttl
     }
+
+    /// Whether this claim comes before `other` when two machines hold the same scope: the earlier
+    /// `acquired_at`, then the lower `claim_id`. It looks at nothing but the two claims, so every
+    /// machine that compares them gets the same answer.
+    #[must_use]
+    pub fn precedes(&self, other: &Self) -> bool {
+        (self.acquired_at, self.claim_id.as_str()) < (other.acquired_at, other.claim_id.as_str())
+    }
 }
 
 /// Why a claim ended.

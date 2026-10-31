@@ -11,7 +11,7 @@ mod common;
 use acs_core::engine::decide;
 use acs_core::gate::{
     ClaimRequest, ClaimSource, ClaimsSnapshot, CommandClass, Confidence, HeldClaim, Target,
-    TargetOp, claim_conflicts,
+    TargetOp, blocking_claims,
 };
 use acs_core::{Claim, ClaimScope, Outcome, ReasonCode, ToolKind, ZoneKind};
 use common::{
@@ -370,12 +370,9 @@ proptest! {
         let out_a = decide(&a.input(), &policy);
         let a_seat = a.seat.seat_id.clone();
         for request in &out_a.claim_requests {
-            for held in &s0.claims {
-                prop_assert!(
-                    !claim_conflicts(held, &a_seat, &request.scope, &request.target_branch, now, remote_stale),
-                    "A was asked to take {:?} against {:?}", request.scope, held.claim
-                );
-            }
+            let blocking =
+                blocking_claims(&s0.claims, &a_seat, &request.scope, &request.target_branch, now, remote_stale);
+            prop_assert!(blocking.is_empty(), "A was asked to take {:?} against {:?}", request.scope, blocking);
         }
 
         // Seat B decides on the claims including A's grants.
@@ -385,12 +382,9 @@ proptest! {
         let out_b = decide(&b.input(), &policy);
         let b_seat = b.seat.seat_id.clone();
         for request in &out_b.claim_requests {
-            for held in &s1.claims {
-                prop_assert!(
-                    !claim_conflicts(held, &b_seat, &request.scope, &request.target_branch, now, remote_stale),
-                    "B was asked to take {:?} against {:?}", request.scope, held.claim
-                );
-            }
+            let blocking =
+                blocking_claims(&s1.claims, &b_seat, &request.scope, &request.target_branch, now, remote_stale);
+            prop_assert!(blocking.is_empty(), "B was asked to take {:?} against {:?}", request.scope, blocking);
             for granted_to_a in &out_a.claim_requests {
                 prop_assert!(
                     !(granted_to_a.scope.overlaps(&request.scope)

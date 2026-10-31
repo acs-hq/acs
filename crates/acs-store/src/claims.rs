@@ -3,7 +3,7 @@
 //! The rules (SPEC section 6, decision 0004 rules 1 and 2):
 //!
 //! - [`StateDb::try_acquire`] takes all the claims one event needs in a single `BEGIN IMMEDIATE`
-//!   transaction. Inside it every request is re-checked with [`acs_core::gate::claim_conflicts`]
+//!   transaction. Inside it every request is re-checked with [`acs_core::gate::blocking_claims`]
 //!   against the local claims and the remote view, so two processes can never both be granted
 //!   conflicting claims, whatever the (possibly stale) snapshot they decided on said. It is all or
 //!   nothing.
@@ -16,7 +16,7 @@
 
 use std::time::Duration;
 
-use acs_core::gate::{ClaimRequest, ClaimSource, ClaimsSnapshot, HeldClaim, claim_conflicts};
+use acs_core::gate::{ClaimRequest, ClaimSource, ClaimsSnapshot, HeldClaim, blocking_claims};
 use acs_core::{
     Claim, ClaimHistoryEntry, ClaimId, ClaimOrigin, ClaimScope, ReleaseReason, RepoPath, SeatId,
     SymbolPath, Timestamp,
@@ -307,7 +307,7 @@ impl StateDb {
     /// Grants every request to `seat_id`, or none.
     ///
     /// Runs in one `BEGIN IMMEDIATE` transaction. Each request is checked with
-    /// [`claim_conflicts`] against all local claims and the remote view on its file (`now` and
+    /// [`blocking_claims`] against all local claims and the remote view on its file (`now` and
     /// `stale_after` decide expiry and staleness). If any request conflicts, nothing is changed
     /// and [`AcquireOutcome::Conflict`] lists all blocking claims. Otherwise each request either
     /// refreshes the seat's existing unexpired claim on the same scope and target branch (a
@@ -351,19 +351,19 @@ impl StateDb {
                         ClaimSource::Remote,
                     )?);
                 }
-                for held in candidates {
-                    if claim_conflicts(
-                        &held,
-                        seat_id,
-                        &request.scope,
-                        &request.target_branch,
-                        now,
-                        remote_stale,
-                    ) && !conflicts
+                for held in blocking_claims(
+                    &candidates,
+                    seat_id,
+                    &request.scope,
+                    &request.target_branch,
+                    now,
+                    remote_stale,
+                ) {
+                    if !conflicts
                         .iter()
                         .any(|c| c.claim.claim_id == held.claim.claim_id)
                     {
-                        conflicts.push(held);
+                        conflicts.push(held.clone());
                     }
                 }
                 checked_paths.push(path);

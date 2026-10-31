@@ -18,7 +18,7 @@
 //! 3. **Territory and claims.** Every written or deleted repository file in a `shared` zone, an
 //!    `owned` zone (treated as `shared` until ownership is enforced) or no zone needs a file claim;
 //!    `open` zones need none. A live claim of another seat (decided by
-//!    [`claim_conflicts`](crate::gate::claim_conflicts), the only implementation of the conflict
+//!    [`blocking_claims`](crate::gate::blocking_claims), the only implementation of the conflict
 //!    rule) denies with `claim_conflict`; otherwise a [`ClaimRequest`](crate::gate::ClaimRequest)
 //!    is returned for each file, even for files the seat already holds, because the store treats
 //!    such a request as a heartbeat.
@@ -57,7 +57,7 @@ use self::plan::Plan;
 use crate::decision::{Decision, Outcome, ReasonCode};
 use crate::event::{Phase, ToolKind};
 use crate::gate::{
-    ClaimRequest, GateInput, GateOutput, HeldClaim, PolicyView, ShellAnalysis, claim_conflicts,
+    ClaimRequest, GateInput, GateOutput, HeldClaim, PolicyView, ShellAnalysis, blocking_claims,
 };
 use crate::ids::NoticeId;
 use crate::records::{ClaimOrigin, ClaimScope};
@@ -375,18 +375,16 @@ fn claims_step(
         let scope = ClaimScope::File {
             file: touch.path.clone(),
         };
-        let blocks = |held: &&HeldClaim| {
-            claim_conflicts(
-                held,
-                &seat.seat_id,
-                &scope,
-                &seat.target_branch,
-                input.now,
-                snapshot.remote_stale,
-            )
-        };
-        if snapshot.claims.iter().any(|h| blocks(&h)) {
-            conflicts.push((touch.path, snapshot.claims.iter().filter(blocks).collect()));
+        let blocking = blocking_claims(
+            &snapshot.claims,
+            &seat.seat_id,
+            &scope,
+            &seat.target_branch,
+            input.now,
+            snapshot.remote_stale,
+        );
+        if !blocking.is_empty() {
+            conflicts.push((touch.path, blocking));
         } else {
             requests.push(ClaimRequest {
                 scope,

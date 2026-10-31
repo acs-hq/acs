@@ -237,6 +237,38 @@ fn a_claim_in_one_clone_blocks_an_edit_in_another_after_one_sync_interval() {
 }
 
 #[test]
+fn of_two_claims_taken_inside_one_sync_window_the_earlier_keeps_the_file() {
+    let team = Team::new();
+    let sara = team.clone("sara", "sara@example.com");
+    let omar = team.clone("omar", "omar@example.com");
+
+    // Neither machine has heard of the other, so both are granted the file.
+    assert_eq!(sara.edit("s1", "src/lib.rs").outcome, Outcome::Allow);
+    assert_eq!(omar.edit("o1", "src/lib.rs").outcome, Outcome::Allow);
+
+    // Each publishes its claim and fetches the other's.
+    sara.json(&["sync"]);
+    omar.json(&["sync"]);
+    sara.json(&["sync"]);
+    assert!(sara.sees_remote_claim("src/lib.rs"));
+    assert!(omar.sees_remote_claim("src/lib.rs"));
+
+    // Both machines reach the same answer on their own: no standstill.
+    let kept = sara.edit("s1", "src/lib.rs");
+    assert_eq!(kept.outcome, Outcome::Allow, "{kept:?}");
+    let denied = omar.edit("o1", "src/lib.rs");
+    assert_eq!(denied.outcome, Outcome::Deny, "{denied:?}");
+    assert!(denied.message.contains("sara@example.com"), "{denied:?}");
+
+    // Omar's claim was never taken away: it holds the file once Sara's ends.
+    sara.hook("session_end", "s1", json!({}));
+    wait_for("the file to come to omar", || {
+        omar.json(&["sync"]);
+        omar.edit("o1", "src/lib.rs").outcome == Outcome::Allow
+    });
+}
+
+#[test]
 fn ending_a_session_publishes_the_release_without_any_further_event() {
     let team = Team::new();
     let sara = team.clone("sara", "sara@example.com");
