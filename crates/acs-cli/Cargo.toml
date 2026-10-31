@@ -26,6 +26,11 @@ dist = true
 name = "e2e_scenarios"
 path = "../../tests/e2e/main.rs"
 
+[[bench]]
+name = "hook_paths"
+path = "../../benches/hook_paths.rs"
+harness = false
+
 [lints]
 workspace = true
 
@@ -45,5 +50,6 @@ serde_json.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
+criterion.workspace = true
 dunce.workspace = true
 tempfile.workspace = true

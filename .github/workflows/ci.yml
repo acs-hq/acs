@@ -36,6 +36,49 @@ jobs:
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - run: cargo test --workspace --locked
 
+  # The budgets of plan section 4.7, and no p99 over 20% worse than the commit before, measured turn
+  # about on one runner. A failure has to happen twice: shared runners have bad minutes. Linux is the
+  # gate; the other systems report only until the budgets are settled for them (decision 0023).
+  perf:
+    name: perf (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            no_assert: "0"
+          - os: macos-latest
+            no_assert: "1"
+          - os: windows-latest
+            no_assert: "1"
+    env:
+      ACS_PERF_NO_ASSERT: ${{ matrix.no_assert }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: Swatinem/rust-cache@v2
+      - name: Build the commit before
+        shell: bash
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if [ -z "$BASE" ] || ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+            echo "No earlier commit to compare with: checking the budgets only."
+            exit 0
+          fi
+          git worktree add -q ../acs-base "$BASE"
+          cargo build --release -p acs-cli --locked --manifest-path ../acs-base/Cargo.toml
+          base=$(cd ../acs-base && (pwd -W 2>/dev/null || pwd))
+          suffix=$([ "$RUNNER_OS" = Windows ] && echo .exe || true)
+          echo "ACS_PERF_BASE_BIN=$base/target/release/acs$suffix" >> "$GITHUB_ENV"
+      - name: Benchmark
+        shell: bash
+        run: |
+          cargo bench -p acs-cli --bench hook_paths --locked ||
+            cargo bench -p acs-cli --bench hook_paths --locked
+
   deny:
     name: deny
     runs-on: ubuntu-latest
