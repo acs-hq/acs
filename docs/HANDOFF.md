@@ -5,6 +5,9 @@ after Phase 1; that version is in git history (`git show 49c2cf0:docs/HANDOFF.md
 lessons still apply (summarized in section 2). Read this with the implementation plan and
 `docs/decisions/` before starting the next phase.
 
+**Antigravity and GitLab are deferred (2026-10-31).** Section 6 says what changed and when the
+human must be reminded. Check its triggers before starting any WP.
+
 ## 1. Where things stand
 
 - `main` has Phase 0, Phase 1 and **Phase 2 (WP2.1–WP2.6)**. Fmt, clippy `-D warnings`, the
@@ -42,10 +45,11 @@ plugin copies in sync.
   file claimed by another seat was denied and the model quoted the guidance naming the holder
   (`docs/adapters/claude-code.md` §17). Separately, `claude -p` with `acs mcp` listed and called
   all five tools (decision 0016). Hooks and MCP were not yet exercised together in one real session.
-- **Antigravity was never run** (not installable here; `antigravity.google` is blocked by this
-  environment's network policy). Its adapter rests on Google's GitHub repos and integrators'
-  reports; `docs/adapters/antigravity.md` lists 12 source disagreements and an 11-step manual
-  checklist. Treat it as unverified until someone runs that checklist.
+- **Antigravity was never run** (not installable in the cloud environment, where
+  `antigravity.google` is blocked by network policy). Its adapter rests on Google's GitHub repos
+  and integrators' reports; `docs/adapters/antigravity.md` lists 12 source disagreements and an
+  11-step manual checklist. Treat it as unverified until someone runs that checklist. `agy` 1.4.12
+  is on the human's Windows machine, so the checklist can run there; it is deferred (section 6).
 - **Budgets** (release, Linux, 4 shared vCPUs; `cargo test --release -p acs-cli --test perf --
   --ignored --nocapture`): pre-tool edit p50 8.7 ms / p99 18.4 ms; post-tool shell at 100k files
   p50 16 ms / p99 47 ms **only with the scoped scan**. A full `git status` scan of 100k files
@@ -96,7 +100,8 @@ stdin/stdout/stderr and must not be waited on (an inherited pipe makes Claude Co
 (`record_sync_success`/`record_sync_failure`; staleness keys off `last_attempt_at`). Reuse
 `commands::init::remotes` for refspecs; `acs status` already renders `RemoteView` (stale, last
 error). SPEC §8 wording on "stale" (strictly older than 3× interval; never-fetched is stale) is
-still pending (see section 4).
+still pending (see section 4). Verify `refs/acs/*` pushes on GitHub only; the GitLab check is
+deferred (section 6), so keep the ref storage behind `acs-git` in case its fallback is needed.
 
 **WP4.1 (records)** — `stale_live_seats(before)` finds crashed sessions (human seats excluded);
 aggregate `files_changed` as the first `pre_hash` and last `post_hash` per path from
@@ -114,12 +119,15 @@ sessions are kept (no `drop_session` at session end) and evicted by budget only.
 `mcp__plugin_acs_acs__<tool>` in Claude Code; in Antigravity the plugin's server is renamed
 `acs_acs` and tools are reached through `call_mcp_tool` (or directly, via `alwaysLoad`).
 Make the "deletes need a claim first" rule obvious (default `max_files_deleted_outside_claims = 0`).
+For now, build and verify for Claude Code only and leave the Antigravity skill copy as it is
+(section 6); it gets synced when Antigravity returns.
 
 **WP5.2 (distribution)** — `acs plugin install` replaces the printed commands in
 `commands::init::harness::HARNESSES` and doctor's `plugin_*` hints. Antigravity **fails closed**
 (every tool call denied) when the hook binary is missing; installers must put `acs` on PATH before
 the plugin is enabled. Claude Code fails open; an optional strict mode (`onFailure: block`) is
-recorded in 0013.
+recorded in 0013. For now, `acs plugin install` targets Claude Code only (section 6), and the
+PATH-before-plugin rule still applies when Antigravity returns.
 
 **WP7.2 (hardening)** — known bypasses: an agent starting a nested harness with hooks disabled
 (`claude --bare -p`, `claude --settings '{"disableAllHooks":true}'`); writes to harness config
@@ -158,12 +166,52 @@ cannot seal (file tools get `path_escapes_repo` ask; shell writes are uncovered)
 
 ## 5. For the human
 
-- **Allow `antigravity.google`** in this environment's network settings (Allowed domains) if a
-  later session should verify the Antigravity adapter against the official docs.
-- **Run the Antigravity manual checklist** (`docs/adapters/antigravity.md`) on a machine with
-  Antigravity installed; record results in `docs/releases/`.
-- Still open from Phase 1: set the GitHub default branch to `main`; branch protection on `main`;
-  CODEOWNERS for `.acs/policy/` and `spec/`; the `acs` name check (crates.io, npm, Homebrew); the
-  home for the setup skill; governance. The release workflow has never run.
+- **Deferred, see section 6 for when:** allow `antigravity.google` in the cloud environment's
+  network settings (Allowed domains) so a session can verify the adapter against the official
+  docs; run the Antigravity manual checklist (`docs/adapters/antigravity.md`) on a machine with
+  Antigravity installed and record results in `docs/releases/`.
+- Still open from Phase 1: branch protection on `main`; CODEOWNERS for `.acs/policy/` and `spec/`;
+  the `acs` name check (crates.io, npm, Homebrew); the home for the setup skill; governance. The
+  release workflow has never run. The GitHub default branch is already `main` (checked
+  2026-10-31).
 - The marketplace command printed by `acs init` assumes the repository is `acs-hq/acs`
   (`claude plugin marketplace add acs-hq/acs`).
+
+## 6. Deferred: Antigravity and GitLab
+
+The human deferred both on 2026-10-31 to reduce complexity. This is a deferral, not a removal. The
+implementation plan is being updated to match; until a decision record exists (next free number:
+0019), this section is the reference.
+
+**Keep in place:** the Antigravity adapter, its fixtures and tests, `integrations/antigravity/`, its
+default sealed paths (`.agents/**`, removing them would let an agent edit those configs) and the
+`Adapter` trait. Do not write Claude-specific logic outside `claude_code.rs`; in particular, do not
+assume every harness sends session start, session end or prompt events.
+
+**Changed until Antigravity returns:**
+
+- M1 gate: three Claude Code sessions with overlapping tasks produce zero silent overwrites; every
+  collision is visible in `acs status`; sealed paths hold; one-sentence setup works in Claude Code.
+- WP5.1 no longer depends on WP2.3, and its acceptance covers Claude Code only.
+- WP5.2's `acs plugin install` covers Claude Code only.
+- The WP2.3 and WP2.6 acceptance runs in Antigravity stay open.
+- The pre-release manual run (plan section 9.1) uses Claude Code only.
+
+**Changed until GitLab returns:**
+
+- WP3.1 verifies `refs/acs/*` pushes on GitHub only.
+- WP5.3 parses GitHub CODEOWNERS only.
+- WP9.2 ships the GitHub Action only.
+
+**Remind the human at these points, and do not continue past a hard stop without their answer:**
+
+| When | What to tell the human | Type |
+| --- | --- | --- |
+| WP3.1 starts | A one-off push of `refs/acs/*` to GitLab is optional now. If GitLab rejects it later, the fallback is a dedicated branch instead of custom refs. | Reminder |
+| WP5.3 starts | GitLab CODEOWNERS parsing is skipped; it returns with WP9.2. | Reminder |
+| Any public launch | ACS has only been proven across Claude Code sessions, not across harnesses. | Reminder |
+| WP8.3 merges, before WP9.1 starts | Antigravity must come back now: allow `antigravity.google`, run the manual checklist, sync the skill copy, add `acs plugin install antigravity`, run the three-harness M1 gate, finish the WP2.3 and WP2.6 acceptance. | **Hard stop** |
+| WP9.2 starts | GitLab must come back now: the CI template, the GitLab CODEOWNERS format and the push check. | **Hard stop** |
+
+Antigravity must be verified before WP9.1 because its known gaps (`allow` rendered as `ask`, no
+session events) may need contract changes, which are cheap in draft 0.1 and costly after Spec 1.0.
