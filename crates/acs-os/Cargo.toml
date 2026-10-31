@@ -1,0 +1,22 @@
+[package]
+name = "acs-os"
+description = "ACS OS: the operating-system calls the standard library does not offer."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+# Not `workspace = true`: this is the one crate where `unsafe_code` is not `forbid`. It is `deny`,
+# so each unsafe block still needs an `allow` of its own (decision 0020).
+[lints.rust]
+missing_docs = "warn"
+unsafe_code = "deny"
+
+[lints.clippy]
+unwrap_used = "warn"
+expect_used = "warn"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { workspace = true, features = ["Win32_Foundation"] }

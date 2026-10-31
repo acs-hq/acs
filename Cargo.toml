@@ -30,6 +30,7 @@ tokio = { version = "1.54.1", default-features = false, features = ["rt"] }
 toml = "1.1.8"
 tree-sitter = "0.27.1"
 tree-sitter-bash = "0.25.1"
+windows-sys = "0.61.2"
 zstd = "0.14.3"
 
 [workspace.lints.rust]
