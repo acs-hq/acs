@@ -19,6 +19,10 @@ configuration from WP0.1 failed outright: `publish = false` hid the only binary 
   `target/tools/`, with the checksum checked.
 - Channels: shell and PowerShell installers, Homebrew (`acs-hq/homebrew-tap`, formula `acs`), npm
   (`@acs-hq/acs`), Scoop. The names are placeholders until the human's name check (plan section 9.3).
+- **Homebrew is built but not published for now** (human decision, 2026-10-31). The tap and its
+  token would add setup, and the shell installer already covers macOS and Linux. Each release
+  still ships `acs.rb`; only the publish job and the `brew` check in `installers.yml` are off.
+  `docs/releases/README.md` says how to turn them on.
 - **Scoop has no bucket repository.** A custom dist job renders `integrations/scoop/acs.json.in` from
   the release's checksums and ships `acs.json` as a release file;
   `scoop install <release url>/acs.json` works without a second repository or a secret. Scoop was
@@ -65,14 +69,14 @@ do not hold. The README steers people to the installers.
 
 ## Consequences
 
-- A release needs setup only the human can do: `docs/releases/README.md`. If the tap or `NPM_TOKEN`
-  is missing, the publish jobs fail after the GitHub Release exists, and `announce` and the installer
+- A release needs setup only the human can do: `docs/releases/README.md`. If `NPM_TOKEN` is
+  missing, the publish job fails after the GitHub Release exists, and `announce` and the installer
   checks are skipped.
 - All channels download from public release URLs, so none works while the repository is private.
 - Verified locally on Windows: `dist plan`, a `dist build` of `x86_64-pc-windows-msvc`, the real
   PowerShell installer from a localhost server, `.github/smoke.sh` on what it installed, and
   `acs plugin install` against the real `claude` in a sandboxed `CLAUDE_CONFIG_DIR`. Not verified
-  until the first tag: every other target, Homebrew, npm, Scoop and `installers.yml` itself. In
+  until the first tag: every other target, npm, Scoop and `installers.yml` itself. In
   particular, `aarch64-pc-windows-msvc` cross-builds C dependencies in a `cargo-xwin` container.
 - WP7.2 should decide what agents may do with `acs plugin install`: project scope writes the sealed
   `.claude/settings.json` through a shell command.

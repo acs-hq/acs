@@ -31,12 +31,11 @@ powershell -ExecutionPolicy Bypass -c "irm https://github.com/acs-hq/acs/release
 Or with a package manager:
 
 ```sh
-brew install acs-hq/tap/acs
 scoop install https://github.com/acs-hq/acs/releases/latest/download/acs.json
 npm install --global @acs-hq/acs
 ```
 
-Prefer the installers, Homebrew or Scoop for a repository you gate: with npm, every hook call starts Node, which is much slower. `npx @acs-hq/acs` is fine for trying the commands, but hooks need `acs` installed on `PATH`.
+Prefer the installers or Scoop for a repository you gate: with npm, every hook call starts Node, which is much slower. `npx @acs-hq/acs` is fine for trying the commands, but hooks need `acs` installed on `PATH`.
 
 Then, in the repository:
 

@@ -25,7 +25,8 @@ human must be reminded. Check its triggers before starting any WP.
      real session at a time has been run, and only scripted seats overlap
      (`docs/releases/v0.1.0.md`).
   3. The release setup only the human can do (`docs/releases/README.md`): name check, public
-     repository, Homebrew tap, npm scope and tokens. Every installer needs a public repository.
+     repository, npm scope and token. Every installer needs a public repository. Homebrew is built
+     but not published until the human wants it (decision 0021).
   4. The first tag, which is the first real run of `release.yml` and `installers.yml`.
 - **Then dogfooding.** The human runs `acs init` here (see section 2). No release exists yet, so
   `acs` comes from `cargo install --path crates/acs-cli --locked`.
@@ -237,8 +238,8 @@ cannot seal (file tools get `path_escapes_repo` ask; shell writes are uncovered)
   Antigravity installed and record results in `docs/releases/`.
 - After M1: run `acs init` in this repository to start dogfooding. Agents then cannot edit
   `.acs/**`, `.github/workflows/**` or the Claude settings files, so those changes fall to the human.
-- Release setup: `docs/releases/README.md` (name check, public repository, Homebrew tap, npm scope
-  and tokens). The first tag is the first real run of `release.yml` and `installers.yml`.
+- Release setup: `docs/releases/README.md` (name check, public repository, npm scope
+  and token). The first tag is the first real run of `release.yml` and `installers.yml`.
 - Still open from Phase 1: branch protection on `main`; CODEOWNERS for `.acs/policy/` and `spec/`;
   the home for the setup skill (the README uses the raw GitHub URL, which needs a public
   repository); governance. The GitHub default branch is already `main` (checked 2026-10-31).

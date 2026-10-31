@@ -83,16 +83,6 @@ jobs:
       - shell: bash
         run: sh .github/smoke.sh "$TAG"
 
-  homebrew:
-    name: homebrew
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-      - run: brew install acs-hq/tap/acs
-      - run: sh .github/smoke.sh "$TAG"
-
   npm:
     name: npm
     runs-on: ubuntu-latest

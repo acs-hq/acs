@@ -24,8 +24,9 @@ formula = "acs"
 # The npm package: @acs-hq/acs, which installs the `acs` command
 npm-scope = "@acs-hq"
 npm-package = "acs"
-# Publish jobs to run in CI
-publish-jobs = ["homebrew", "npm"]
+# Publish jobs to run in CI. The Homebrew formula is built but not published until the tap exists
+# (docs/releases/README.md says how to turn it on)
+publish-jobs = ["npm"]
 # Adds the Scoop manifest to the release's files
 global-artifacts-jobs = ["./scoop-manifest"]
 # Tries every installer of the published release on a clean machine
