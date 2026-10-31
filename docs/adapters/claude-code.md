@@ -1,7 +1,8 @@
 # Claude Code adapter notes
 
-Status: WP2.2 complete (research, adapter, plugin, acceptance run). Written 2026-10-30 against
-Claude Code **2.1.314** (`claude --version` on the research machine). The adapter
+Status: WP2.2 complete (research, adapter, plugin, acceptance run), Windows runs added 2026-10-31
+(section 18). Written 2026-10-30 against Claude Code **2.1.314** (`claude --version` on the research
+machine). The adapter
 (`crates/acs-adapters/src/claude_code.rs`) and the plugin (`integrations/claude-code/`) match this
 document; if Claude Code changes, update this file first. Choices made beyond the plan and spec are
 in `docs/decisions/0013-claude-code-adapter.md`.
@@ -74,8 +75,8 @@ the `"hooks"` object; in a plugin it is `hooks/hooks.json` with the same object 
 - **Exec form** (`command` + `args`): no shell, `args` elements are passed verbatim, `command` is
   resolved on `PATH` **[docs]**, **[captured]** (`command: "python3"`, `args: [...]` and the
   "Executable not found in $PATH" error for a missing binary). It avoids quoting problems on
-  Windows. On Windows `command` must resolve to a real executable (`acs.exe` qualifies; `.cmd`
-  shims do not) **[docs]**. The plugin uses exec form.
+  Windows. The docs say `command` must resolve to a real executable on Windows, but a `.cmd` shim
+  worked in 2.1.316 (section 18). The plugin uses exec form.
 - **Matchers**: omitted, `""` or `"*"` match everything. A value of only letters, digits, `_`,
   `-`, space, `,` and `|` is an exact name list; anything else is an unanchored JavaScript regex.
   Tool events match `tool_name`; `SessionStart` matches `source`; `SessionEnd` matches `reason`.
@@ -414,6 +415,8 @@ integrations/claude-code/            # the plugin root (WP2.2 stage 2)
   are substituted in hook `command`/`args` and MCP `command`/`args`/`env`; `${user_config.*}`
   only in exec form **[docs]**.
 - **Install.**
+  - `acs plugin install claude-code` runs the marketplace steps below at project scope (decision
+    0021).
   - Development, one session: `claude --plugin-dir ./integrations/claude-code` **[captured]**.
   - Through a marketplace: a repository (or directory) with `.claude-plugin/marketplace.json`
     `{"name","owner":{"name"},"plugins":[{"name":"acs","source":"./integrations/claude-code","description":"..."}]}`;
@@ -546,9 +549,9 @@ repository, where agents work), `.claude/agent-memory/` and other state Claude C
 
 ## 15. Limitations and open points
 
-- **Interactive `ask`**, `/clear` and `--continue` in an interactive session, Windows (PowerShell
-  tool, backslash paths, Git Bash absence), and `bypassPermissions` interactive behaviour were not
-  run; the research used `claude -p` on Linux. Windows shapes are from the docs.
+- **Interactive `ask`**, `/clear` and `--continue` in an interactive session, Windows without Git
+  Bash (the PowerShell tool), and `bypassPermissions` interactive behaviour were not run. The
+  research used `claude -p` on Linux; section 18 covers `claude -p` on Windows with Git Bash.
 - Capture ran inside another Claude Code session. The nested CLI inherited the outer session id
   until `--session-id` was passed, so session-id checks in section 9 use `--session-id`.
 - `tool_input` for `Write` has no `old` content and `Edit` has no line numbers: symbol-level
@@ -641,5 +644,26 @@ Observations from the run:
   with the real plugin.
 - Hook latency as logged by Claude Code (debug build, cold): SessionStart 117 ms, PreToolUse 13
   to 34 ms, PostToolUse 11 ms.
-- Still to do when WP2.6 lands: the same run with `acs mcp` serving, to confirm tool search finds
-  `mcp__plugin_acs_acs__acs_status` and that the seat binds through `CLAUDE_CODE_SESSION_ID`.
+- The same run with `acs mcp` serving, once WP2.6 landed, is in section 18.
+
+## 18. Windows runs (real sessions, 2026-10-31)
+
+`claude -p` 2.1.316 with Sonnet on Windows 11, Git Bash as the Bash tool, plugin loaded with
+`--plugin-dir`, `acs` 0.1.0 from a local build. All **[captured]**.
+
+- An edit of a claimed file and an edit of a sealed file were denied, and the agent quoted each
+  guidance message and stopped. A new file was written.
+- **Hooks and MCP in one session, a first on any platform.** `acs_intent`, `acs_status`, `acs_claim`,
+  `acs_release` and `acs_why` all worked through `mcp__plugin_acs_acs__*`. `acs_why` explained a
+  denial the hook had just made, so the two share a seat.
+- **A `.cmd` shim works as the hook command.** With only `acs.cmd` on `PATH`, hooks ran and denied as
+  usual, which contradicts the docs (section 2).
+- **A hook whose command cannot start fails open silently:** the edit of a claimed file went through
+  with no message to the agent, and only a `SessionEnd` hook error was printed at the end.
+- Claude Code caches an MCP connection failure for 15 minutes ("Skipping connection (recent failure
+  cached ...)"), so one bad run makes the next look broken too.
+- `claude plugin marketplace add`, `install` and `list` need no login, and work with `CLAUDE_CONFIG_DIR`
+  in a scratch directory. `marketplace add --scope project` plus `install --scope project` write
+  `extraKnownMarketplaces` and `enabledPlugins` to `.claude/settings.json`. Both are safe to repeat.
+  `install` enables a disabled plugin again. `list --json` also shows other projects' entries, with
+  `enabled` worked out for the current directory.
