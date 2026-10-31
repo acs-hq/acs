@@ -2,7 +2,7 @@
   "name": "acs",
   "displayName": "ACS",
   "version": "0.1.0",
-  "description": "Agent Coordination Standard: claims and guidance so several agents can work in one repository without overwriting each other.",
+  "description": "Agent Control System: claims and guidance so several agents can work in one repository without overwriting each other.",
   "author": { "name": "ACS contributors" },
   "homepage": "https://github.com/acs-hq/acs",
   "repository": "https://github.com/acs-hq/acs",
