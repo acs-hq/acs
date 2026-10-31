@@ -21,6 +21,11 @@ path = "src/main.rs"
 [package.metadata.dist]
 dist = true
 
+# The root of a virtual workspace can hold no targets, so these two live here.
+[[test]]
+name = "e2e_scenarios"
+path = "../../tests/e2e/main.rs"
+
 [lints]
 workspace = true
 
