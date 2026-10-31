@@ -106,9 +106,15 @@ fn record(
     let Ok(db) = ctx.db() else { return };
     let paths: Vec<String> = predicted.iter().take(MAX_EVENT_PATHS).cloned().collect();
     let tool = event.tool.as_ref();
-    let detail = (decision.outcome != Outcome::Allow)
-        .then(|| event.command.as_deref().map(redact_command))
-        .flatten();
+    // A collision keeps what the seat was told: it names the holder, who may be gone by the time
+    // `acs status` shows it. The message holds paths and the holder, no command text.
+    let detail = if decision.reason_code == ReasonCode::ClaimConflict {
+        Some(decision.message.clone())
+    } else {
+        (decision.outcome != Outcome::Allow)
+            .then(|| event.command.as_deref().map(redact_command))
+            .flatten()
+    };
     let _ = db.record_event(&NewEvent {
         seat_id: &info.seat.seat_id,
         at: now,

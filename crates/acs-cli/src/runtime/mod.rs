@@ -20,8 +20,9 @@ pub mod sync;
 
 pub use context::{OpenError, RepoContext};
 pub use ops::{
-    ClaimOutcome, ClaimView, MAX_INTENT_CHARS, ReleaseReport, RemoteView, SeatSummary, StatusView,
-    claim_paths, last_decision, release_paths, set_intent, status,
+    COLLISION_WINDOW_HOURS, ClaimOutcome, ClaimView, CollisionView, MAX_INTENT_CHARS,
+    ReleaseReport, RemoteView, SeatSummary, StatusView, claim_paths, last_decision,
+    record_collision, release_paths, set_intent, status,
 };
 
 /// Why a shared operation failed (as opposed to a claim the gate refused, which is a normal

@@ -10,7 +10,7 @@ use super::support::{
     CliError, OutputArgs, WIDTH, age, ellipsize_start, finish, human_seat, open_repo, print_json,
     row, short_duration, wrap,
 };
-use crate::runtime::{ClaimView, StatusView, status};
+use crate::runtime::{COLLISION_WINDOW_HOURS, ClaimView, StatusView, status};
 
 /// Arguments of `acs status`.
 #[derive(Debug, Args)]
@@ -47,6 +47,8 @@ fn execute(args: &StatusArgs) -> Result<ExitCode, CliError> {
 
 /// How many sealed globs are listed unless `--sealed` is given.
 const SEALED_SHOWN: usize = 4;
+/// How many collisions the human view lists.
+const COLLISIONS_SHOWN: usize = 5;
 
 /// The human view, every line at most [`WIDTH`] columns.
 #[must_use]
@@ -133,6 +135,8 @@ pub fn render(view: &StatusView, now: Timestamp, all_sealed: bool) -> String {
         out.push('\n');
     }
 
+    out.push_str(&collision_lines(view, now));
+
     let _ = writeln!(
         out,
         "\nSealed paths no agent may write ({}):",
@@ -153,6 +157,44 @@ pub fn render(view: &StatusView, now: Timestamp, all_sealed: bool) -> String {
             out,
             "  and {} more (`acs status --sealed` lists all)",
             view.sealed.len() - shown
+        );
+    }
+    out
+}
+
+/// The refused calls of the last day, newest first. Absent when there were none.
+fn collision_lines(view: &StatusView, now: Timestamp) -> String {
+    let mut out = String::new();
+    let total = view.collisions_total;
+    if total == 0 {
+        return out;
+    }
+    let _ = writeln!(
+        out,
+        "\nRecent collisions ({total} in the last {COLLISION_WINDOW_HOURS} h):"
+    );
+    for collision in view.collisions.iter().take(COLLISIONS_SHOWN) {
+        let mut target = collision.paths.first().cloned().unwrap_or_default();
+        if collision.paths.len() > 1 {
+            let _ = write!(target, " and {} more", collision.paths.len() - 1);
+        }
+        let right = format!(
+            "{} {} {} ago",
+            collision.harness,
+            collision.pilot,
+            age(now, collision.at)
+        );
+        out.push_str(&row(&target, &right));
+        out.push('\n');
+        if let Some(message) = &collision.message {
+            out.push_str(&wrap(message, "    ", "    "));
+        }
+    }
+    if (COLLISIONS_SHOWN as u64) < total {
+        let _ = writeln!(
+            out,
+            "  and {} more (`acs status --json` lists them)",
+            total - COLLISIONS_SHOWN as u64
         );
     }
     out
@@ -194,7 +236,7 @@ fn remote_lines(view: &StatusView, now: Timestamp) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::runtime::{RemoteView, SeatSummary};
+    use crate::runtime::{CollisionView, RemoteView, SeatSummary};
     use acs_core::ClaimOrigin;
 
     fn claim(path: &str, harness: &str, pilot: &str, now: Timestamp) -> ClaimView {
@@ -234,6 +276,18 @@ mod tests {
                 "someone.with.a.very.long.address@a-long-company-domain.example.com",
                 now,
             )],
+            collisions: (0..7)
+                .map(|i| CollisionView {
+                    at: now,
+                    paths: vec![format!("{}{i}.rs", "deep/".repeat(30)), "b.rs".to_owned()],
+                    tool: Some("Edit".to_owned()),
+                    pilot: "someone.with.a.very.long.address@example.com".to_owned(),
+                    harness: "claude-code".to_owned(),
+                    seat_id: "seat_2".to_owned(),
+                    message: Some(format!("`{}` is claimed by someone.", "x/".repeat(60))),
+                })
+                .collect(),
+            collisions_total: 9,
             sealed: (0..9)
                 .map(|i| format!("{}{i}/**", "g".repeat(100)))
                 .collect(),
@@ -271,5 +325,21 @@ mod tests {
         assert!(text.contains("!! GATE OFF"), "{text}");
         assert!(text.contains("STALE"), "{text}");
         assert!(text.contains("and 5 more"), "{text}");
+    }
+
+    #[test]
+    fn collisions_are_counted_listed_and_absent_when_there_are_none() {
+        let now = Timestamp::now();
+        let mut view = view(now);
+        let text = render(&view, now, false);
+        assert!(
+            text.contains("Recent collisions (9 in the last 24 h)"),
+            "{text}"
+        );
+        assert!(text.contains("and 4 more (`acs status --json`"), "{text}");
+        view.collisions.clear();
+        view.collisions_total = 0;
+        let text = render(&view, now, false);
+        assert!(!text.contains("collisions"), "{text}");
     }
 }

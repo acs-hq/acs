@@ -203,10 +203,11 @@ fn a_locked_database_times_out_with_a_typed_error() {
 // Migrations
 // ---------------------------------------------------------------------------------------------
 
-const MIGRATIONS: [&str; 3] = [
+const MIGRATIONS: [&str; 4] = [
     include_str!("../src/migrations/0001_local_state.sql"),
     include_str!("../src/migrations/0002_remote_claims.sql"),
     include_str!("../src/migrations/0003_hook_pipeline.sql"),
+    include_str!("../src/migrations/0004_collisions.sql"),
 ];
 
 fn schema_of(path: &std::path::Path) -> Vec<String> {
