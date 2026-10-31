@@ -161,11 +161,7 @@ fn init_prints_install_commands_for_detected_harnesses() {
     let out = acs(&world, &["init"]);
     assert_success(&out);
     let text = stdout(&out);
-    assert!(
-        text.contains("claude plugin install acs@acs-plugins"),
-        "{text}"
-    );
-    assert!(text.contains("claude plugin marketplace add"), "{text}");
+    assert!(text.contains("acs plugin install claude-code"), "{text}");
     assert!(text.contains("agy plugin install"), "{text}");
     assert_fits_80(&text);
     // Printed, not run: no settings file appeared.

@@ -1,6 +1,7 @@
 //! Detecting the agent harnesses a repository is used with, and what to run to install the ACS
-//! plugin for each. `init` only **prints** the commands (`acs plugin install` arrives with
-//! WP5.2); `doctor` reuses the detection and a best-effort check that the plugin is installed.
+//! plugin for each. `init` only **prints** the commands; `acs plugin install` runs them, for the
+//! harnesses it covers; `doctor` reuses the detection and a best-effort check that the plugin is
+//! installed.
 //!
 //! Sources: `docs/adapters/claude-code.md` section 10 and `docs/adapters/antigravity.md`
 //! section 5.
@@ -10,6 +11,9 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 
 use crate::commands::support::find_on_path;
+
+/// The ACS plugin's id in Claude Code: plugin `acs` of the marketplace `acs-plugins`.
+pub const CLAUDE_CODE_PLUGIN: &str = "acs@acs-plugins";
 
 /// A harness ACS has an adapter and a plugin for.
 #[derive(Debug, Clone, Copy)]
@@ -37,10 +41,7 @@ pub const HARNESSES: &[Harness] = &[
         name: "Claude Code",
         binaries: &["claude"],
         dirs: &[".claude"],
-        install: &[
-            "claude plugin marketplace add acs-hq/acs",
-            "claude plugin install acs@acs-plugins",
-        ],
+        install: &["acs plugin install claude-code"],
         without_acs: "its hooks fail open: Claude Code shows a hook error and the tool call \
                       runs unchecked",
         fails_closed: false,
@@ -148,7 +149,7 @@ fn claude_code_plugin_enabled(work_tree: &Path) -> bool {
             .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
             .and_then(|json| {
                 json.get("enabledPlugins")?
-                    .get("acs@acs-plugins")?
+                    .get(CLAUDE_CODE_PLUGIN)?
                     .as_bool()
             })
             == Some(true)

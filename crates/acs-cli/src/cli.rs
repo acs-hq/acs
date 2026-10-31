@@ -47,6 +47,8 @@ pub enum Command {
     Doctor(commands::doctor::DoctorArgs),
     /// Share claims with other machines through the git remote.
     Sync(commands::sync::SyncArgs),
+    /// Install the ACS plugin into an agent harness.
+    Plugin(commands::plugin::PluginArgs),
     /// Run the MCP server on stdio: the tools `acs_status`, `acs_claim`, `acs_release`,
     /// `acs_intent` and `acs_why` for agents.
     Mcp(McpArgs),
@@ -142,6 +144,7 @@ pub fn run(cli: Cli) -> ExitCode {
         Command::On(args) => commands::off::run_on(&args),
         Command::Doctor(args) => commands::doctor::run(&args),
         Command::Sync(args) => commands::sync::run(&args),
+        Command::Plugin(args) => commands::plugin::run(&args),
         Command::Mcp(args) => mcp::run(&args),
         Command::GitHook(args) => git_hook::run(&args),
     }
@@ -246,6 +249,7 @@ mod tests {
             vec!["doctor", "--fix", "--json"],
             vec!["sync", "--json"],
             vec!["sync", "--wait", "--json"],
+            vec!["plugin", "install", "claude-code", "--json"],
         ] {
             assert!(parse(&args).is_ok(), "{args:?}");
         }
@@ -256,6 +260,21 @@ mod tests {
         assert!(parse(&["claim"]).is_err());
         assert!(parse(&["release"]).is_err());
         assert!(parse(&["release", "--all", "a.txt"]).is_err());
+    }
+
+    #[test]
+    fn plugin_install_defaults_to_project_scope_and_the_acs_marketplace() {
+        use commands::plugin::{DEFAULT_MARKETPLACE, PluginCommand, Scope};
+        let cli = parse(&["plugin", "install", "claude-code"]).unwrap();
+        let Command::Plugin(args) = cli.command else {
+            unreachable!("not a plugin command")
+        };
+        let PluginCommand::Install(install) = args.command;
+        assert_eq!(install.harness, "claude-code");
+        assert_eq!(install.scope, Scope::Project);
+        assert_eq!(install.marketplace, DEFAULT_MARKETPLACE);
+        assert!(parse(&["plugin", "install"]).is_err());
+        assert!(parse(&["plugin", "install", "claude-code", "--scope", "nope"]).is_err());
     }
 
     #[test]

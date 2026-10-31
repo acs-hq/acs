@@ -235,7 +235,6 @@ pub fn age(now: Timestamp, at: Timestamp) -> String {
 /// The first executable called `name` on `PATH` (with the `PATHEXT` extensions on Windows).
 #[must_use]
 pub fn find_on_path(name: &str) -> Option<PathBuf> {
-    let path = std::env::var_os("PATH")?;
     let extensions: Vec<String> = if cfg!(windows) {
         let pathext = std::env::var("PATHEXT").unwrap_or_else(|_| ".EXE;.CMD;.BAT;.COM".to_owned());
         std::iter::once(String::new())
@@ -249,11 +248,29 @@ pub fn find_on_path(name: &str) -> Option<PathBuf> {
     } else {
         vec![String::new()]
     };
+    search_path(name, &extensions)
+}
+
+/// Like [`find_on_path`], for a program this process will start itself. On Windows only the
+/// extensions `CreateProcess` can run count: npm puts a POSIX shim called `claude` next to
+/// `claude.cmd`, and [`find_on_path`] would return the shim.
+#[must_use]
+pub fn find_spawnable_on_path(name: &str) -> Option<PathBuf> {
+    if cfg!(windows) {
+        let extensions = [".exe", ".cmd", ".bat", ".com"].map(str::to_owned);
+        search_path(name, &extensions)
+    } else {
+        find_on_path(name)
+    }
+}
+
+fn search_path(name: &str, extensions: &[String]) -> Option<PathBuf> {
+    let path = std::env::var_os("PATH")?;
     for dir in std::env::split_paths(&path) {
         if dir.as_os_str().is_empty() {
             continue;
         }
-        for ext in &extensions {
+        for ext in extensions {
             let candidate = dir.join(format!("{name}{ext}"));
             if is_executable_file(&candidate) {
                 return Some(candidate);
