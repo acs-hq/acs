@@ -8,17 +8,21 @@
 //! - [`hooks`]: installing the `pre-commit`, `prepare-commit-msg` and `pre-push` backstop hooks so
 //!   they chain with existing ones, and the reads those hooks need.
 //! - [`trailers`]: adding and reading commit-message trailers (`ACS-Session`).
+//! - [`refs`]: where shared state lives: the [`refs::SyncStorage`] interface, implemented over
+//!   `refs/acs/*` by [`refs::CustomRefs`]. All ref reads and writes go through it.
 //!
-//! Network access and signing arrive in later work packages and shell out to the
-//! user's `git`. Nothing here needs a git library: the hot-path reads are a few small files, and
-//! the one place that needs git's own logic (`.gitignore`, index comparison) runs `git`.
+//! Network access and signing shell out to the user's `git`. Nothing here needs a git library: the
+//! hot-path reads are a few small files, and the one place that needs git's own logic
+//! (`.gitignore`, index comparison) runs `git`.
 
 pub mod hooks;
+pub mod refs;
 pub mod repo;
 pub mod status;
 pub mod trailers;
 
 mod error;
+mod ledger;
 
 pub use error::GitError;
 pub use repo::{RepoLayout, discover};

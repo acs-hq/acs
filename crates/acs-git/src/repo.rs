@@ -115,6 +115,55 @@ pub fn has_remote(common_dir: &Path) -> bool {
     })
 }
 
+/// The names of the configured remotes (any remote with a `url`), sorted.
+///
+/// # Errors
+///
+/// [`GitError::Command`] when `git` cannot be run.
+pub fn remotes(work_tree: &Path) -> Result<Vec<String>, GitError> {
+    let output = git_command(work_tree)
+        .args([
+            "config",
+            "--name-only",
+            "--get-regexp",
+            r"^remote\..*\.url$",
+        ])
+        .stdin(Stdio::null())
+        .stderr(Stdio::null())
+        .output()
+        .map_err(|e| GitError::Command {
+            args: "config --get-regexp".to_owned(),
+            detail: e.to_string(),
+        })?;
+    // Exit status 1 means "no match": no remotes.
+    let mut names: Vec<String> = String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter_map(|key| {
+            key.strip_prefix("remote.")
+                .and_then(|rest| rest.strip_suffix(".url"))
+                .map(str::to_owned)
+        })
+        .collect();
+    names.sort();
+    names.dedup();
+    Ok(names)
+}
+
+/// The remote ACS syncs with: `origin` when it exists, otherwise the first remote by name.
+/// `None` when there is no remote, which is local-only mode.
+///
+/// # Errors
+///
+/// [`GitError::Command`] when `git` cannot be run.
+pub fn default_remote(work_tree: &Path) -> Result<Option<String>, GitError> {
+    let names = remotes(work_tree)?;
+    Ok(names
+        .iter()
+        .find(|name| *name == "origin")
+        .or_else(|| names.first())
+        .cloned())
+}
+
 /// The pilot's email: `git config user.email` in `work_tree`, trimmed. `None` when unset, empty
 /// or `git` cannot run. Starts a process: call it only when a seat is created.
 #[must_use]
@@ -197,11 +246,39 @@ pub fn index_blobs(
     paths: &[String],
     source: BlobSource,
 ) -> Result<Vec<Option<Vec<u8>>>, GitError> {
+    let names: Vec<String> = paths
+        .iter()
+        .map(|path| {
+            if path.contains('\n') {
+                // An unresolvable name gets a "missing" answer, which keeps the result aligned.
+                ":".to_owned()
+            } else {
+                match source {
+                    BlobSource::Index => format!(":{path}"),
+                    BlobSource::Head => format!("HEAD:{path}"),
+                }
+            }
+        })
+        .collect();
+    objects(work_tree, &names)
+}
+
+/// The blob each git object name (`<rev>:<path>`, `:<path>`) resolves to, via one
+/// `git cat-file --batch` process. A name that resolves to no blob, or to one larger than
+/// [`MAX_INDEX_BLOB`], yields `None`. Names must not contain newlines.
+///
+/// # Errors
+///
+/// [`GitError::Command`] when `git` cannot be run or its output cannot be read.
+pub(crate) fn objects(
+    work_tree: &Path,
+    names: &[String],
+) -> Result<Vec<Option<Vec<u8>>>, GitError> {
     let fail = |detail: String| GitError::Command {
         args: "cat-file --batch".to_owned(),
         detail,
     };
-    if paths.is_empty() {
+    if names.is_empty() {
         return Ok(Vec::new());
     }
     let mut child = git_command(work_tree)
@@ -211,27 +288,13 @@ pub fn index_blobs(
         .stderr(Stdio::null())
         .spawn()
         .map_err(|e| fail(e.to_string()))?;
-    let mut input = String::new();
-    for path in paths {
-        if path.contains('\n') {
-            // Keep the line count aligned: an unresolvable name gets a "missing" answer.
-            input.push_str(":\n");
-        } else {
-            input.push_str(match source {
-                BlobSource::Index => ":",
-                BlobSource::Head => "HEAD:",
-            });
-            input.push_str(path);
-            input.push('\n');
-        }
-    }
-    if let Some(mut stdin) = child.stdin.take() {
-        // The input is small (a few paths), far below a pipe buffer, so writing it all before
-        // reading cannot deadlock.
-        stdin
-            .write_all(input.as_bytes())
-            .map_err(|e| fail(e.to_string()))?;
-    }
+    let mut input = names.join("\n");
+    input.push('\n');
+    let writer = child.stdin.take().map(|mut stdin| {
+        // From a thread: a long list (a ledger chain) can outgrow the pipe buffers, and git stops
+        // reading its input while its output waits to be read.
+        std::thread::spawn(move || stdin.write_all(input.as_bytes()))
+    });
     let mut out = Vec::new();
     if let Some(mut stdout) = child.stdout.take() {
         stdout
@@ -239,7 +302,13 @@ pub fn index_blobs(
             .map_err(|e| fail(e.to_string()))?;
     }
     let _ = child.wait();
-    parse_batch(&out, paths.len()).map_err(fail)
+    if let Some(writer) = writer {
+        match writer.join() {
+            Ok(written) => written.map_err(|e| fail(e.to_string()))?,
+            Err(_) => return Err(fail("the writer thread panicked".to_owned())),
+        }
+    }
+    parse_batch(&out, names.len()).map_err(fail)
 }
 
 /// Parses `git cat-file --batch` output for `count` requests.

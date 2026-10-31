@@ -49,7 +49,11 @@ dependencies = [
 name = "acs-git"
 version = "0.0.0"
 dependencies = [
+ "acs-core",
+ "acs-store",
  "dunce",
+ "serde",
+ "serde_json",
  "tempfile",
  "thiserror",
 ]
