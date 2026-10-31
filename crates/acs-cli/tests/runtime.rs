@@ -276,8 +276,8 @@ fn the_remote_is_only_stale_once_sync_ran() {
         &world.git_config,
         &["remote", "add", "origin", "https://example.com/r.git"],
     );
+    // No session start here: it would start a real sync of this unreachable remote.
     let agent = Agent::new(&world, "claude-code", "s1");
-    agent.start();
     // A remote but no sync yet: local-only behavior, no stale warnings on claims.
     let d = agent.pre_edit("a.txt");
     assert_eq!(d.outcome, Outcome::Allow);

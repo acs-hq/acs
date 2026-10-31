@@ -9,7 +9,7 @@ use serde_json::json;
 use super::support::{
     CliError, OutputArgs, ellipsize_start, finish, human_seat, open_repo, print_json, wrap,
 };
-use crate::runtime::{OpError, release_paths};
+use crate::runtime::{OpError, release_paths, sync};
 
 /// Arguments of `acs release`.
 #[derive(Debug, Args)]
@@ -74,6 +74,10 @@ fn execute(args: &ReleaseArgs) -> Result<ExitCode, CliError> {
             report.outside,
         )
     };
+    if !released.is_empty() {
+        // No hook follows a command-line release, so nothing else would publish it.
+        sync::spawn_now(&ctx);
+    }
     let code = if outside.is_empty() { 0 } else { 1 };
     if args.output.json {
         print_json(&json!({

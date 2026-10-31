@@ -9,12 +9,14 @@
 //! - [`gate`] runs the decision engine against the current claims and acquires the claims.
 //! - [`ops`] holds the operations later work packages call: [`status`], [`claim_paths`],
 //!   [`release_paths`], [`set_intent`] and [`last_decision`].
+//! - [`sync`] starts detached syncs and holds the lock that keeps one running at a time.
 
 mod context;
 pub mod gate;
 mod ops;
 pub mod paths;
 pub mod seats;
+pub mod sync;
 
 pub use context::{OpenError, RepoContext};
 pub use ops::{

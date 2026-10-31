@@ -1,0 +1,423 @@
+//! Team sync through the `acs` binary: a bare remote, clones that do not share `ACS_HOME`, and
+//! simulated agents. No network.
+
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
+mod common;
+
+use std::fs;
+use std::io::Write;
+use std::path::PathBuf;
+use std::process::{Command, Output, Stdio};
+use std::time::{Duration, Instant};
+
+use acs_core::{Decision, Outcome, ReasonCode};
+use common::{acs_bin, git};
+use serde_json::{Value, json};
+use tempfile::TempDir;
+
+/// Longest wait for something a detached sync does. Generous: Windows runners are slow to start
+/// processes, and this is only reached when the test is going to fail anyway.
+const PATIENCE: Duration = Duration::from_secs(60);
+
+/// A remote with a committed policy syncing every five seconds. Not less: the view goes stale after
+/// three intervals, and a test that syncs and then edits on a busy machine must stay inside that.
+struct Team {
+    _tmp: TempDir,
+    base: PathBuf,
+    remote: PathBuf,
+}
+
+/// One clone, as on a machine of its own: its own `ACS_HOME` and its own git identity.
+struct Clone {
+    repo: PathBuf,
+    home: PathBuf,
+    git_config: PathBuf,
+}
+
+impl Team {
+    fn new() -> Self {
+        let tmp = tempfile::Builder::new()
+            .prefix("acs-sync-")
+            .tempdir()
+            .unwrap();
+        let base = dunce::canonicalize(tmp.path()).unwrap();
+        let config = base.join("seed-gitconfig");
+        fs::write(
+            &config,
+            "[user]\n\temail = seed@example.com\n\tname = Seed\n",
+        )
+        .unwrap();
+        let remote = base.join("remote.git");
+        fs::create_dir(&remote).unwrap();
+        git(
+            &remote,
+            &config,
+            &["init", "-q", "--bare", "-b", "main", "."],
+        );
+        let seed = base.join("seed");
+        fs::create_dir_all(seed.join(".acs/policy")).unwrap();
+        fs::create_dir_all(seed.join("src")).unwrap();
+        git(&seed, &config, &["init", "-q", "-b", "main", "."]);
+        fs::write(
+            seed.join(".acs/policy/config.toml"),
+            "spec = \"acs/0.1\"\nsync_interval_secs = 5\n",
+        )
+        .unwrap();
+        fs::write(seed.join("src/lib.rs"), "pub fn lib() {}\n").unwrap();
+        fs::write(seed.join("src/util.rs"), "pub fn util() {}\n").unwrap();
+        git(&seed, &config, &["add", "-A"]);
+        git(&seed, &config, &["commit", "-q", "-m", "init"]);
+        git(
+            &seed,
+            &config,
+            &["remote", "add", "origin", remote.to_str().unwrap()],
+        );
+        git(&seed, &config, &["push", "-q", "origin", "main"]);
+        Self {
+            _tmp: tmp,
+            base,
+            remote,
+        }
+    }
+
+    fn clone(&self, name: &str, email: &str) -> Clone {
+        let git_config = self.base.join(format!("{name}-gitconfig"));
+        fs::write(
+            &git_config,
+            format!("[user]\n\temail = {email}\n\tname = {name}\n"),
+        )
+        .unwrap();
+        let repo = self.base.join(name);
+        git(
+            &self.base,
+            &git_config,
+            &[
+                "clone",
+                "-q",
+                self.remote.to_str().unwrap(),
+                repo.to_str().unwrap(),
+            ],
+        );
+        Clone {
+            repo,
+            home: self.base.join(format!("{name}-home")),
+            git_config,
+        }
+    }
+}
+
+impl Clone {
+    fn command(&self, args: &[&str]) -> Command {
+        let mut command = Command::new(acs_bin());
+        command
+            .args(args)
+            .current_dir(&self.repo)
+            .env("ACS_HOME", &self.home)
+            .env("GIT_CONFIG_GLOBAL", &self.git_config)
+            .env("GIT_CONFIG_NOSYSTEM", "1");
+        command
+    }
+
+    fn acs(&self, args: &[&str]) -> Output {
+        self.command(args).stdin(Stdio::null()).output().unwrap()
+    }
+
+    /// `acs <args> --json`, which must succeed.
+    fn json(&self, args: &[&str]) -> Value {
+        let mut all = args.to_vec();
+        all.push("--json");
+        let out = self.acs(&all);
+        assert!(out.status.success(), "acs {args:?}: {out:?}");
+        serde_json::from_slice(&out.stdout).unwrap()
+    }
+
+    /// Sends one canonical event; `extra` is merged in.
+    fn hook(&self, phase: &str, session: &str, extra: Value) -> Decision {
+        let mut event = json!({
+            "spec": "acs/0.1",
+            "harness": "claude-code",
+            "harness_session_id": session,
+            "phase": phase,
+            "cwd": self.repo,
+        });
+        if let (Some(base), Value::Object(more)) = (event.as_object_mut(), extra) {
+            base.extend(more);
+        }
+        let mut child = self
+            .command(&["hook", "--canonical", phase])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(event.to_string().as_bytes())
+            .unwrap();
+        // `wait_with_output` reads to end of file: a sync child holding the hook's pipes would
+        // keep this waiting, as it would keep a harness.
+        let out = child.wait_with_output().unwrap();
+        assert!(out.status.success(), "{out:?}");
+        serde_json::from_slice(&out.stdout).unwrap()
+    }
+
+    fn edit(&self, session: &str, path: &str) -> Decision {
+        let tool = json!({"tool": {"name": "Edit", "kind": "edit"}, "paths": [path]});
+        self.hook("pre_tool", session, tool)
+    }
+
+    fn after_edit(&self, session: &str, path: &str) -> Decision {
+        let tool = json!({"tool": {"name": "Edit", "kind": "edit"}, "paths": [path]});
+        self.hook("post_tool", session, tool)
+    }
+
+    fn status(&self) -> Value {
+        self.json(&["status"])
+    }
+
+    /// Whether `acs status` lists a claim on `path` from another machine.
+    fn sees_remote_claim(&self, path: &str) -> bool {
+        let view = self.status();
+        let others = view["other_claims"].as_array().unwrap();
+        others
+            .iter()
+            .any(|c| c["path"] == path && c["source"] == "remote")
+    }
+
+    fn sync_attempts(&self) -> Value {
+        self.status()["remote"]["last_attempt_at"].clone()
+    }
+}
+
+/// Polls `done` until it holds.
+fn wait_for(what: &str, mut done: impl FnMut() -> bool) {
+    let started = Instant::now();
+    while !done() {
+        assert!(started.elapsed() < PATIENCE, "timed out: {what}");
+        std::thread::sleep(Duration::from_millis(100));
+    }
+}
+
+#[test]
+fn a_claim_in_one_clone_blocks_an_edit_in_another_after_one_sync_interval() {
+    let team = Team::new();
+    let sara = team.clone("sara", "sara@example.com");
+    let omar = team.clone("omar", "omar@example.com");
+    let lina = team.clone("lina", "lina@example.com");
+    for clone in [&sara, &omar, &lina] {
+        assert_eq!(clone.json(&["init"])["ok"], true);
+    }
+
+    // Sara's agent edits a file. Nobody ran `acs sync`: hooks start it, detached.
+    sara.hook("session_start", "s1", json!({}));
+    assert_eq!(sara.edit("s1", "src/lib.rs").outcome, Outcome::Allow);
+    sara.after_edit("s1", "src/lib.rs");
+    omar.hook("session_start", "o1", json!({}));
+    lina.hook("session_start", "l1", json!({}));
+
+    // Omar's next post-tool events pull the claim in within an interval or two. The edit waits
+    // for that: tried any earlier, it would be granted, as nothing says otherwise yet.
+    wait_for("the claim to reach omar", || {
+        sara.after_edit("s1", "src/lib.rs");
+        omar.after_edit("o1", "src/util.rs");
+        omar.sees_remote_claim("src/lib.rs")
+    });
+    let denied = omar.edit("o1", "src/lib.rs");
+    assert_eq!(denied.outcome, Outcome::Deny, "{denied:?}");
+    assert_eq!(denied.reason_code, ReasonCode::ClaimConflict);
+    assert!(denied.message.contains("sara@example.com"), "{denied:?}");
+
+    // A third clone is held back the same way, and free to work elsewhere.
+    assert_eq!(lina.json(&["sync"])["status"], "synced");
+    assert_eq!(lina.edit("l1", "src/lib.rs").outcome, Outcome::Deny);
+    assert_eq!(lina.edit("l1", "src/util.rs").outcome, Outcome::Allow);
+}
+
+#[test]
+fn ending_a_session_publishes_the_release_without_any_further_event() {
+    let team = Team::new();
+    let sara = team.clone("sara", "sara@example.com");
+    let omar = team.clone("omar", "omar@example.com");
+    assert_eq!(sara.edit("s1", "src/lib.rs").outcome, Outcome::Allow);
+    assert_eq!(sara.json(&["sync"])["report"]["refs_pushed"], 1);
+    omar.json(&["sync"]);
+    assert_eq!(omar.edit("o1", "src/lib.rs").outcome, Outcome::Deny);
+
+    sara.hook("session_end", "s1", json!({}));
+    wait_for("the release to reach omar", || {
+        omar.json(&["sync"]);
+        omar.edit("o1", "src/lib.rs").outcome == Outcome::Allow
+    });
+}
+
+#[test]
+fn a_command_line_claim_is_published_by_itself() {
+    let team = Team::new();
+    let sara = team.clone("sara", "sara@example.com");
+    let omar = team.clone("omar", "omar@example.com");
+    assert!(sara.acs(&["claim", "src/lib.rs"]).status.success());
+    wait_for("the human claim to reach omar", || {
+        omar.json(&["sync"]);
+        omar.sees_remote_claim("src/lib.rs")
+    });
+    let denied = omar.edit("o1", "src/lib.rs");
+    assert_eq!(denied.outcome, Outcome::Deny, "{denied:?}");
+    let view = omar.status();
+    assert_eq!(view["other_claims"][0]["origin"], "human");
+}
+
+#[test]
+fn claims_on_another_integration_branch_do_not_conflict() {
+    let team = Team::new();
+    let sara = team.clone("sara", "sara@example.com");
+    let omar = team.clone("omar", "omar@example.com");
+    fs::write(
+        omar.repo.join(".acs/policy/config.toml"),
+        "spec = \"acs/0.1\"\nsync_interval_secs = 5\ndefault_target_branch = \"develop\"\n",
+    )
+    .unwrap();
+    assert_eq!(sara.edit("s1", "src/lib.rs").outcome, Outcome::Allow);
+    sara.json(&["sync"]);
+    omar.json(&["sync"]);
+    assert_eq!(omar.edit("o1", "src/lib.rs").outcome, Outcome::Allow);
+}
+
+#[test]
+fn offline_and_unreachable_remotes_degrade_as_the_spec_says() {
+    let team = Team::new();
+    let sara = team.clone("sara", "sara@example.com");
+
+    // No remote at all: local-only, not an error.
+    git(
+        &sara.repo,
+        &sara.git_config,
+        &["remote", "remove", "origin"],
+    );
+    assert_eq!(sara.json(&["sync"])["status"], "local_only");
+    assert_eq!(sara.status()["remote"]["sync_ran"], false);
+
+    // A remote that cannot be reached: a failure that says so, and local claims still hold.
+    let gone = team.base.join("gone.git");
+    git(
+        &sara.repo,
+        &sara.git_config,
+        &["remote", "add", "origin", gone.to_str().unwrap()],
+    );
+    let out = sara.acs(&["sync"]);
+    assert_eq!(out.status.code(), Some(1), "{out:?}");
+    let text = String::from_utf8_lossy(&out.stderr);
+    assert!(text.contains("still enforced"), "{text}");
+    let view = sara.status();
+    assert_eq!(view["remote"]["stale"], true, "{view}");
+    assert!(view["remote"]["last_error"].is_string(), "{view}");
+
+    let first = sara.edit("s1", "src/lib.rs");
+    assert_eq!(first.outcome, Outcome::Allow, "stale remotes fail open");
+    assert!(
+        first.warnings.iter().any(|w| w.contains("out of date")),
+        "{first:?}"
+    );
+    assert_eq!(sara.edit("s2", "src/lib.rs").outcome, Outcome::Deny);
+}
+
+#[test]
+fn a_sync_needs_neither_init_nor_a_quiet_moment() {
+    let team = Team::new();
+    let sara = team.clone("sara", "sara@example.com");
+    assert_eq!(sara.edit("s1", "src/lib.rs").outcome, Outcome::Allow);
+
+    // Never ran `acs init`, so the refspec is not configured; the claim gets out anyway.
+    let report = sara.json(&["sync"]);
+    assert_eq!(report["remote"], "origin");
+    assert_eq!(report["report"]["documents_published"], 1);
+    let text = String::from_utf8_lossy(&sara.acs(&["sync"]).stdout).into_owned();
+    assert!(text.contains("Synced with `origin`"), "{text}");
+    assert!(text.lines().all(|l| l.chars().count() <= 80), "{text}");
+
+    // While the lock is held, a sync steps aside.
+    let ctx =
+        acs_cli::runtime::RepoContext::open_with(&sara.repo, acs_store::AcsHome::at(&sara.home))
+            .unwrap();
+    let lock = acs_cli::runtime::sync::lock(&ctx, false).unwrap().unwrap();
+    assert_eq!(sara.json(&["sync"])["status"], "already_running");
+    assert!(acs_cli::runtime::sync::lock(&ctx, false).unwrap().is_none());
+    drop(lock);
+    assert_eq!(sara.json(&["sync"])["status"], "synced");
+}
+
+#[test]
+fn post_tool_only_syncs_once_the_interval_has_passed() {
+    let team = Team::new();
+    let sara = team.clone("sara", "sara@example.com");
+    fs::write(
+        sara.repo.join(".acs/policy/config.toml"),
+        "spec = \"acs/0.1\"\nsync_interval_secs = 3600\n",
+    )
+    .unwrap();
+    assert_eq!(sara.edit("s1", "src/lib.rs").outcome, Outcome::Allow);
+    // The first event has no attempt to be measured from, so it starts one...
+    sara.after_edit("s1", "src/lib.rs");
+    let mut first = Value::Null;
+    wait_for("the first sync", || {
+        first = sara.sync_attempts();
+        first.is_string()
+    });
+    // ...and later ones within the hour leave it alone. A sync started here would finish well
+    // within this wait.
+    sara.after_edit("s1", "src/lib.rs");
+    std::thread::sleep(Duration::from_secs(2));
+    assert_eq!(sara.sync_attempts(), first);
+}
+
+#[test]
+fn hooks_publish_nothing_from_a_repository_that_never_adopted_acs() {
+    let team = Team::new();
+    let sara = team.clone("sara", "sara@example.com");
+    fs::remove_dir_all(sara.repo.join(".acs")).unwrap();
+
+    sara.hook("session_start", "s1", json!({}));
+    assert_eq!(sara.edit("s1", "src/lib.rs").outcome, Outcome::Allow);
+    sara.after_edit("s1", "src/lib.rs");
+    sara.hook("session_end", "s1", json!({}));
+    assert!(sara.acs(&["claim", "src/util.rs"]).status.success());
+
+    std::thread::sleep(Duration::from_secs(2));
+    assert_eq!(sara.status()["remote"]["sync_ran"], false);
+    let refs = Command::new("git")
+        .arg("-C")
+        .arg(&team.remote)
+        .args(["for-each-ref", "refs/acs"])
+        .output()
+        .unwrap();
+    assert!(refs.stdout.is_empty(), "{refs:?}");
+
+    // Typing the command is an explicit choice, and works.
+    assert_eq!(sara.json(&["sync"])["report"]["documents_published"], 1);
+}
+
+/// A remote that hangs for five seconds on every connection, reached through a fake ssh.
+#[test]
+fn a_hook_does_not_wait_for_the_sync_it_starts() {
+    let team = Team::new();
+    let sara = team.clone("sara", "sara@example.com");
+    git(
+        &sara.repo,
+        &sara.git_config,
+        &["remote", "set-url", "origin", "ssh://example.invalid/r.git"],
+    );
+    git(
+        &sara.repo,
+        &sara.git_config,
+        &["config", "core.sshCommand", "sleep 5; false"],
+    );
+    let started = Instant::now();
+    sara.hook("session_start", "s1", json!({}));
+    assert!(
+        started.elapsed() < Duration::from_secs(4),
+        "the hook took {:?}",
+        started.elapsed()
+    );
+}

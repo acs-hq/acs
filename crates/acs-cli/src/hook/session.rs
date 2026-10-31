@@ -4,7 +4,7 @@ use acs_core::{Decision, Outcome, ReasonCode, Timestamp, ToolEvent};
 use acs_store::NewEvent;
 
 use super::markers;
-use crate::runtime::{RepoContext, seats, status};
+use crate::runtime::{RepoContext, seats, status, sync};
 
 fn allow() -> Decision {
     Decision::new(Outcome::Allow, ReasonCode::Ok, "")
@@ -50,6 +50,9 @@ pub fn start(ctx: &RepoContext, event: &ToolEvent, now: Timestamp) -> Decision {
         outcome: None,
         detail: None,
     });
+    // After idle time the remote view is stale; refresh it before the first edit rather than
+    // after it. Harnesses without session events get this from their first post-tool event.
+    sync::spawn_if_due(ctx, db, now);
     decision
 }
 
@@ -99,5 +102,8 @@ pub fn end(ctx: &RepoContext, event: &ToolEvent, now: Timestamp) -> Decision {
     });
     let _ = db.end_seat(&info.seat.seat_id, now);
     markers::clear_tool_marker(ctx, &info.seat.seat_id);
+    // The claims just released would otherwise block other machines until their TTL: there may
+    // be no further event here to carry the news.
+    sync::spawn_now(ctx);
     decision
 }

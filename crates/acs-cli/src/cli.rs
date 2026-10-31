@@ -45,6 +45,8 @@ pub enum Command {
     On(commands::off::OnArgs),
     /// Check the installation and repair what can be repaired.
     Doctor(commands::doctor::DoctorArgs),
+    /// Share claims with other machines through the git remote.
+    Sync(commands::sync::SyncArgs),
     /// Run the MCP server on stdio: the tools `acs_status`, `acs_claim`, `acs_release`,
     /// `acs_intent` and `acs_why` for agents.
     Mcp(McpArgs),
@@ -139,6 +141,7 @@ pub fn run(cli: Cli) -> ExitCode {
         Command::Off(args) => commands::off::run_off(&args),
         Command::On(args) => commands::off::run_on(&args),
         Command::Doctor(args) => commands::doctor::run(&args),
+        Command::Sync(args) => commands::sync::run(&args),
         Command::Mcp(args) => mcp::run(&args),
         Command::GitHook(args) => git_hook::run(&args),
     }
@@ -241,6 +244,8 @@ mod tests {
             vec!["off", "--json"],
             vec!["on", "--json"],
             vec!["doctor", "--fix", "--json"],
+            vec!["sync", "--json"],
+            vec!["sync", "--wait", "--json"],
         ] {
             assert!(parse(&args).is_ok(), "{args:?}");
         }
