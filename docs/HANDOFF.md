@@ -10,11 +10,16 @@ human must be reminded. Check its triggers before starting any WP.
 
 ## 1. Where things stand
 
-- `main` has Phase 0, Phase 1, **Phase 2 (WP2.1–WP2.6)** and **Phase 3 (WP3.1)**. The next step
-  in the plan's work order (section 8.2) is WP5.2, Claude Code only.
-- Fmt, clippy `-D warnings` and the workspace tests pass locally on Windows for Phase 3. Check
-  that CI has run on Linux and macOS: the detached spawn has a Unix path of its own, and it has
-  never been run.
+- `main` has Phase 0, Phase 1, **Phase 2 (WP2.1–WP2.6)** and **Phase 3 (WP3.1)**, including the
+  rule that the first of two machines' claims keeps the file. Fmt, clippy `-D warnings` and the
+  workspace tests pass locally on Windows (523 passed, 3 ignored), and the human reported CI green
+  at `a0baf6f` (2026-10-31).
+- **What comes next** (plan section 8.2): WP5.2, Claude Code only; then WP5.1, Claude Code only,
+  with the M1 parts of WP10.1 and WP10.2; then release M1. Only after M1 does this repo start
+  dogfooding, and the human runs `acs init` here (see section 2).
+- The implementation plan is not in the repository. Its current copy is
+  `C:\Users\omara\Downloads\ACS — Implementation Plan Updated.md`; `docs/phase2-rules.md` still
+  names an old path.
 - **Frozen contracts:** `spec/SPEC.md` (draft 0.1), `spec/schemas/` (drift test), `crates/acs-core`
   public types and `gate.rs`, and the Phase 2 cross-WP interfaces in decision **0011** (crate roles,
   CLI surface, markers, MCP seat binding). Only the orchestrator changes them.
@@ -97,6 +102,29 @@ New in Phase 2:
    (see `path_without_acs` in `crates/acs-git/tests/hooks.rs`). Reproduce on Linux with
    `PATH=$PWD/target/debug:$PATH cargo test`.
 
+New in Phase 3:
+
+1. **The human's standing rules.** Subagents, if used, run on Sonnet. Finish work on a branch and
+   merge it into `main` as several commits, not one; the human does the pushing. `acs init` may run
+   in temp and test folders, never in the root of this repository: when that is needed, tell the
+   human. Do not start the next WP until asked.
+2. **Development now runs on the human's Windows machine, under Avast.** If the antivirus blocks
+   anything, stop and tell the human; do not look for a way around it. Stay in the repository's own
+   `target/`: a fresh `CARGO_TARGET_DIR` under `AppData\Local\Temp` got `build-script-build.exe`
+   blocked and `query-cache.bin` quarantined (`BV:Downloader-BTG`), while builds in `target/` were
+   left alone. That also rules out building in a worktree with its own target directory, so the
+   subagent workflow above needs thought before it is reused here. No Avast exception is set.
+3. **CI is out of reach from a session here.** `gh` is not installed and the repository is private,
+   so the public API answers 404. Ask the human for the result.
+4. **Stopping a background script does not stop what it started on Windows.** Stopping the task left
+   its bash loop running, and the loop moved on to the next build. Check with `Get-CimInstance
+   Win32_Process`, then stop the script before its `cargo`.
+5. **Sync tests.** The remote view goes stale after three intervals, so an interval of 1 second gave
+   a 3 second window that a busy machine overran; `crates/acs-cli/tests/sync.rs` uses 5. A test that
+   polls with an edit claims the file the moment the edit is allowed, so poll `acs status` and try
+   the edit once. Hooks now start a real sync where a repository has a remote and `.acs/policy/`, so
+   a test with an unreachable remote should not send session start or post-tool events.
+
 ## 3. Must-know items for the next phases
 
 **Any code that starts a detached process** — `Stdio::null()` is not enough on Windows, where a
@@ -162,8 +190,6 @@ cannot seal (file tools get `path_escapes_repo` ask; shell writes are uncovered)
 - Team sync: `acs doctor` does not check sync yet. Claims taken on two machines inside one sync
   window are settled by the first claim keeping the file (SPEC section 6, decision 0020), but edits
   made before either machine has fetched are only caught at commit time.
-- `acs-cli` could not be type-checked for Windows locally (C dependencies need mingw); Windows CI
-  is the check.
 
 ## 4. Candidate contract changes (decide before the WP that needs them)
 
@@ -181,6 +207,8 @@ cannot seal (file tools get `path_escapes_repo` ask; shell writes are uncovered)
   network settings (Allowed domains) so a session can verify the adapter against the official
   docs; run the Antigravity manual checklist (`docs/adapters/antigravity.md`) on a machine with
   Antigravity installed and record results in `docs/releases/`.
+- After M1: run `acs init` in this repository to start dogfooding. Agents then cannot edit
+  `.acs/**`, `.github/workflows/**` or the Claude settings files, so those changes fall to the human.
 - Still open from Phase 1: branch protection on `main`; CODEOWNERS for `.acs/policy/` and `spec/`;
   the `acs` name check (crates.io, npm, Homebrew); the home for the setup skill; governance. The
   release workflow has never run. The GitHub default branch is already `main` (checked
