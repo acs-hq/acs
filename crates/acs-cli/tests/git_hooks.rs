@@ -284,10 +284,9 @@ fn a_human_commit_of_a_file_claimed_in_another_worktree_is_rejected() {
     assert!(there.status.success(), "{}", stderr(&there));
 }
 
-#[test]
-fn a_human_commit_of_a_file_claimed_on_another_machine_is_rejected() {
-    let world = world_with_hooks();
-    // A remote claim as the sync of WP3.1 will store it, with a fresh fetch.
+/// A claim on `src/util.rs` held on another machine since `acquired_at`, as a sync stores it, with
+/// a fresh fetch.
+fn claim_on_another_machine(world: &World, acquired_at: Timestamp) {
     let db = world.db();
     let now = Timestamp::now();
     let claim = Claim {
@@ -298,15 +297,45 @@ fn a_human_commit_of_a_file_claimed_on_another_machine_is_rejected() {
             file: RepoPath::try_from("src/util.rs".to_owned()).unwrap(),
         },
         target_branch: "main".into(),
-        acquired_at: now,
-        heartbeat_at: now,
+        acquired_at,
+        heartbeat_at: acquired_at,
         ttl_secs: 900,
         origin: ClaimOrigin::Agent,
     };
     db.replace_remote_claims("0de61b1110462435", &[claim], now)
         .unwrap();
     db.record_sync_success(now).unwrap();
-    drop(db);
+}
+
+#[test]
+fn a_commit_keeps_a_file_only_if_its_claim_came_before_the_other_machines() {
+    let world = world_with_hooks();
+    let agent = Agent::new(&world, "claude-code", "c1");
+    assert_eq!(
+        agent.pre_edit("src/util.rs").outcome,
+        acs_core::Outcome::Allow
+    );
+
+    // The other machine claimed the file after this one: the gate lets this seat go on, and the
+    // commit must not stop it.
+    claim_on_another_machine(&world, Timestamp::now());
+    stage(&world, "src/util.rs", "pub fn util2() {}\n");
+    let out = git(&world, &world.repo, &["commit", "-q", "-m", "x"]);
+    assert!(out.status.success(), "{}", stderr(&out));
+
+    // Had it claimed the file first, the commit would be the one stopped.
+    let earlier = Timestamp::from_second(Timestamp::now().as_second() - 600).unwrap();
+    claim_on_another_machine(&world, earlier);
+    stage(&world, "src/util.rs", "pub fn util3() {}\n");
+    let out = git(&world, &world.repo, &["commit", "-q", "-m", "y"]);
+    assert!(!out.status.success());
+    assert!(stderr(&out).contains("is claimed by omar@example.com"));
+}
+
+#[test]
+fn a_human_commit_of_a_file_claimed_on_another_machine_is_rejected() {
+    let world = world_with_hooks();
+    claim_on_another_machine(&world, Timestamp::now());
 
     stage(&world, "src/util.rs", "pub fn util2() {}\n");
     let out = git(&world, &world.repo, &["commit", "-q", "-m", "x"]);

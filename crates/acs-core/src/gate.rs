@@ -309,9 +309,9 @@ pub struct ClaimRequest {
     pub origin: ClaimOrigin,
 }
 
-/// Whether `existing` blocks `seat` from claiming `scope` on `target_branch` at `now`
-/// (spec section 6, claim rules). The single implementation of the rule: the engine and the
-/// store MUST both use it.
+/// Whether `existing` conflicts with `seat` claiming `scope` on `target_branch` at `now`
+/// (spec section 6, claim rules). The engine and the store decide with [`blocking_claims`], which
+/// adds what happens when two machines hold the same scope.
 ///
 /// It conflicts when all hold: the scopes overlap; the holder is a different seat (the same
 /// pilot's other seats count as different); the target branches are equal; the claim is not
@@ -331,6 +331,44 @@ pub fn claim_conflicts(
         && claim.target_branch == target_branch
         && !claim.is_expired(now)
         && (existing.source == ClaimSource::Local || !remote_stale)
+}
+
+/// Whether `existing`, held on another machine, gives way to `own`, held on this one (spec section
+/// 6, simultaneous claims). Each machine can grant a claim before it has heard of the other's, and
+/// the two then compare the same pair of claims: the one that comes first keeps the scope.
+#[must_use]
+pub fn gives_way(existing: &HeldClaim, own: &HeldClaim, now: Timestamp) -> bool {
+    existing.source == ClaimSource::Remote
+        && own.source == ClaimSource::Local
+        && own.claim.scope.overlaps(&existing.claim.scope)
+        && own.claim.target_branch == existing.claim.target_branch
+        && !own.claim.is_expired(now)
+        && own.claim.precedes(&existing.claim)
+}
+
+/// The claims in `claims` that stop `seat` from claiming `scope` on `target_branch` at `now`. An
+/// empty result means it may. The single implementation of the spec section 6 rules: the engine
+/// and the store MUST both use it, and `claims` must hold the seat's own claims on the file.
+#[must_use]
+pub fn blocking_claims<'a>(
+    claims: &'a [HeldClaim],
+    seat: &SeatId,
+    scope: &ClaimScope,
+    target_branch: &str,
+    now: Timestamp,
+    remote_stale: bool,
+) -> Vec<&'a HeldClaim> {
+    let own = claims.iter().find(|held| {
+        held.source == ClaimSource::Local
+            && &held.claim.seat_id == seat
+            && &held.claim.scope == scope
+            && held.claim.target_branch == target_branch
+    });
+    claims
+        .iter()
+        .filter(|held| claim_conflicts(held, seat, scope, target_branch, now, remote_stale))
+        .filter(|held| !own.is_some_and(|own| gives_way(held, own, now)))
+        .collect()
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -485,6 +523,92 @@ mod tests {
         assert!(
             !claim_conflicts(&own, &me, &a, "main", soon, false),
             "own seat"
+        );
+    }
+
+    /// `seat`'s claim on `a.rs`, taken `after` seconds past the base time of [`held`].
+    fn timed(seat: &str, id: &str, after: i64, source: ClaimSource) -> HeldClaim {
+        let mut claim = held(seat, file("a.rs"), "main", source);
+        claim.claim.claim_id = id.parse().unwrap();
+        let start = claim.claim.acquired_at.as_second();
+        claim.claim.acquired_at = Timestamp::from_second(start + after).unwrap();
+        claim.claim.heartbeat_at = claim.claim.acquired_at;
+        claim
+    }
+
+    fn blocked(view: &[HeldClaim], seat: &str, now: Timestamp, stale: bool) -> bool {
+        let seat: SeatId = seat.parse().unwrap();
+        !blocking_claims(view, &seat, &file("a.rs"), "main", now, stale).is_empty()
+    }
+
+    #[test]
+    fn of_two_machines_holding_one_file_exactly_one_gives_way() {
+        use ClaimSource::{Local, Remote};
+        let now: Timestamp = "2026-10-29T12:05:00Z".parse().unwrap();
+        for (a_after, b_after) in [(0, 0), (0, 1), (1, 0)] {
+            for (a_id, b_id) in [("clm_a", "clm_b"), ("clm_b", "clm_a")] {
+                let a_view = [
+                    timed("seat_a", a_id, a_after, Local),
+                    timed("seat_b", b_id, b_after, Remote),
+                ];
+                let b_view = [
+                    timed("seat_b", b_id, b_after, Local),
+                    timed("seat_a", a_id, a_after, Remote),
+                ];
+                let a_blocked = blocked(&a_view, "seat_a", now, false);
+                let b_blocked = blocked(&b_view, "seat_b", now, false);
+                assert_ne!(a_blocked, b_blocked, "{a_after} {b_after} {a_id} {b_id}");
+                assert_eq!(
+                    a_blocked,
+                    (b_after, b_id) < (a_after, a_id),
+                    "the earlier claim keeps the file: {a_after} {b_after} {a_id} {b_id}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn only_a_live_earlier_claim_on_this_machine_outranks_a_claim() {
+        use ClaimSource::{Local, Remote};
+        let now: Timestamp = "2026-10-29T12:05:00Z".parse().unwrap();
+        let earlier = timed("seat_me", "clm_a", 0, Local);
+        let later = timed("seat_far", "clm_b", 60, Remote);
+
+        assert!(!blocked(
+            &[earlier.clone(), later.clone()],
+            "seat_me",
+            now,
+            false
+        ));
+        assert!(
+            blocked(std::slice::from_ref(&later), "seat_me", now, false),
+            "holding nothing"
+        );
+        assert!(
+            blocked(&[earlier.clone(), later.clone()], "seat_other", now, false),
+            "a third seat is blocked either way"
+        );
+
+        let mut same_machine = later.clone();
+        same_machine.source = Local;
+        assert!(
+            blocked(&[earlier.clone(), same_machine], "seat_me", now, false),
+            "one machine never needs the tie-break: its claims are atomic"
+        );
+
+        let mut other_branch = earlier.clone();
+        other_branch.claim.target_branch = "experiment".into();
+        assert!(blocked(
+            &[other_branch, later.clone()],
+            "seat_me",
+            now,
+            false
+        ));
+
+        let past_ttl: Timestamp = "2026-10-29T12:15:10Z".parse().unwrap();
+        assert!(
+            blocked(&[earlier, later], "seat_me", past_ttl, false),
+            "an expired claim of ours outranks nothing"
         );
     }
 

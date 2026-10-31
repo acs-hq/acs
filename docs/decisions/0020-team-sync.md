@@ -88,6 +88,25 @@ the lockfile through other dependencies.
 
 Remove `acs-os` once `inherit_handles` is stable.
 
+### Claims taken on two machines inside one sync window
+
+There is no global atomicity without a server, so both seats can be granted one file. As first
+built, each was then denied once it had fetched the other's claim, and neither could edit the file
+until one let go. That is safe, but it is a standstill.
+
+The first claim now keeps the file: the earlier `acquired_at`, then the lower `claim_id`. This
+amends the claim rules (SPEC section 6, `gate::blocking_claims`, which the engine and the store both
+call; `claim_conflicts` is unchanged). Choices worth recording:
+
+- Only those two fields are compared, because both machines hold them and nothing else is shared.
+  Clock skew can change who wins, but the two machines always agree.
+- It only applies to a claim the seat already holds, and only against a remote claim. A seat holding
+  nothing is denied as before, and one machine's claims are atomic, so they never need it.
+- The later claim is not revoked. Its seat is denied until the first claim ends and then holds the
+  file, with no new step and no notice.
+- The check at commit time applies the same rule (`gate::gives_way`). Otherwise the seat the gate
+  lets go on would be refused at `git commit`.
+
 ## Checks
 
 **GitHub accepts `refs/acs/*`** (2026-10-31, `github.com/acs-hq/acs`, git 2.45.2 over HTTPS, a
@@ -102,14 +121,8 @@ started only by hooks.
 
 ## Consequences
 
-- **Known gap: claims taken on two machines inside one sync window.** There is no global atomicity
-  without a server, so both seats can be granted the same file. Once each has fetched the other's
-  claim, each is denied and neither can edit the file until one lets go. That is safe, and it is
-  visible in `acs status`, but it is a standstill. Letting the earlier `acquired_at` keep the file
-  would end it, and it changes claim rule 4, so it is listed as a candidate contract change in the
-  handoff rather than made here.
-- Edits made inside that window, before either side has fetched, are not prevented: the view is
-  only as fresh as the last sync. The git backstop catches them at commit time.
+- Edits made inside one sync window, before either side has fetched, are not prevented: the view
+  is only as fresh as the last sync. The git backstop catches them at commit time.
 - `acs doctor` does not check sync yet.
 - Two machines force-pushing one pilot's claims at the same moment can lose one update until that
   machine's next sync republishes it.
