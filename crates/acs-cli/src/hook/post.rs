@@ -15,7 +15,7 @@ use acs_store::{Attribution, AttributionSource, NewEvent, SeatInfo, StateDb};
 use super::markers::{self, ScanBaseline, ToolMarker};
 use super::snapshots::{Observed, observe, record_baselines};
 use crate::runtime::paths::{NormalizeOptions, normalize, parent_dir};
-use crate::runtime::{RepoContext, seats};
+use crate::runtime::{RepoContext, seats, sync};
 
 /// How many of the seat's claimed files (and their directories) join a scoped scan.
 const MAX_CLAIMED_SCOPE: usize = 200;
@@ -71,7 +71,7 @@ pub fn run(ctx: &RepoContext, event: &ToolEvent, now: Timestamp, scan: &ScanOpti
         outcome: None,
         detail: None,
     });
-    maybe_spawn_sync(ctx, db, now);
+    sync::spawn_if_due(ctx, db, now);
     allow
 }
 
@@ -199,12 +199,3 @@ fn empty_report() -> acs_git::status::ScanReport {
         truncated: false,
     }
 }
-
-/// SEAM (WP3.1): spawn a detached `acs sync` here when `sync_interval_secs` has elapsed since
-/// the last attempt (`StateDb::remote_sync_status`) and a remote exists, guarded by a lock file.
-///
-/// WP3.1 must redirect the child's stdin, stdout and stderr to null (`Stdio::null()`): a child
-/// that inherits the hook's pipes makes Claude Code, and other harnesses that read the hook's
-/// output until EOF, wait for it to finish. It must also not be waited on. Not implemented
-/// here on purpose.
-fn maybe_spawn_sync(_ctx: &RepoContext, _db: &StateDb, _now: Timestamp) {}

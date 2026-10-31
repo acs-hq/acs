@@ -30,7 +30,7 @@ pub struct RemoteReport {
 /// The refspec for `remote`.
 #[must_use]
 pub fn refspec(remote: &str) -> String {
-    format!("+refs/acs/*:refs/remotes/{remote}/acs/*")
+    acs_git::refs::fetch_refspec(remote)
 }
 
 fn git(work_tree: &Path) -> Command {
@@ -55,28 +55,7 @@ fn git(work_tree: &Path) -> Command {
 ///
 /// A message when `git` cannot be run.
 pub fn list(work_tree: &Path) -> Result<Vec<String>, String> {
-    let output = git(work_tree)
-        .args([
-            "config",
-            "--name-only",
-            "--get-regexp",
-            r"^remote\..*\.url$",
-        ])
-        .stderr(Stdio::null())
-        .output()
-        .map_err(|err| format!("cannot run git: {err}"))?;
-    // Exit status 1 means "no match": no remotes.
-    let mut names: Vec<String> = String::from_utf8_lossy(&output.stdout)
-        .lines()
-        .filter_map(|key| {
-            key.strip_prefix("remote.")
-                .and_then(|rest| rest.strip_suffix(".url"))
-                .map(str::to_owned)
-        })
-        .collect();
-    names.sort();
-    names.dedup();
-    Ok(names)
+    acs_git::repo::remotes(work_tree).map_err(|err| format!("cannot run git: {err}"))
 }
 
 /// Makes sure `remote.<name>.fetch` holds the ACS refspec; adds it with `git config --add` only

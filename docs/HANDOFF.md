@@ -1,37 +1,42 @@
-# Orchestrator handoff (after Phase 2)
+# Orchestrator handoff (after Phase 3)
 
-Written 2026-10-30 at the end of the session that built Phase 2. It replaces the handoff written
-after Phase 1; that version is in git history (`git show 49c2cf0:docs/HANDOFF.md`) and its process
-lessons still apply (summarized in section 2). Read this with the implementation plan and
-`docs/decisions/` before starting the next phase.
+Written 2026-10-30 at the end of the session that built Phase 2, and updated 2026-10-31 after
+Phase 3 (WP3.1). It replaces the handoff written after Phase 1; that version is in git history
+(`git show 49c2cf0:docs/HANDOFF.md`) and its process lessons still apply (summarized in section 2).
+Read this with the implementation plan and `docs/decisions/` before starting the next phase.
 
 **Antigravity and GitLab are deferred (2026-10-31).** Section 6 says what changed and when the
 human must be reminded. Check its triggers before starting any WP.
 
 ## 1. Where things stand
 
-- `main` has Phase 0, Phase 1 and **Phase 2 (WP2.1–WP2.6)**. Fmt, clippy `-D warnings`, the
-  workspace tests (Linux, macOS, Windows) and cargo-deny pass in CI.
+- `main` has Phase 0, Phase 1, **Phase 2 (WP2.1–WP2.6)** and **Phase 3 (WP3.1)**. The next step
+  in the plan's work order (section 8.2) is WP5.2, Claude Code only.
+- Fmt, clippy `-D warnings` and the workspace tests pass locally on Windows for Phase 3. Check
+  that CI has run on Linux and macOS: the detached spawn has a Unix path of its own, and it has
+  never been run.
 - **Frozen contracts:** `spec/SPEC.md` (draft 0.1), `spec/schemas/` (drift test), `crates/acs-core`
   public types and `gate.rs`, and the Phase 2 cross-WP interfaces in decision **0011** (crate roles,
   CLI surface, markers, MCP seat binding). Only the orchestrator changes them.
 - Phase 2 decision records: **0011** architecture (orchestrator), **0012** hook pipeline, **0013**
   Claude Code adapter, **0014** Antigravity adapter, **0015** git backstop, **0016** MCP server,
   **0017** harness paths in the default sealed list (orchestrator, with an amendment for
-  `.husky/**`), **0018** CLI.
+  `.husky/**`), **0018** CLI. Phase 3: **0020** team sync, including the GitHub push check and the
+  `acs-os` exception to `unsafe_code = forbid`.
 - Shared rules handed to every Phase 2 subagent: `docs/phase2-rules.md` (reuse it for Phase 3+,
   updating the reading list and decision numbers).
 
 | Crate | WP | Entry points |
 | --- | --- | --- |
 | acs-adapters | 2.1–2.3 | `Adapter` trait, `by_name`, `canonical`, `claude_code::ClaudeCode`, `antigravity::Antigravity` |
-| acs-git | 2.1, 2.4 | `repo::discover`, `status::scan_changes`, `hooks::{install, uninstall, status}`, `trailers` |
+| acs-git | 2.1, 2.4, 3.1 | `repo::discover`, `status::scan_changes`, `hooks::{install, uninstall, status}`, `trailers`, `refs::{SyncStorage, CustomRefs}`, `sync::run` |
 | acs-store | 2.1 adds | migration 0003: `SeatInfo` (session id, intent), last decision, flags (`gate_off`), attributions, `stale_live_seats` |
 | acs-mcp | 2.6 | `Backend` trait, `serve_stdio` (rmcp 3.8, the only async runtime in the binary) |
-| acs-cli | 2.1, 2.4–2.6 | `runtime` (`RepoContext`, seats, `status`/`claim_paths`/`release_paths`/`set_intent`/`last_decision`), `hook`, `cli`, `commands/{init,status,claim,release,off,doctor,git_hook,mcp}` |
+| acs-cli | 2.1, 2.4–2.6, 3.1 | `runtime` (`RepoContext`, seats, `status`/`claim_paths`/`release_paths`/`set_intent`/`last_decision`, `sync::{lock, spawn_if_due, spawn_now}`), `hook`, `cli`, `commands/{init,status,claim,release,off,doctor,git_hook,mcp,sync}` |
+| acs-os | 3.1 | `keep_stdio_from_children`; the only crate allowed `unsafe`, one Windows call (decision 0020) |
 
 Commands: `acs hook --canonical <phase>`, `acs hook <claude-code|antigravity|canonical>`,
-`acs mcp [--harness]`, `acs git-hook <name>`, `acs init|status|claim|release|off|on|doctor`
+`acs mcp [--harness]`, `acs git-hook <name>`, `acs init|status|claim|release|off|on|doctor|sync`
 (each with `--json`).
 
 Integrations: `integrations/claude-code/` (plugin `acs`, marketplace `acs-plugins` in the root
@@ -94,19 +99,23 @@ New in Phase 2:
 
 ## 3. Must-know items for the next phases
 
-**WP3.1 (sync)** — the seam is `hook::post::maybe_spawn_sync`; the child **must** get null
-stdin/stdout/stderr and must not be waited on (an inherited pipe makes Claude Code block).
-`remote_stale` is forced false until a remote exists *and* a sync was attempted
-(`record_sync_success`/`record_sync_failure`; staleness keys off `last_attempt_at`). Reuse
-`commands::init::remotes` for refspecs; `acs status` already renders `RemoteView` (stale, last
-error). SPEC §8 wording on "stale" (strictly older than 3× interval; never-fetched is stale) is
-still pending (see section 4). Verify `refs/acs/*` pushes on GitHub only; the GitLab check is
-deferred (section 6), so keep the ref storage behind `acs-git` in case its fallback is needed.
+**Any code that starts a detached process** — `Stdio::null()` is not enough on Windows, where a
+child inherits every inheritable handle, the hook's stdout pipe included. Call
+`acs_os::keep_stdio_from_children` first, as `runtime::sync` does. Only a test run on Windows shows
+the difference (decision 0020).
 
-**WP4.1 (records)** — `stale_live_seats(before)` finds crashed sessions (human seats excluded);
-aggregate `files_changed` as the first `pre_hash` and last `post_hash` per path from
-`attributions`. A missing pre-image entry means "unknown", not "did not exist". Redact event
-`detail` again before it goes into a record. Intent text needs the redaction pass (plan §9.2).
+**WP4.1 (records)** — write records with `SyncStorage::append_ledger(pilot, session_id, bytes)` on
+a `refs::CustomRefs`; the next sync reconciles and pushes them. It is safe from concurrent hooks and
+never fails on signing (`LedgerAppend.signed` says what happened). `ledger_entries` reads a chain;
+reading every pilot's ledger for `acs log` needs a method listing fetched pilots, which belongs on
+the trait. `stale_live_seats(before)` finds crashed sessions (human seats excluded); aggregate
+`files_changed` as the first `pre_hash` and last `post_hash` per path from `attributions`. A missing
+pre-image entry means "unknown", not "did not exist". Redact event `detail` again before it goes
+into a record. Intent text needs the redaction pass (plan §9.2).
+
+**WP4.4 (signing)** — `ledger.rs` signs with `commit-tree -S` when `commit.gpgsign` is true and
+falls back to unsigned. `signing.rs` still owns detecting and verifying; join commits (empty tree,
+two parents) are part of a valid chain and carry no record.
 
 **WP4.2 (blame)** — `acs_git::trailers::session_ids(message, comment_char)`; uncommitted lines come
 from `path_attributions`.
@@ -150,6 +159,8 @@ cannot seal (file tools get `path_escapes_repo` ask; shell writes are uncovered)
   commit within 10 minutes look like an agent's.
 - Human claims (`acs claim`) are never heartbeated; they expire after `claim_ttl_secs` until WP7.3
   or WP7.4 refreshes them.
+- Team sync: claims taken on two machines inside one sync window leave both seats denied until one
+  lets go (section 4, decision 0020). `acs doctor` does not check sync yet.
 - `acs-cli` could not be type-checked for Windows locally (C dependencies need mingw); Windows CI
   is the check.
 
@@ -159,7 +170,7 @@ cannot seal (file tools get `path_escapes_repo` ask; shell writes are uncovered)
 | --- | --- | --- |
 | `SimpleCommand.wrappers` so bans can match `sudo *`; agent-CLI classification | WP7.2 | WP1.4, WP2.2 |
 | Optional `[lore]` config keys (inject cap 4,000 chars, stale threshold 30%) | WP6.1, WP6.2 | plan §7 |
-| SPEC §8: "stale" is strictly older than 3× interval; never-fetched is stale | WP3.1 | WP1.2 |
+| Tie-break for claims taken on two machines inside one sync window (today both are denied until one lets go): the earlier `acquired_at` keeps it | before a team relies on M1 | WP3.1, decision 0020 |
 | `FileChange` cannot say "pre-hash unknown" vs "did not exist" | WP4.1 | WP2.1 |
 | Expose the engine's claim-message helpers (`age`, holder) from `acs-core` | any | WP2.4 duplicated them |
 | `ResolvedPath.linked_truncated` | optional | WP1.3 |
@@ -180,8 +191,8 @@ cannot seal (file tools get `path_escapes_repo` ask; shell writes are uncovered)
 ## 6. Deferred: Antigravity and GitLab
 
 The human deferred both on 2026-10-31 to reduce complexity. This is a deferral, not a removal. The
-implementation plan is being updated to match; until a decision record exists (next free number:
-0019), this section is the reference.
+implementation plan is being updated to match; until a decision record exists (now 0019), this section
+is the reference.
 
 **Keep in place:** the Antigravity adapter, its fixtures and tests, `integrations/antigravity/`, its
 default sealed paths (`.agents/**`, removing them would let an agent edit those configs) and the
@@ -207,7 +218,7 @@ assume every harness sends session start, session end or prompt events.
 
 | When | What to tell the human | Type |
 | --- | --- | --- |
-| WP3.1 starts | A one-off push of `refs/acs/*` to GitLab is optional now. If GitLab rejects it later, the fallback is a dedicated branch instead of custom refs. | Reminder |
+| WP3.1 starts (raised 2026-10-31) | A one-off push of `refs/acs/*` to GitLab is optional now. If GitLab rejects it later, the fallback is a dedicated branch instead of custom refs. | Reminder |
 | WP5.3 starts | GitLab CODEOWNERS parsing is skipped; it returns with WP9.2. | Reminder |
 | Any public launch | ACS has only been proven across Claude Code sessions, not across harnesses. | Reminder |
 | WP8.3 merges, before WP9.1 starts | Antigravity must come back now: allow `antigravity.google`, run the manual checklist, sync the skill copy, add `acs plugin install antigravity`, run the three-harness M1 gate, finish the WP2.3 and WP2.6 acceptance. | **Hard stop** |

@@ -9,7 +9,7 @@ use serde_json::json;
 use super::support::{
     CliError, OutputArgs, ellipsize_start, finish, human_seat, open_repo, print_json, wrap,
 };
-use crate::runtime::{ClaimOutcome, claim_paths};
+use crate::runtime::{ClaimOutcome, claim_paths, sync};
 
 /// Arguments of `acs claim`.
 #[derive(Debug, Args)]
@@ -48,6 +48,8 @@ fn execute(args: &ClaimArgs) -> Result<ExitCode, CliError> {
             claim_ids,
             warnings,
         } => {
+            // No hook follows a command-line claim, so nothing else would publish it.
+            sync::spawn_now(&ctx);
             if json {
                 print_json(&json!({
                     "ok": true,

@@ -309,7 +309,19 @@ Claims and the ledger are shared through the repository's own git remote; no oth
 
 **Fetch refspec.** `acs init` adds `+refs/acs/*:refs/remotes/<remote>/acs/*` so that other pilots' refs never overwrite your own namespace.
 
-**Sync.** `acs sync` pushes the pilot's own refs, fetches all, and rebuilds the remote-claims view. The view is **stale** when the last successful fetch is older than `3 x sync_interval_secs`. A hash chain comes from git commit parents; signing uses the user's git signing configuration. Sync runs detached and never blocks an agent; with no remote, ACS works in local-only mode.
+**Commits.** A claims commit has no parent and its tree holds only `claims.json`. A ledger commit's tree holds only `record.json` (one `SessionRecord`), and its parent is the previous ledger commit. When one pilot works on two machines their chains diverge; the chains are joined by a commit with both tips as parents and an empty tree, because a ledger is never rewritten. Readers skip commits with no `record.json`.
+
+**Sync.** `acs sync` runs against one remote (`origin`, else the first remote by name), in this order:
+
+1. Fetch all of `refs/acs/*`.
+2. Rebuild the remote-claims view from the fetched documents. Claims of seats on this machine are left out: the local state is their truth. A document that does not parse, or names a pilot other than the owner of its ref, is ignored with a warning and that pilot's last good claims stay until they expire. A pilot whose claims ref is gone from the remote leaves the view.
+3. Build each local pilot's document: their live claims on this machine, plus the unexpired claims in their fetched document from seats not on this machine, because one pilot on two machines shares one ref. Publish it only if something others need to know has changed: the set of claims, a scope, a target branch, a TTL, or a heartbeat that has moved by at least a quarter of the claim's TTL.
+4. Join each local ledger with its fetched copy, so that the push is a fast-forward.
+5. Push what changed. A sync with nothing new does not push.
+
+The view is **stale** when the last successful fetch is strictly older than `3 x sync_interval_secs`, or there never was one. A failure after step 1, such as a push the remote rejects, is reported but does not make the view stale. A hash chain comes from git commit parents; signing uses the user's git signing configuration, and a record that cannot be signed is written unsigned rather than lost.
+
+Sync runs detached and never blocks an agent. Hooks start it only in a repository with a remote and a `.acs/policy/` directory, because it publishes paths and the pilot's email: when the interval has elapsed since the last attempt, on session start and after a tool call; and on session end, whatever the interval, because the claims just released would otherwise block other machines until they expire. At most one sync runs per repository on a machine. Sync never prompts for credentials and never runs the user's pre-push hooks. With no remote, ACS works in local-only mode.
 
 ## 9. Evaluation order
 
