@@ -14,20 +14,21 @@ human must be reminded. Check its triggers before starting any WP.
 - `main` has Phase 0, Phase 1, **Phase 2 (WP2.1–WP2.6)**, **Phase 3 (WP3.1)**, including the rule
   that the first of two machines' claims keeps the file, and **WP5.2 and WP5.1 for Claude Code**
   (decisions 0021, 0022). Fmt, clippy `-D warnings` and the workspace tests pass locally on Windows
-  (559 passed, 1 ignored). The human reported CI green at `a0baf6f` (2026-10-31); WP5.1, WP5.2 and
-  WP10 are not CI-checked yet, because the human pushes. `.github/workflows/installers.yml`,
-  `scoop-manifest.yml` and the `perf` job in `ci.yml` have had no YAML parser run over them, so
-  GitHub is their first real check.
+  (560 passed, 1 ignored). CI was green up to WP5.1 and WP5.2. Its first run with WP10
+  (`92dd3a3`, 2026-11-01) failed on the new tests and on the perf comparison, not on ACS; the fixes
+  follow it and have not been through CI yet, because the human pushes.
+  `.github/workflows/installers.yml` and `scoop-manifest.yml` have had no YAML parser run over them,
+  so GitHub is their first real check.
 - **Every M1 work package is built, the M1 parts of WP10.1 and WP10.2 are on `main` (decision 0023),
-  and the real M1 gate passed twice (`docs/releases/v0.1.0.md`). M1 is not released.** The `perf` job
-  has not run yet, and its first run is also the first time this code meets the budgets on Linux.
-  Between here and the v0.1 tag (plan sections 8.2 and 8.3):
-  1. **The Windows budgets, the human's call.** Every path misses them on the human's machine (pre-tool
-     p50 57 ms against 15), and process start alone is 18 ms. CI gates on Linux and only reports
-     macOS and Windows until this is settled. Decision 0023 has the numbers, the stage breakdown and a
-     reverted experiment that saved 14 ms. Unmeasured leads: `current_human_seat` starts `git config`
-     on every `acs status`, and post-tool has not been split into stages. The plan's fallback is
-     a warm server (section 9.2), which only the human can approve.
+  and the real M1 gate passed twice (`docs/releases/v0.1.0.md`). M1 is not released.** Linux and macOS
+  meet every budget in CI. Between here and the v0.1 tag (plan sections 8.2 and 8.3):
+  1. **The Windows budgets, the human's call.** Windows misses them on the human's machine (pre-tool
+     p50 57 ms against 15) and on GitHub's runner, which has no Avast (72 ms), and process start
+     alone is 18 ms. CI gates on Linux and only reports macOS and Windows until this is settled.
+     Decision 0023 has the numbers, the stage breakdown and a reverted experiment that saved 14 ms.
+     Unmeasured leads: `current_human_seat` starts `git config` on every `acs status`, and post-tool
+     has not been split into stages. The plan's fallback is a warm server (section 9.2), which only
+     the human can approve.
   2. The release setup only the human can do (`docs/releases/README.md`): name check, public
      repository, npm scope and token. Every installer needs a public repository. Homebrew is built
      but not published until the human wants it (decision 0021).
