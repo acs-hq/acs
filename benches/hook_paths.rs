@@ -11,7 +11,8 @@
 //! - `ACS_PERF_FILES`: files in the repository of the post-tool path (default 100,000).
 //! - `ACS_PERF_BASE_BIN`: a build of an earlier commit. Each call is then repeated with it, against
 //!   the same repository and with an `ACS_HOME` of its own, and the run fails when this build's p99
-//!   is over 20% worse. Taking turns on one machine keeps runner noise out of the comparison.
+//!   is over 20% worse and that costs over 15% of the path's p99 budget. Taking turns on one machine
+//!   keeps most runner noise out of the comparison.
 //! - `ACS_PERF_NO_ASSERT=1`: print the numbers without failing.
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]
@@ -31,6 +32,10 @@ use serde_json::{Value, json};
 
 /// How much worse a p99 may get against `ACS_PERF_BASE_BIN`.
 const MAX_REGRESSION: f64 = 1.20;
+
+/// The share of a path's p99 budget a regression must also cost to count. A p99 of a few hundred
+/// calls is one of the slowest few, and the same code moves it by more than 20% between runs.
+const MIN_REGRESSION_OF_BUDGET: f64 = 0.15;
 
 /// A build of `acs` under test, with its own state.
 struct Build {
@@ -113,7 +118,22 @@ fn builds(world: &World) -> Vec<Build> {
     builds
 }
 
-/// Runs `call` for each build, turn about, as one criterion iteration, and keeps every duration.
+/// Runs `call` once for each build and returns the durations in `builds` order. Who goes first
+/// changes every round, so that neither build always follows the other.
+fn turn_about(
+    builds: &[Build],
+    round: usize,
+    mut call: impl FnMut(&Build) -> Duration,
+) -> Vec<Duration> {
+    let mut durations = vec![Duration::ZERO; builds.len()];
+    for offset in 0..builds.len() {
+        let index = (round + offset) % builds.len();
+        durations[index] = call(&builds[index]);
+    }
+    durations
+}
+
+/// Runs one criterion iteration per sample, each from [`turn_about`], and keeps every duration.
 /// The warm-up runs through here too, so only the last `samples` calls are kept at the end.
 fn bench(
     criterion: &mut Criterion,
@@ -183,10 +203,9 @@ fn pre_tool_file_edit(criterion: &mut Criterion) -> Measured {
         |builds| {
             round += 1;
             let path = format!("src/f{}.rs", round % 50);
-            builds
-                .iter()
-                .map(|build| hook(&world, build, "perf", "pre_tool", edit(&path)))
-                .collect()
+            turn_about(builds, round, |build| {
+                hook(&world, build, "perf", "pre_tool", edit(&path))
+            })
         },
     )
 }
@@ -217,7 +236,7 @@ fn post_tool_shell(criterion: &mut Criterion) -> Measured {
     for build in &builds {
         hook(&world, build, "perf", "session_start", json!({}));
     }
-    let mut round = 0;
+    let (mut round, mut change) = (0, 0);
     bench(
         criterion,
         &format!("post-tool shell, {files} files"),
@@ -226,17 +245,17 @@ fn post_tool_shell(criterion: &mut Criterion) -> Measured {
         &builds,
         |builds| {
             round += 1;
-            for build in builds {
+            // Each build gets a change of its own: sharing one would let the second reuse the
+            // first's refresh of the git index.
+            turn_about(builds, round, |build| {
                 hook(&world, build, "perf", "pre_tool", shell());
-            }
-            std::thread::sleep(Duration::from_millis(30));
-            let changed = format!("// edit {round}\n");
-            fs::write(world.repo.join("pkg0/mod0/src/file0.rs"), changed).unwrap();
-            fs::write(world.repo.join(format!("generated{round}.txt")), "new\n").unwrap();
-            builds
-                .iter()
-                .map(|build| hook(&world, build, "perf", "post_tool", shell()))
-                .collect()
+                std::thread::sleep(Duration::from_millis(30));
+                change += 1;
+                let changed = format!("// edit {change}\n");
+                fs::write(world.repo.join("pkg0/mod0/src/file0.rs"), changed).unwrap();
+                fs::write(world.repo.join(format!("generated{change}.txt")), "new\n").unwrap();
+                hook(&world, build, "perf", "post_tool", shell())
+            })
         },
     )
 }
@@ -254,6 +273,7 @@ fn status(criterion: &mut Criterion) -> Measured {
             hook(&world, build, "two", "pre_tool", edit(&path));
         }
     }
+    let mut round = 0;
     bench(
         criterion,
         "status, 50 claims and 50 collisions",
@@ -261,10 +281,10 @@ fn status(criterion: &mut Criterion) -> Measured {
         200,
         &builds,
         |builds| {
-            builds
-                .iter()
-                .map(|build| timed(&world, build, &["status", "--json"], b""))
-                .collect()
+            round += 1;
+            turn_about(builds, round, |build| {
+                timed(&world, build, &["status", "--json"], b"")
+            })
         },
     )
 }
@@ -286,11 +306,13 @@ fn judge(path: &Measured) -> Vec<String> {
         problems.push(format!("{label}: p99 {p99:.1} ms is over {p99_budget} ms"));
     }
     if !path.base.is_empty() {
-        let base = percentile(&path.base, 0.99);
-        println!("  base build: p99 {base:.1} ms");
-        if p99 > base * MAX_REGRESSION {
+        let (base_p50, base) = (percentile(&path.base, 0.50), percentile(&path.base, 0.99));
+        println!("  base build: p50 {base_p50:.1} ms p99 {base:.1} ms");
+        let floor = p99_budget * MIN_REGRESSION_OF_BUDGET;
+        if p99 > base * MAX_REGRESSION && p99 - base > floor {
             problems.push(format!(
-                "{label}: p99 {p99:.1} ms is over 20% worse than the base build's {base:.1} ms"
+                "{label}: p99 {p99:.1} ms is over 20% and {floor:.0} ms worse than the base \
+                 build's {base:.1} ms"
             ));
         }
     }
