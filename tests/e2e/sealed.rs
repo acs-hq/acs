@@ -2,7 +2,8 @@
 //! attacks (confirmations piped into `acs off`, encoded commands) are WP7.2's suite.
 
 use std::fs;
-use std::process::{Command, Stdio};
+#[cfg(windows)]
+use std::process::Command;
 
 use acs_core::{Decision, Outcome, ReasonCode};
 
@@ -38,7 +39,6 @@ fn file_tools_cannot_reach_a_sealed_path_by_any_spelling() {
         "./.acs/policy/guards.toml",
         "src/../.acs/policy/guards.toml",
         "src/./../.acs/./policy/guards.toml",
-        ".acs\\policy\\guards.toml",
         absolute.to_str().unwrap(),
         ".acs/policy/new-file.toml",
         ".git/config",
@@ -56,6 +56,17 @@ fn file_tools_cannot_reach_a_sealed_path_by_any_spelling() {
         assert_sealed(path, &agent.pre_edit(path));
     }
     assert!(agent.claimed().is_empty(), "a denial acquires nothing");
+}
+
+/// Only on Windows: elsewhere a backslash is part of a file name, so this spelling is a new file in
+/// the repository's root and not a way into `.acs`.
+#[test]
+#[cfg(windows)]
+fn file_tools_cannot_reach_a_sealed_path_by_backslashes() {
+    let world = setup();
+    let agent = Agent::new(&world, "claude-code", "s1");
+    agent.start();
+    assert_sealed("backslashes", &agent.pre_edit(".acs\\policy\\guards.toml"));
 }
 
 #[test]
@@ -169,16 +180,7 @@ fn a_sealed_change_made_by_an_opaque_script_cannot_be_committed() {
 
     assert_eq!(agent.pre_shell("git commit -am x").outcome, Outcome::Allow);
     git(&world.repo, &world.git_config, &["add", "-A"]);
-    let out = Command::new("git")
-        .arg("-C")
-        .arg(&world.repo)
-        .args(["commit", "-q", "-m", "x"])
-        .env("ACS_HOME", &world.home)
-        .env("GIT_CONFIG_GLOBAL", &world.git_config)
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .stdin(Stdio::null())
-        .output()
-        .unwrap();
+    let out = world.commit("x");
     assert!(!out.status.success(), "{out:?}");
     let text = String::from_utf8_lossy(&out.stderr);
     assert!(text.contains(".acs/policy/guards.toml"), "{text}");

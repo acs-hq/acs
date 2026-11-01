@@ -2,7 +2,7 @@
 //! the backstop stops what it must, and the team's own hook keeps running.
 
 use std::fs;
-use std::process::{Command, Output, Stdio};
+use std::process::Command;
 
 use serde_json::Value;
 
@@ -39,20 +39,6 @@ fn husky_repo() -> World {
         &["config", "core.hooksPath", ".husky/_"],
     );
     world
-}
-
-fn commit(world: &World, message: &str) -> Output {
-    Command::new("git")
-        .arg("-C")
-        .arg(&world.repo)
-        .args(["commit", "-q", "-m", message])
-        .env("ACS_HOME", &world.home)
-        .env("GIT_CONFIG_GLOBAL", &world.git_config)
-        .env("GIT_CONFIG_NOSYSTEM", "1")
-        .env_remove("CLAUDECODE")
-        .stdin(Stdio::null())
-        .output()
-        .unwrap()
 }
 
 fn stage(world: &World, path: &str, text: &str) {
@@ -93,7 +79,7 @@ fn seats_commit_through_acs_and_husky_together() {
     );
     committer.pre_shell("git commit -m stolen");
     stage(&world, "src/lib.rs", "pub fn stolen() {}\n");
-    let out = commit(&world, "stolen");
+    let out = world.commit("stolen");
     assert!(!out.status.success(), "{out:?}");
     let text = String::from_utf8_lossy(&out.stderr);
     assert!(text.contains("`src/lib.rs` is claimed by"), "{text}");
@@ -113,7 +99,7 @@ fn seats_commit_through_acs_and_husky_together() {
     );
     third.pre_shell("git commit -m own");
     stage(&world, "src/util.rs", "pub fn own() {}\n");
-    let out = commit(&world, "own");
+    let out = world.commit("own");
     assert!(out.status.success(), "{out:?}");
     assert!(
         world.repo.join("husky-ran.txt").exists(),
