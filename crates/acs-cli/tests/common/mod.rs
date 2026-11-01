@@ -20,6 +20,16 @@ pub fn acs_bin() -> &'static str {
     env!("CARGO_BIN_EXE_acs")
 }
 
+/// `PATH` with the `acs` binary's directory in front of the current `PATH`. Git hooks need it:
+/// `cargo test` puts that directory on `PATH` on Windows only.
+pub fn path_with_acs() -> std::ffi::OsString {
+    let mut dirs = vec![Path::new(acs_bin()).parent().unwrap().to_path_buf()];
+    dirs.extend(std::env::split_paths(
+        &std::env::var_os("PATH").unwrap_or_default(),
+    ));
+    std::env::join_paths(dirs).unwrap()
+}
+
 /// A repository, an `ACS_HOME`, and an isolated git configuration.
 pub struct World {
     pub tmp: TempDir,
@@ -91,6 +101,22 @@ impl World {
             .unwrap();
         child.stdin.take().unwrap().write_all(stdin).unwrap();
         child.wait_with_output().unwrap()
+    }
+
+    /// `git commit` in the repository with the hooks able to find `acs`, outside any harness.
+    pub fn commit(&self, message: &str) -> Output {
+        Command::new("git")
+            .arg("-C")
+            .arg(&self.repo)
+            .args(["commit", "-q", "-m", message])
+            .env("PATH", path_with_acs())
+            .env("ACS_HOME", &self.home)
+            .env("GIT_CONFIG_GLOBAL", &self.git_config)
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .env_remove("CLAUDECODE")
+            .stdin(Stdio::null())
+            .output()
+            .unwrap()
     }
 
     /// Sends a canonical event to `acs hook --canonical <phase>` and parses the decision.

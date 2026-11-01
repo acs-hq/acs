@@ -25,7 +25,18 @@ milestones.
   so the p50 and p99 come from the individual calls. It replaces `crates/acs-cli/tests/perf.rs`.
 - **The regression check runs both builds on one machine, turn about,** each with its own `ACS_HOME`.
   A baseline from another run would compare two runners; one file of numbers would compare runners
-  and go stale. A failure has to happen twice, because shared runners have bad minutes.
+  and go stale. Who goes first alternates, and on the post-tool path each build gets a change of its
+  own. A failure has to happen twice, because shared runners have bad minutes.
+- **A regression must also cost over 15% of the path's p99 budget.** The plan asks for "p99 regressions
+  over 20%", but that alone failed CI's first run on noise. A p99 of 100 to 300 calls is one of the
+  slowest few: on Linux, unchanged post-tool code went from 43% better than the base build to 25%
+  worse between two attempts, and the same binary measured against itself on Windows differed by
+  40%. The largest same-code gap seen on Linux was 20 ms, 10% of that budget. The budgets stay the
+  hard limit, so what this lets through can only add up to a budget failure. The check still works:
+  with 40 ms added to a build, all three paths fail. It is not ready to gate Windows: the same binary
+  against itself on the human's machine still failed once on pre-tool (105 against 81 ms, p50s within
+  1%). That same run showed no cost for going first, so alternating is a precaution, and macOS's
+  gap on post-tool (p99 48 against 24 ms) stays unexplained until the next run prints both p50s.
 - **In CI, Linux is the gate; macOS and Windows report only,** until the budgets below are settled.
 - **`real/three_sessions.sh` is the release check for real agents.** `real/check.mjs` judges it from
   Claude Code's logs, not ACS's own records. It compares added lines: an edit's text repeats its
@@ -43,6 +54,15 @@ Release build, Windows 11, Avast running, repositories under `AppData\Local\Temp
 | Post-tool shell, 100k files | 60 / 200 ms | 173.4 / 268.7 ms |
 | `acs status`, 50 claims and 50 collisions | 50 / 150 ms | 101.5 / 181.6 ms |
 
+CI's first perf run (`92dd3a3`) gives the other platforms, p50 / p99. Linux and macOS meet every budget;
+GitHub's Windows runner misses the same ones without Avast:
+
+| Path | Linux | macOS | Windows runner |
+| --- | --- | --- | --- |
+| Pre-tool edit, warm | 5.8 / 12.5 ms | 4.5 / 4.8 ms | 72.5 / 112.1 ms |
+| Post-tool shell, 100k files | 10.5 / 100.3 ms | 26.8 / 48.1 ms | 129.9 / 147.6 ms |
+| `acs status`, 50 claims and 50 collisions | 5.2 / 10.7 ms | 7.3 / 8.8 ms | 62.8 / 85.9 ms |
+
 Process start alone is over the first budget here: `acs --version` p50 18 ms, `whoami` 22 ms, `git
 --version` 33 ms. One warm pre-tool call of 49 ms split into 18 ms outside `main`, 13 ms closing the
 two SQLite databases, 6 ms updating the seat, 7 ms taking pre-images and about 5 ms for the rest.
@@ -51,9 +71,8 @@ An experiment with `SQLITE_DBCONFIG_NO_CKPT_ON_CLOSE` on both connections brough
 It was reverted, because it was run with one process at a time and never against the test suite.
 
 This is plan section 9.2's risk that process-per-hook startup misses the budgets on Windows. Its
-fallback, an optional warm server, is the human's decision and was not built. How much of the cost
-is Avast and how much is this machine is not known. The Linux figures date from Phase 2, so the
-first CI run of the perf job is also the first check of this code on Linux.
+fallback, an optional warm server, is the human's decision and was not built. The runner's figures
+show that Avast is not the main cause, though how much it adds on the human's machine is not known.
 
 ## Consequences
 

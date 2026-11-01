@@ -8,20 +8,12 @@ use std::process::{Command, Output, Stdio};
 
 use serde_json::Value;
 
+pub use crate::common::path_with_acs;
 use crate::common::{World, acs_bin};
 
 /// The directory holding the built `acs` binary.
 pub fn bin_dir() -> PathBuf {
     Path::new(acs_bin()).parent().unwrap().to_path_buf()
-}
-
-/// `PATH` with the `acs` binary's directory in front of the current `PATH`.
-pub fn path_with_acs() -> std::ffi::OsString {
-    let mut dirs = vec![bin_dir()];
-    dirs.extend(std::env::split_paths(
-        &std::env::var_os("PATH").unwrap_or_default(),
-    ));
-    std::env::join_paths(dirs).unwrap()
 }
 
 /// A directory with only a symlink to `git` in it: a `PATH` where `acs` does not resolve.
