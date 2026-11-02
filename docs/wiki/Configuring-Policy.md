@@ -40,33 +40,20 @@ The file also has a commented `[ledger]` section. Leave it as it is.
 
 | Key | Default | Meaning |
 | --- | --- | --- |
-| `sealed` | See the list in the file | Paths no agent may write |
+| `sealed` | The built-in list, shown in the comments of the file | Paths no agent may write, on top of the built-in list |
 | `protected_branches` | `["main", "release/*"]` | Branches where agents cannot rewrite history or force push |
 | `[destructive] max_files_deleted_outside_claims` | `0` | How many files outside its claims a command may delete |
 | `[destructive] max_files_deleted_per_command` | `50` | Above this, one command needs your approval |
 | `[destructive] ban` | `["git push --force*", "git reset --hard*", "git clean -f*"]` | Commands that are always denied |
 
-**Copy the defaults you want to keep.** Setting `protected_branches` or `ban` replaces its default, so anything you leave out is gone. If your `ban` list does not include `git push --force*`, that command is no longer banned. Do the same for `sealed`: start from the default list, which is in the comments of your `guards.toml`, and add to the end.
+**`sealed` adds to the built-in list.** List only the paths you want to add. The built-in paths cannot be removed, even if you leave them out, so `.acs/**` always stays sealed. The comment at the top of `guards.toml` says setting a key replaces its default, but that is not true for `sealed`. `acs status --sealed` shows the full list.
 
-This example seals a Terraform folder, protects `develop` as well, lowers the delete limit and bans `terraform apply`. The defaults are copied in:
+**Copy the other defaults you want to keep.** Setting `protected_branches` or `ban` replaces its default, so anything you leave out is gone. If your `ban` list does not include `git push --force*`, that command is no longer banned.
+
+This example seals a Terraform folder, protects `develop` as well, lowers the delete limit and bans `terraform apply`. `sealed` lists only the new path, and the other defaults are copied in:
 
 ```toml
-sealed = [
-  ".git/**",
-  ".acs/**",
-  ".github/workflows/**",
-  "**/.env*",
-  "**/.claude/settings*.json",
-  "**/.claude/hooks/**",
-  "**/.agents/**/hooks*.json",
-  "**/.agent/**/hooks*.json",
-  "**/.agents/plugins/**",
-  "**/.agent/plugins/**",
-  "**/.agents/plugins.json",
-  "**/.agent/plugins.json",
-  ".husky/**",
-  "infra/terraform/**",
-]
+sealed = ["infra/terraform/**"]
 protected_branches = ["main", "develop", "release/*"]
 
 [destructive]
@@ -79,7 +66,7 @@ ban = [
 ]
 ```
 
-If your hooks live in a folder such as `.githooks/`, add `".githooks/**"` to `sealed`. Only `.husky/**` is in the default list.
+If your hooks live in a folder such as `.githooks/`, add `".githooks/**"` to `sealed`. Only `.husky/**` is in the built-in list.
 
 ## territory.toml
 
