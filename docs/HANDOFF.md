@@ -35,9 +35,6 @@ human must be reminded. Check its triggers before starting any WP.
   3. The first tag, which is the first real run of `release.yml` and `installers.yml`.
 - **Then dogfooding.** The human runs `acs init` here (see section 2). No release exists yet, so
   `acs` comes from `cargo install --path crates/acs-cli --locked`.
-- The implementation plan is not in the repository. Its current copy is
-  `C:\Users\omara\Downloads\ACS — Implementation Plan Updated.md`; `docs/phase2-rules.md` still
-  names an old path.
 - **Frozen contracts:** `spec/SPEC.md` (draft 0.1), `spec/schemas/` (drift test), `crates/acs-core`
   public types and `gate.rs`, and the Phase 2 cross-WP interfaces in decision **0011** (crate roles,
   CLI surface, markers, MCP seat binding). Only the orchestrator changes them.
