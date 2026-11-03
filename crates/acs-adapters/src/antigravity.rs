@@ -12,9 +12,10 @@
 //!   decision and exits 0.
 //! - `PreToolUse` cannot carry context. Warnings ride in the `reason` of a deny or ask and are
 //!   dropped on an allow. `PreInvocation` can inject context through `injectSteps`.
-//! - `allow` is never emitted: the desktop app treats it as approval and would skip the user's own
-//!   permission prompt. ACS "no objection" is `{"decision":"ask"}`, which defers to Antigravity's
-//!   normal permission flow.
+//! - ACS "no objection" is `{"decision":"allow"}`, which the official hooks reference defines as
+//!   "delegating to the next hook or default policy"; approving without a prompt is a separate
+//!   decision (`auto_approve`) that ACS never emits. A real `agy` 1.4.12 run showed `allow` refusing
+//!   exactly what no hook refuses (decision 0024).
 
 use acs_core::{
     Decision, EditInfo, Outcome, Phase, SpecVersion, Tool, ToolEvent, ToolKind, ToolResult,
@@ -71,6 +72,16 @@ const OTHER_TOOLS: &[&str] = &[
     "list_resources",
     "read_resource",
     "finish",
+];
+/// The ACS MCP tools. Antigravity names an MCP tool `mcp_<server>_<tool>` in hooks (the plugin's
+/// server is `acs_acs`, so `mcp_acs_acs_acs_claim`); these take `paths` but change no file.
+const ACS_MCP_TOOLS: &[&str] = &[
+    "acs_status",
+    "acs_intent",
+    "acs_claim",
+    "acs_release",
+    "acs_why",
+    "acs_lore_propose",
 ];
 /// Argument keys that name the file a write or edit tool changes.
 const FILE_KEYS: &[&str] = &["targetfile", "path", "absolutepath", "filepath", "file"];
@@ -172,7 +183,7 @@ impl Adapter for Antigravity {
         // A `Value` of this shape always serializes; fall back to the safe pre-tool answer
         // rather than panic or print nothing (an empty answer blocks the tool).
         let mut stdout =
-            serde_json::to_vec(&value).unwrap_or_else(|_| br#"{"decision":"ask"}"#.to_vec());
+            serde_json::to_vec(&value).unwrap_or_else(|_| br#"{"decision":"allow"}"#.to_vec());
         stdout.push(b'\n');
         HookOutput {
             stdout,
@@ -190,8 +201,8 @@ fn render_pre_tool(decision: &Decision) -> Value {
             json!({"decision": "deny", "reason": reason_text(decision)})
         }
         Outcome::Ask => json!({"decision": "force_ask", "reason": reason_text(decision)}),
-        // "No objection". Never `allow`, see the module documentation; warnings have no channel.
-        Outcome::Allow => json!({"decision": "ask"}),
+        // "No objection": defer to Antigravity's own policy. Warnings have no channel here.
+        Outcome::Allow => json!({"decision": "allow"}),
     }
 }
 
@@ -283,18 +294,20 @@ fn infer_phase(map: &Map<String, Value>, has_tool_call: bool) -> Option<Phase> {
 /// Turns a `PreInvocation` payload into `session_start` when it is the conversation's first
 /// invocation, `prompt_submit` otherwise. Other phases are unchanged.
 ///
-/// Antigravity has no session-start event. The first invocation is recognised by
-/// `invocationNum <= 1` together with `initialNumSteps <= 1` (the user's own input is probably
-/// step 0 or 1); a missing field does not count against it, and with neither field the event is a
-/// plain `prompt_submit`. Whether `invocationNum` restarts every turn is unverified: if it does,
-/// every turn starts with a status injection, which is noisy but harmless.
+/// The documented `SessionStart` event fires in the CLI but is not known to fire in the app, so
+/// the plugin does not rely on it. A real `agy` 1.4.12 run numbers invocations from 0 in every
+/// turn. `initialNumSteps` is 1 at the first call of a new conversation (the user's message), 0
+/// at a subagent's first call, and counts the earlier steps at the first call of a resumed turn.
+/// The first invocation is recognised by `invocationNum <= 1` together with
+/// `initialNumSteps <= 1`; a missing `initialNumSteps` does not count against it. A payload
+/// without `invocationNum` (such as `SessionStart` itself) keeps the phase it was given.
 fn refine_phase(phase: Phase, map: &Map<String, Value>) -> Phase {
     if !matches!(phase, Phase::SessionStart | Phase::PromptSubmit) {
         return phase;
     }
     let number = |key: &str| get(map, key).and_then(Value::as_i64);
     let (Some(invocation), steps) = (number("invocationNum"), number("initialNumSteps")) else {
-        return Phase::PromptSubmit;
+        return phase;
     };
     if invocation <= 1 && steps.is_none_or(|steps| steps <= 1) {
         Phase::SessionStart
@@ -333,7 +346,7 @@ fn apply_tool(event: &mut ToolEvent, name: &str, args: &Map<String, Value>) {
     } else if is(READ_TOOLS) {
         event.paths = file_paths(args, true);
         ToolKind::Read
-    } else if is(OTHER_TOOLS) {
+    } else if is(OTHER_TOOLS) || is_acs_mcp_tool(&lower) {
         ToolKind::Other
     } else {
         // An unknown tool: tool names change between Antigravity builds. One that names paths may
@@ -398,6 +411,15 @@ fn edit_info(tool: &str, args: &Map<String, Value>) -> Option<EditInfo> {
 /// A string field that may be empty (a replacement can delete text).
 fn text_allow_empty(map: &Map<String, Value>, key: &str) -> Option<String> {
     get(map, key).and_then(Value::as_str).map(str::to_owned)
+}
+
+/// Whether `name` (lowercase) is one of ACS's own MCP tools, under any server name.
+fn is_acs_mcp_tool(name: &str) -> bool {
+    name.starts_with("mcp_")
+        && ACS_MCP_TOOLS.iter().any(|tool| {
+            name.strip_suffix(tool)
+                .is_some_and(|rest| rest.ends_with('_'))
+        })
 }
 
 /// Whether `key` looks like it names a path, for tools this adapter does not know.
@@ -543,6 +565,29 @@ mod tests {
         let event = tool_event(Phase::PreTool, r#"{"name":"mystery","args":{"Q":"x"}}"#);
         assert_eq!(event.tool.unwrap().kind, ToolKind::Other);
         assert!(event.paths.is_empty());
+
+        // Another server's MCP tool that names a path is still a write.
+        let event = tool_event(
+            Phase::PreTool,
+            r#"{"name":"mcp_fs_write","args":{"path":"/w/a.rs"}}"#,
+        );
+        assert_eq!(event.tool.unwrap().kind, ToolKind::Write);
+    }
+
+    #[test]
+    fn the_acs_mcp_tools_change_no_files() {
+        for name in [
+            "mcp_acs_acs_acs_claim",
+            "mcp_acs_acs_release",
+            "MCP_ACS_ACS_ACS_WHY",
+        ] {
+            let call = format!(r#"{{"name":"{name}","args":{{"paths":["/w/a.rs"]}}}}"#);
+            let event = tool_event(Phase::PreTool, &call);
+            assert_eq!(event.tool.unwrap().kind, ToolKind::Other, "{name}");
+            assert!(event.paths.is_empty(), "{name}");
+        }
+        assert!(!is_acs_mcp_tool("acs_claim"));
+        assert!(!is_acs_mcp_tool("mcp_xacs_claim"));
     }
 
     #[test]
@@ -727,11 +772,11 @@ mod tests {
             render(Phase::PreTool, &decision(Outcome::Ask, "outside the repo")),
             json!({"decision":"force_ask","reason":"outside the repo"})
         );
-        // Never `allow`; warnings and context have no channel on an allow.
+        // `allow` defers to Antigravity's policy; warnings and context have no channel on it.
         let mut allow = decision(Outcome::Allow, "");
         allow.warnings.push("w".into());
         allow.context.push("c".into());
-        assert_eq!(render(Phase::PreTool, &allow), json!({"decision":"ask"}));
+        assert_eq!(render(Phase::PreTool, &allow), json!({"decision":"allow"}));
         // An empty deny message still tells the agent something.
         let reason = render(Phase::PreTool, &decision(Outcome::Deny, ""))["reason"]
             .as_str()
@@ -743,7 +788,7 @@ mod tests {
     #[test]
     fn unparsed_payloads_render_the_safe_pre_tool_answer() {
         let out = Antigravity.render(None, &decision(Outcome::Allow, ""));
-        assert_eq!(out.stdout, b"{\"decision\":\"ask\"}\n");
+        assert_eq!(out.stdout, b"{\"decision\":\"allow\"}\n");
         assert_eq!(out.exit_code, 0);
     }
 

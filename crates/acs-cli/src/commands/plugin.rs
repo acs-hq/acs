@@ -1,7 +1,7 @@
 //! `acs plugin install <harness>`: installs the ACS plugin into an agent harness.
 //!
-//! Keyed by harness name, so a harness joins by getting one arm in [`install`]. Claude Code is the
-//! only one for now; Antigravity is added when it returns (decision 0019).
+//! Keyed by harness name, so a harness joins by getting one arm in [`install`]: Claude Code
+//! (decision 0021) and Antigravity (decision 0024).
 //!
 //! `acs` must resolve on `PATH` first: the plugin's hooks run `acs`, and without it they either
 //! check nothing (Claude Code) or deny every tool call (Antigravity).
@@ -10,6 +10,10 @@
 //! git repository it runs in, using the built-in guards where there is no `.acs/policy`, so a
 //! user-scope plugin changes how agents behave in repositories that never adopted ACS (decision
 //! 0021). Running it again changes nothing.
+//!
+//! Antigravity has no marketplace entry for ACS, so its plugin is built into the binary and
+//! written to the workspace plugin folder `.agents/plugins/acs/`, which Antigravity loads at the
+//! next session start. That folder is the project scope; the other scopes are not offered.
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode, Stdio};
@@ -24,6 +28,37 @@ use super::support::{
 
 /// The marketplace the plugin comes from (this repository, `.claude-plugin/marketplace.json`).
 pub const DEFAULT_MARKETPLACE: &str = "acs-hq/acs";
+
+/// Where `acs plugin install antigravity` puts the plugin, relative to the work tree root.
+pub const ANTIGRAVITY_PLUGIN_DIR: &str = ".agents/plugins/acs";
+
+/// The Antigravity plugin's files, built in from `integrations/antigravity/`.
+const ANTIGRAVITY_PLUGIN_FILES: &[(&str, &str)] = &[
+    (
+        "plugin.json",
+        include_str!("../../../../integrations/antigravity/plugin.json"),
+    ),
+    (
+        "hooks.json",
+        include_str!("../../../../integrations/antigravity/hooks.json"),
+    ),
+    (
+        "mcp_config.json",
+        include_str!("../../../../integrations/antigravity/mcp_config.json"),
+    ),
+    (
+        "rules/acs.md",
+        include_str!("../../../../integrations/antigravity/rules/acs.md"),
+    ),
+    (
+        "skills/acs-setup/SKILL.md",
+        include_str!("../../../../integrations/antigravity/skills/acs-setup/SKILL.md"),
+    ),
+    (
+        "skills/acs-usage/SKILL.md",
+        include_str!("../../../../integrations/antigravity/skills/acs-usage/SKILL.md"),
+    ),
+];
 
 /// Arguments of `acs plugin`.
 #[derive(Debug, Args)]
@@ -44,11 +79,12 @@ pub enum PluginCommand {
 #[derive(Debug, Args)]
 #[command(
     after_help = "Examples:\n  acs plugin install claude-code\n  acs plugin install claude-code \
-                  --scope user\n  acs plugin install claude-code --marketplace ./my-checkout\n\n\
+                  --scope user\n  acs plugin install claude-code --marketplace ./my-checkout\n  \
+                  acs plugin install antigravity\n\n\
                   Safe to run again: a plugin that is already enabled is left alone."
 )]
 pub struct InstallArgs {
-    /// The harness, by adapter name (`claude-code`).
+    /// The harness, by adapter name (`claude-code`, `antigravity`).
     #[arg(value_name = "HARNESS")]
     pub harness: String,
     /// Where to enable it. `project` is shared through `.claude/settings.json`; `user` gates every
@@ -175,6 +211,22 @@ pub fn install(args: &InstallArgs) -> Result<InstallReport, CliError> {
             let claude = find_harness_cli(harness)?;
             let dir = working_dir(args.scope)?;
             Ok(install_claude_code(&claude, &dir, args))
+        }
+        "antigravity" => {
+            require_acs_on_path(harness)?;
+            if args.scope != Scope::Project {
+                return Err(CliError::new(
+                    "unsupported_scope",
+                    format!(
+                        "Antigravity's ACS plugin is installed for this repository only (`--scope \
+                         project`, in {ANTIGRAVITY_PLUGIN_DIR}/). For every repository, copy that \
+                         folder and run `agy plugin install <folder>` yourself."
+                    ),
+                ));
+            }
+            let agy = find_harness_cli(harness)?;
+            let dir = working_dir(Scope::Project)?;
+            Ok(install_antigravity(&agy, &dir, args))
         }
         _ => Err(CliError::new(
             "unsupported_harness",
@@ -384,6 +436,105 @@ fn install_claude_code(claude: &Path, dir: &Path, args: &InstallArgs) -> Install
 }
 
 // ---------------------------------------------------------------------------------------------
+// Antigravity
+// ---------------------------------------------------------------------------------------------
+
+/// The `version` of the built-in Antigravity plugin manifest.
+fn antigravity_plugin_version() -> Option<String> {
+    let manifest = ANTIGRAVITY_PLUGIN_FILES
+        .iter()
+        .find(|(name, _)| *name == "plugin.json")?
+        .1;
+    serde_json::from_str::<serde_json::Value>(manifest)
+        .ok()?
+        .get("version")?
+        .as_str()
+        .map(str::to_owned)
+}
+
+/// Writes the built-in plugin into `<dir>/.agents/plugins/acs/` and has `agy` validate it. Files
+/// that already hold the built-in content are left alone; other files in the folder are kept.
+fn install_antigravity(agy: &Path, dir: &Path, args: &InstallArgs) -> InstallReport {
+    let mut report = InstallReport {
+        ok: false,
+        changed: false,
+        harness: "antigravity",
+        scope: Scope::Project,
+        plugin: "acs",
+        marketplace: "built into acs".to_owned(),
+        version: antigravity_plugin_version(),
+        steps: Vec::new(),
+        warnings: Vec::new(),
+    };
+    if args.marketplace != DEFAULT_MARKETPLACE {
+        report.warnings.push(
+            "--marketplace is ignored for Antigravity: its plugin is built into acs.".to_owned(),
+        );
+    }
+    let target = dir.join(ANTIGRAVITY_PLUGIN_DIR);
+    let stale: Vec<&(&str, &str)> = ANTIGRAVITY_PLUGIN_FILES
+        .iter()
+        .filter(|(name, content)| {
+            std::fs::read(target.join(name)).ok().as_deref() != Some(content.as_bytes())
+        })
+        .collect();
+    if stale.is_empty() {
+        report.ok = true;
+        return report;
+    }
+
+    let written = stale.iter().try_for_each(|(name, content)| {
+        let path = target.join(name);
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::write(path, content)
+    });
+    let step = Step {
+        command: format!(
+            "write {} file(s) into {ANTIGRAVITY_PLUGIN_DIR}/",
+            stale.len()
+        ),
+        ok: written.is_ok(),
+        output: written.err().map(|err| err.to_string()),
+    };
+    let failed = !step.ok;
+    report.steps.push(step);
+    if failed {
+        return report;
+    }
+    report.changed = true;
+
+    let line = format!("agy plugin validate {ANTIGRAVITY_PLUGIN_DIR}");
+    let step = match Command::new(agy)
+        .args(["plugin", "validate"])
+        .arg(&target)
+        .current_dir(dir)
+        .stdin(Stdio::null())
+        .output()
+    {
+        Ok(out) if out.status.success() => Step {
+            command: line,
+            ok: true,
+            output: None,
+        },
+        Ok(out) => Step {
+            command: line,
+            ok: false,
+            output: Some(String::from_utf8_lossy(&out.stdout).trim().to_owned()),
+        },
+        Err(err) => Step {
+            command: line,
+            ok: false,
+            output: Some(format!("could not start {}: {err}", agy.display())),
+        },
+    };
+    report.ok = step.ok;
+    report.steps.push(step);
+    report
+}
+
+// ---------------------------------------------------------------------------------------------
 // Rendering
 // ---------------------------------------------------------------------------------------------
 
@@ -418,6 +569,21 @@ fn outcome(report: &InstallReport) -> String {
         .as_deref()
         .map_or_else(String::new, |v| format!("version {v}, "));
     let scope = report.scope.as_str();
+    if report.harness == "antigravity" {
+        let text = if report.changed {
+            format!(
+                "The ACS plugin is installed in {ANTIGRAVITY_PLUGIN_DIR}/ ({version}{scope} \
+                 scope). Antigravity loads it at the next session start.\nCommit \
+                 {ANTIGRAVITY_PLUGIN_DIR} so teammates get it too.\n"
+            )
+        } else {
+            format!(
+                "The ACS plugin is already installed in {ANTIGRAVITY_PLUGIN_DIR}/ \
+                 ({version}{scope} scope). Nothing to change.\n"
+            )
+        };
+        return wrap(&text, "", "");
+    }
     let mut text = if report.changed {
         format!(
             "The ACS plugin is installed and enabled ({version}{scope} scope). Claude Code loads \

@@ -21,9 +21,10 @@ If this is not a git repository, stop: tell your pilot ACS needs one.
 | You are running in | Harness id | How to tell |
 | --- | --- | --- |
 | Claude Code | `claude-code` | `CLAUDECODE=1` is in your environment |
+| Antigravity | `antigravity` | `ANTIGRAVITY_CONVERSATION_ID` is in your environment |
 
 Any other harness: stop here and install nothing. Tell your pilot that ACS does not support that
-harness yet, only Claude Code.
+harness yet, only Claude Code and Antigravity.
 
 **Operating system.** `uname -s` prints `Darwin`, `Linux`, or something starting with `MINGW` or
 `MSYS` on Windows. Where it does not run at all, you are on Windows without a POSIX shell.
@@ -52,12 +53,15 @@ you installed it here: step 6 needs to know.
 
 ## 3. Install the plugin
 
+Use your harness id from step 1:
+
 ```sh
-acs plugin install claude-code
+acs plugin install <harness id>
 ```
 
-This enables the plugin for this repository only, in `.claude/settings.json`. Do not pass
-`--scope user` unless your pilot asks for it: that gates every repository they open.
+This installs the plugin for this repository only. Claude Code: it is enabled in
+`.claude/settings.json`; do not pass `--scope user` unless your pilot asks for it, because that
+gates every repository they open. Antigravity: the plugin is written to `.agents/plugins/acs/`.
 
 ## 4. Set up the repository
 
@@ -72,19 +76,22 @@ In `acs doctor`, stop on any `FAIL`. A `WARN` about a harness you are not runnin
 
 ## 5. Commit on the branch `acs/adopt`
 
-Commit before the gate starts. Once the plugin is active, agents may not commit `.acs/**` or
-`.claude/settings.json`, because both are sealed.
+Commit before the gate starts. Once the plugin is active, agents may not commit `.acs/**` or the
+plugin files, because they are sealed.
 
-Run `git status --short` and work out which of these exist as changes: `.acs`,
-`.claude/settings.json`, and `.husky` if the repository uses husky (`acs init` adds to its hook
-files). If there are none, this repository had already adopted ACS: skip to step 6. Otherwise commit
-only those paths, so your pilot's other work stays out of it:
+Run `git status --short` and work out which of these exist as changes: `.acs`, the plugin path
+(`.claude/settings.json` for Claude Code, `.agents/plugins/acs` for Antigravity), and `.husky` if
+the repository uses husky (`acs init` adds to its hook files). If there are none, this repository
+had already adopted ACS: skip to step 6. Otherwise commit only those paths, so your pilot's other
+work stays out of it. For Claude Code:
 
 ```sh
 git switch -c acs/adopt
 git add .acs .claude/settings.json
 git commit -m "Adopt ACS" -- .acs .claude/settings.json
 ```
+
+For Antigravity, use `.agents/plugins/acs` in place of `.claude/settings.json` in both lines.
 
 If `git switch -c` says the branch exists, use `git switch acs/adopt`.
 
@@ -100,21 +107,23 @@ Show this summary, filled in from what happened, and nothing longer than one scr
 ACS is set up in <repository>.
 
 Binary     acs <version>, <path from `acs doctor`>
-Plugin     acs@acs-plugins for this repository
+Plugin     <acs@acs-plugins, or .agents/plugins/acs> for this repository
 Policy     .acs/policy/ with the defaults (`acs status` lists the sealed paths)
 Git hooks  pre-commit, prepare-commit-msg, pre-push
 Claims     shared through <remote>, or: on this machine only, no remote
 Doctor     <n> ok, <n> warnings, 0 failures
 Commit     <short hash> on acs/adopt
 
-The gate starts at the next Claude Code session.
+The gate starts at the next <Claude Code or Antigravity> session.
 ```
 
 Then say how to start it:
 
-- If you installed the binary in step 2: open a new terminal and start Claude Code there. Claude
-  Code only finds `acs` on the `PATH` it started with, and without it the hooks check nothing.
-- Otherwise: restart Claude Code, or run `/reload-plugins`.
+- If you installed the binary in step 2: open a new terminal and start your harness there. It
+  only finds `acs` on the `PATH` it started with. Without it, Claude Code's hooks check nothing,
+  and Antigravity denies every tool call.
+- Otherwise, Claude Code: restart it, or run `/reload-plugins`. Antigravity: start a new session;
+  it loads plugins at session start.
 
 Finally, ask your pilot whether to open a pull request for `acs/adopt`. Do not push or open one
 until they say yes. On a yes, push the branch and open the pull request with the tools you have.

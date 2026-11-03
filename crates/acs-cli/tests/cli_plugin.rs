@@ -281,24 +281,165 @@ fn a_plugin_that_does_not_end_up_enabled_is_a_failure() {
     assert!(stdout(&out).contains("does not list"), "{}", stdout(&out));
 }
 
+/// An `agy` that appends its arguments to `log` and fails when `fail` exists.
+struct FakeAgy {
+    dir: PathBuf,
+}
+
+impl FakeAgy {
+    fn new(world: &World) -> Self {
+        let dir = world.tmp.path().join("fake-agy");
+        fs::create_dir_all(&dir).unwrap();
+        let fake = Self { dir };
+        fake.write_script();
+        fake
+    }
+
+    #[cfg(unix)]
+    fn write_script(&self) {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = self.dir.display();
+        let script = format!(
+            "#!/bin/sh\necho \"$1 $2\" >> \"{dir}/log\"\nif [ -f \"{dir}/fail\" ]; then echo \
+             'bad manifest'; exit 1; fi\nexit 0\n"
+        );
+        let path = self.dir.join("agy");
+        fs::write(&path, script).unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).unwrap();
+    }
+
+    #[cfg(windows)]
+    fn write_script(&self) {
+        let dir = self.dir.display();
+        let script = format!(
+            "@echo off\r\n\
+             echo %1 %2>>\"{dir}\\log\"\r\n\
+             if exist \"{dir}\\fail\" (\r\n\
+               echo bad manifest\r\n\
+               exit /b 1\r\n\
+             )\r\n\
+             exit /b 0\r\n"
+        );
+        fs::write(self.dir.join("agy.cmd"), script).unwrap();
+    }
+
+    fn calls(&self) -> Vec<String> {
+        fs::read_to_string(self.dir.join("log"))
+            .unwrap_or_default()
+            .lines()
+            .map(|line| line.trim().to_owned())
+            .collect()
+    }
+
+    fn acs(&self, world: &World, cwd: &Path, args: &[&str]) -> Output {
+        let mut dirs = vec![self.dir.clone()];
+        dirs.extend(std::env::split_paths(&path_with_acs()));
+        Command::new(acs_bin())
+            .args(args)
+            .current_dir(cwd)
+            .env("ACS_HOME", &world.home)
+            .env("GIT_CONFIG_GLOBAL", &world.git_config)
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .env("PATH", std::env::join_paths(dirs).unwrap())
+            .stdin(Stdio::null())
+            .output()
+            .unwrap()
+    }
+}
+
+fn plugin_source(rel: &str) -> String {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../integrations/antigravity");
+    fs::read_to_string(root.join(rel)).unwrap()
+}
+
 #[test]
-fn antigravity_is_not_covered_yet_and_says_how_to_do_it_by_hand() {
-    let (world, fake) = setup();
-    let out = fake.acs(
+fn antigravity_gets_the_built_in_plugin_in_the_workspace_folder() {
+    let world = World::new();
+    let agy = FakeAgy::new(&world);
+    let nested = world.repo.join("src");
+    fs::create_dir_all(&nested).unwrap();
+    let out = agy.acs(&world, &nested, &["plugin", "install", "antigravity"]);
+    assert_success(&out);
+    let installed = world.repo.join(".agents/plugins/acs");
+    for rel in [
+        "plugin.json",
+        "hooks.json",
+        "mcp_config.json",
+        "rules/acs.md",
+        "skills/acs-setup/SKILL.md",
+        "skills/acs-usage/SKILL.md",
+    ] {
+        assert_eq!(
+            fs::read_to_string(installed.join(rel)).unwrap(),
+            plugin_source(rel),
+            "{rel}"
+        );
+    }
+    assert_eq!(agy.calls(), ["plugin validate"]);
+    let text = stdout(&out);
+    assert!(text.contains("installed in .agents/plugins/acs/"), "{text}");
+    assert!(text.contains("Commit .agents/plugins/acs"), "{text}");
+    assert_fits_80(&text);
+
+    // Again: nothing to write, nothing to validate.
+    let out = agy.acs(
         &world,
         &world.repo,
         &["plugin", "install", "antigravity", "--json"],
     );
-    assert_failure(&out);
+    assert_success(&out);
     let report = json(&out);
-    assert_eq!(report["error"]["code"], "unsupported_harness");
-    assert!(
-        report["error"]["message"]
-            .as_str()
-            .unwrap()
-            .contains("agy plugin install"),
-        "{report}"
+    assert_eq!(report["changed"], false);
+    assert_eq!(report["plugin"], "acs");
+    assert_eq!(report["steps"].as_array().unwrap().len(), 0);
+    assert_eq!(agy.calls().len(), 1);
+
+    // A changed file is put back.
+    fs::write(installed.join("hooks.json"), "{}").unwrap();
+    let report = json(&agy.acs(
+        &world,
+        &world.repo,
+        &["plugin", "install", "antigravity", "--json"],
+    ));
+    assert_eq!(report["changed"], true);
+    assert_eq!(
+        fs::read_to_string(installed.join("hooks.json")).unwrap(),
+        plugin_source("hooks.json")
     );
+}
+
+#[test]
+fn antigravity_offers_only_the_project_scope() {
+    let world = World::new();
+    let agy = FakeAgy::new(&world);
+    let out = agy.acs(
+        &world,
+        &world.repo,
+        &[
+            "plugin",
+            "install",
+            "antigravity",
+            "--scope",
+            "user",
+            "--json",
+        ],
+    );
+    assert_failure(&out);
+    assert_eq!(json(&out)["error"]["code"], "unsupported_scope");
+    assert!(!world.repo.join(".agents").exists());
+    assert!(agy.calls().is_empty());
+}
+
+#[test]
+fn a_plugin_antigravity_rejects_is_a_failure() {
+    let world = World::new();
+    let agy = FakeAgy::new(&world);
+    fs::write(agy.dir.join("fail"), "").unwrap();
+    let out = agy.acs(&world, &world.repo, &["plugin", "install", "antigravity"]);
+    assert_failure(&out);
+    let text = stdout(&out);
+    assert!(text.contains("FAILED"), "{text}");
+    assert!(text.contains("bad manifest"), "{text}");
 }
 
 #[test]

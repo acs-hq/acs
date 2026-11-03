@@ -11,6 +11,13 @@
 # With ACS_REAL_NO_MCP=1 the ACS tools are not allowed. Agents that can read `acs_status` plan around
 # each other, so few calls collide; without it they go straight to Edit and the hooks must stop them.
 #
+# With ACS_REAL_ANTIGRAVITY=<task> (discount, tax or rounding) that task runs in Antigravity (`agy`,
+# logged in, model ACS_REAL_AGY_MODEL) instead of Claude Code: the original M1 gate of two Claude
+# Code sessions and one Antigravity session. `acs plugin install antigravity` puts the plugin in the
+# repository's `.agents/plugins/acs/`, so nothing changes in agy's own settings; the session runs
+# with session-only settings (`--settings`) that let it run commands unprompted, as `acceptEdits`
+# plus the allowed tools do for Claude Code. ACS_REAL_NO_MCP=1 removes the plugin's MCP server.
+#
 # Each round starts the sessions that still have work left, all at once, in one work tree. A session
 # blocked on a shared file does the rest of its task and stops; the next round gives it another go.
 # check.mjs then compares what Claude Code says happened with the files on disk.
@@ -20,6 +27,8 @@ set -u
 checkout=$(cd "$(dirname "$0")/../../.." && pwd)
 work=$(cygpath -m "${1:?usage: three_sessions.sh <empty-scratch-dir>}" 2>/dev/null || echo "$1")
 model=${ACS_REAL_MODEL:-sonnet}
+agy_model=${ACS_REAL_AGY_MODEL:-gemini-3.8-flash-medium}
+agy_task=${ACS_REAL_ANTIGRAVITY:-}
 rounds=${ACS_REAL_ROUNDS:-3}
 allowed=("Bash(git:*)" "Bash(python:*)")
 [ "${ACS_REAL_NO_MCP:-}" = 1 ] || allowed+=("mcp__plugin_acs_acs__*")
@@ -71,6 +80,12 @@ printf '__pycache__/\n' > .gitignore
 git add -A
 git commit -q -m "Start the pricing project"
 acs init > "$logs/init.txt" 2>&1 || { cat "$logs/init.txt"; exit 2; }
+if [ -n "$agy_task" ]; then
+    acs plugin install antigravity > "$logs/plugin-antigravity.txt" 2>&1 ||
+        { cat "$logs/plugin-antigravity.txt"; exit 2; }
+    [ "${ACS_REAL_NO_MCP:-}" = 1 ] && rm .agents/plugins/acs/mcp_config.json
+    printf '{"toolPermission":"always-proceed"}\n' > "$work/agy-settings.json"
+fi
 git add -A
 git commit -q -m "Adopt ACS"
 
@@ -105,8 +120,33 @@ finished() {
         git show HEAD:CHANGELOG.md 2>/dev/null | grep -qi "${1%ing}"
 }
 
+# Antigravity's stream leaves out edit arguments, so its own transcript of the conversation is
+# copied next to the stream for check.mjs.
+run_agy_session() {
+    local name=$1 round=$2 stream conversation
+    stream="$logs/round$round-$name.agy.ndjson"
+    MSYS_NO_PATHCONV=1 agy -p "$(task "$name") If a file is blocked, do the rest of the task and say what is left." \
+        --model "$agy_model" \
+        --settings "$work/agy-settings.json" \
+        --output-format stream-json \
+        --print-timeout 900s \
+        < /dev/null > "$stream" 2> "$logs/round$round-$name.err"
+    conversation=$(node -e '
+        const lines = require("fs").readFileSync(process.argv[1], "utf8").split("\n");
+        for (const line of lines) {
+          try { const e = JSON.parse(line); if (e.event === "init") { console.log(e.conversation_id); break; } } catch {}
+        }' "$stream")
+    cp "$HOME/.gemini/antigravity-cli/brain/$conversation/.system_generated/logs/transcript_full.jsonl" \
+        "$logs/round$round-$name.agy-transcript.ndjson" 2>/dev/null ||
+        echo "no Antigravity transcript for $name in round $round" >&2
+}
+
 run_session() {
     local name=$1 round=$2 id
+    if [ "$name" = "$agy_task" ]; then
+        run_agy_session "$name" "$round"
+        return
+    fi
     id=$(node -e 'console.log(require("crypto").randomUUID())')
     echo "$id" > "$logs/round$round-$name.session"
     claude -p "$(task "$name") If a file is blocked, do the rest of the task and say what is left." \

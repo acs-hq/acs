@@ -1,0 +1,12 @@
+{
+  "artifactDirectoryPath": "C:/Users/dev/.gemini/antigravity-cli/brain/9dd7bc9c-767f-4e7b-a429-6659a48c8763",
+  "conversationId": "9dd7bc9c-767f-4e7b-a429-6659a48c8763",
+  "initialNumSteps": 0,
+  "invocationNum": 0,
+  "lastUserInput": "",
+  "modelName": "gemini-3.8-flash-medium",
+  "transcriptPath": "C:/Users/dev/.gemini/antigravity-cli/brain/9dd7bc9c-767f-4e7b-a429-6659a48c8763/.system_generated/logs/transcript_full.jsonl",
+  "workspacePaths": [
+    "C:/Users/dev/proj"
+  ]
+}

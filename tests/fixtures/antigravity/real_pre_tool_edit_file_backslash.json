@@ -1,0 +1,19 @@
+{
+  "artifactDirectoryPath": "C:/Users/dev/.gemini/antigravity-cli/brain/a8bec7ed-c7e6-4cd7-acb2-03e9fc7b5cd0",
+  "conversationId": "a8bec7ed-c7e6-4cd7-acb2-03e9fc7b5cd0",
+  "lastUserInput": "Do these steps in order, one tool call each, then stop and reply with a one-line summary of which steps succeeded. Use your file tools (not the shell) for steps 1-3. 1) Read src/a.rs. 2) Edit src/a.rs so the function returns 2 instead of 1. 3) Create a new file src/b.rs containing exactly: fn b() {} 4) Run the shell command: git status --short",
+  "modelName": "gemini-3.8-flash-medium",
+  "stepIdx": 6,
+  "toolCall": {
+    "args": {
+      "Path": "C:\\Users\\dev\\proj\\src\\a.rs",
+      "Replacement": "    2",
+      "Target": "    1"
+    },
+    "name": "edit_file"
+  },
+  "transcriptPath": "C:/Users/dev/.gemini/antigravity-cli/brain/a8bec7ed-c7e6-4cd7-acb2-03e9fc7b5cd0/.system_generated/logs/transcript_full.jsonl",
+  "workspacePaths": [
+    "C:/Users/dev/proj"
+  ]
+}

@@ -9,6 +9,10 @@ and `docs/decisions/` before starting the next phase.
 **Antigravity and GitLab are deferred (2026-10-31).** Section 6 says what changed and when the
 human must be reminded. Check its triggers before starting any WP.
 
+**The human brought the Antigravity gate forward (2026-11-03).** Its CLI part is done on the branch
+`antigravity-gate`, **not merged into `main`** (decision 0024, section 7 below). What is left of the
+gate is the human's: the desktop app checks and three decisions.
+
 ## 1. Where things stand
 
 - `main` has Phase 0, Phase 1, **Phase 2 (WP2.1–WP2.6)**, **Phase 3 (WP3.1)**, including the rule
@@ -72,11 +76,9 @@ keeps its **interim** `acs-usage` copy until the gate.
   file claimed by another seat was denied and the model quoted the guidance naming the holder
   (`docs/adapters/claude-code.md` §17). Separately, `claude -p` with `acs mcp` listed and called
   all five tools (decision 0016). Hooks and MCP then ran together on Windows (`docs/adapters/claude-code.md` §18).
-- **Antigravity was never run** (not installable in the cloud environment, where
-  `antigravity.google` is blocked by network policy). Its adapter rests on Google's GitHub repos
-  and integrators' reports; `docs/adapters/antigravity.md` lists 12 source disagreements and an
-  11-step manual checklist. Treat it as unverified until someone runs that checklist. `agy` 1.4.12
-  is on the human's Windows machine, so the checklist can run there; it is deferred (section 6).
+- **Antigravity, real CLI runs (branch `antigravity-gate`):** `agy -p` 1.4.12 on Windows ran the
+  CLI part of the 11-step checklist; `docs/adapters/antigravity.md` section 15 has every answer and
+  decision 0024 the changes. The desktop app was not run (the human's decision); see section 7.
 - **Three real sessions at once:** `tests/e2e/real/three_sessions.sh`, run twice. Zero silent
   overwrites and every collision in `acs status`, judged from Claude Code's own logs. Agents with the
   ACS tools plan around each other, so `ACS_REAL_NO_MCP=1` is what makes the hooks do the blocking.
@@ -206,12 +208,12 @@ from `path_attributions`.
 content above 20k entries); wrong only if the file already had unstaged edits. Snapshots of ended
 sessions are kept (no `drop_session` at session end) and evicted by budget only.
 
-**The Antigravity gate (skills and plugin install)** — sync the skill copy from `skills/`; in
-Antigravity the plugin's server is renamed `acs_acs` and tools are reached through `call_mcp_tool`
-(or directly, via `alwaysLoad`). Add a row to the setup skill's harness table and an arm to
-`plugin::install`. Antigravity **fails closed** (every tool call denied) when the hook binary is
-missing, so the `acs`-on-`PATH` check there matters more than it does for Claude Code, which fails
-open; an optional strict mode (`onFailure: block`) is recorded in 0013.
+**Antigravity** — done on `antigravity-gate`: skills synced (both plugins ship exact copies),
+`acs plugin install antigravity` (writes the built-in plugin to `.agents/plugins/acs/`), a setup
+skill row. In hooks, MCP tools are `mcp_acs_acs_acs_<tool>`. Antigravity **fails closed** when the
+hook binary is missing (confirmed), so the `acs`-on-`PATH` check matters more there than for Claude
+Code, which fails open; an optional strict mode (`onFailure: block`) is recorded in 0013. A change
+to `integrations/antigravity/` needs a rebuild to reach `acs plugin install antigravity`.
 
 **WP7.2 (hardening)** — known bypasses: an agent starting a nested harness with hooks disabled
 (`claude --bare -p`, `claude --settings '{"disableAllHooks":true}'`); writes to harness config
@@ -221,9 +223,10 @@ cannot seal (file tools get `path_escapes_repo` ask; shell writes are uncovered)
 
 **Known gaps and sharp edges**
 
-- Antigravity: no session start/end or prompt events (`PreInvocation` stands in, its first-call
-  rule is a guess); ACS `allow` renders as Antigravity `ask` ("no objection") — verify it doesn't
-  force prompts; subagent conversations are separate seats and can conflict with their parent.
+- Antigravity: no session end or prompt event; `SessionStart` fires in the CLI but ACS relies on
+  the first `PreInvocation`, whose rule now rests on real counters. ACS `allow` renders as
+  `allow` (decision 0024). In `always-proceed` mode `force_ask` is approved without a prompt.
+  Subagents are separate seats and **do** conflict with their parent (seen in a real run).
 - Claude Code: `CLAUDE_CODE_SESSION_ID` is stale after `--continue` and `/clear`; MCP falls back
   to the most recent live seat in the worktree and warns on ambiguity. Persisting
   `tool_use_id → seat` from pre-tool events (the `_meta["claudecode/toolUseId"]` is already
@@ -252,10 +255,20 @@ cannot seal (file tools get `path_escapes_repo` ask; shell writes are uncovered)
 
 ## 5. For the human
 
-- **Deferred, see section 6 for when:** allow `antigravity.google` in the cloud environment's
-  network settings (Allowed domains) so a session can verify the adapter against the official
-  docs; run the Antigravity manual checklist (`docs/adapters/antigravity.md`) on a machine with
-  Antigravity installed and record results in `docs/releases/`.
+- **Antigravity (section 7):** the desktop app checks, the decisions of 0024, and whether to
+  merge `antigravity-gate`.
+- **Reminder: a missing `acs` breaks the two harnesses in opposite ways.** Both plugins' hooks run
+  `acs`, found on the `PATH` the harness started with. Once a repository has adopted ACS and pushed
+  its plugin files (`.agents/plugins/acs/`, `.claude/settings.json`), anyone who opens it without
+  `acs` on `PATH` gets:
+  - **Antigravity:** every tool call in that repository denied ("'acs' is not recognized ...") until
+    they install `acs` and restart `agy` from a terminal that has it. Agy works normally elsewhere.
+  - **Claude Code:** nothing blocked. Hooks fail open, so every tool call runs and ACS checks
+    nothing (no claims, no sealed paths), with no message to the agent.
+
+  Tell teammates to install `acs` before opening an adopted repository; `acs doctor` checks it. A
+  strict mode that makes Claude Code fail closed too is noted in decision 0013, not enabled. The cloud environment's network setting for `antigravity.google` only
+  matters if a cloud session ever needs the docs; this machine reads them.
 - After M1: run `acs init` in this repository to start dogfooding. Agents then cannot edit
   `.acs/**`, `.github/workflows/**` or the Claude settings files, so those changes fall to the human.
 - Release setup: `docs/releases/README.md` (name check, public repository, npm scope
@@ -298,8 +311,58 @@ assume every harness sends session start, session end or prompt events.
 | WP3.1 starts (raised 2026-10-31) | A one-off push of `refs/acs/*` to GitLab is optional now. If GitLab rejects it later, the fallback is a dedicated branch instead of custom refs. | Reminder |
 | WP5.3 starts | GitLab CODEOWNERS parsing is skipped; it returns with WP9.2. | Reminder |
 | Any public launch | ACS has only been proven across Claude Code sessions, not across harnesses. | Reminder |
-| WP8.3 merges, before WP9.1 starts | Antigravity must come back now: allow `antigravity.google`, run the manual checklist, sync the skill copy, add `acs plugin install antigravity`, run the three-harness M1 gate, finish the WP2.3 and WP2.6 acceptance. | **Hard stop** |
+| WP8.3 merges, before WP9.1 starts | Antigravity must come back now. **Brought forward on 2026-11-03; the CLI part is done on `antigravity-gate` (section 7).** At this point, check that section 7's human items are settled and the branch is merged before WP9.1. | **Hard stop** |
 | WP9.2 starts | GitLab must come back now: the CI template, the GitLab CODEOWNERS format and the push check. | **Hard stop** |
 
 Antigravity must be verified before WP9.1 because its known gaps (`allow` rendered as `ask`, no
 session events) may need contract changes, which are cheap in draft 0.1 and costly after Spec 1.0.
+
+## 7. The Antigravity gate, brought forward (2026-11-03)
+
+Done in one session on the human's Windows machine, on the branch `antigravity-gate` (not merged).
+Decision 0024 has the decisions, `docs/adapters/antigravity.md` section 15 the evidence,
+`docs/releases/antigravity-gate.md` the record of the runs. Real runs used `agy -p` with
+`gemini-3.8-flash-medium` and `claude -p` with Sonnet, in throwaway repositories with a throwaway
+`ACS_HOME`; no global agy or Claude Code setting was changed. On the branch, fmt, clippy
+`-D warnings` and the workspace tests pass locally on Windows (564 passed, 1 ignored); CI has not
+seen it (the human pushes).
+
+| Gate item (plan section 7) | State |
+| --- | --- |
+| Allow `antigravity.google` | Not needed here: this machine reads the official docs |
+| Manual checklist, recorded in `docs/releases/` | Done for the CLI; the desktop app is left for the human (below) |
+| Sync the skill copy; `acs plugin install antigravity`; WP2.3 and WP2.6 acceptance; known gaps | Done in the CLI; three gaps need the human's call (below) |
+| Original M1 gate: two Claude Code sessions and one Antigravity session | **Passed** with the ACS tools allowed (zero silent overwrites, every collision in `acs status`, 3 of 3 tasks). With them withheld the two conditions held, but a finished Antigravity session's claims outlived it and blocked the third task (`docs/releases/antigravity-gate.md`) |
+
+**For the human, in the desktop app** (not run, by the human's decision). Use a throwaway repository
+with `acs init` and `acs plugin install antigravity`, opened in the app:
+
+1. Do the workspace plugin's hooks, MCP server and rule load at all? (`.agents/plugins/acs/`; the
+   CLI loads it without a trust prompt.)
+2. With the app's normal permission mode: do reads and edits ACS has no objection to run exactly as
+   without ACS? This is the `allow` question: a third-party report said the app treats `allow` as
+   approval and skips prompts; the official reference says it defers to the default policy. A shell
+   command that would normally prompt must still prompt.
+3. An edit of a file claimed with `acs claim` is denied, and the agent sees the reason.
+4. A write outside the repository (ACS answers `force_ask`) prompts you, with the reason.
+5. The first message of a conversation carries the ACS status, and later turns do not repeat it.
+
+**Decisions for the human** (decision 0024, "Open for the human"): `force_ask` under
+`always-proceed` (keep, or render ACS `ask` as `deny`); subagents as separate seats (accept, or join
+them through the subagent's transcript, which needs the orchestrator's call before Spec 1.0); claims
+outliving an Antigravity session (accept, shorter TTL, or a `Stop` hook); and whether to merge
+`antigravity-gate`. Agents running the human `acs` CLI is noted for WP7.2.
+
+Process lessons from this session:
+
+1. **Drive `agy` from PowerShell, or set `MSYS_NO_PATHCONV=1`.** Git Bash rewrote the prompt `/hooks`
+   into `C:/Program Files/Git/hooks`, and the agent spent a run exploring that folder.
+2. **PowerShell 5.1 mangles JSON passed to native programs**: inner quotes in arguments are dropped
+   (use `--settings <file>`), and text piped into `acs hook` arrives unreadable. Pipe from bash.
+3. **A recorder that writes with `Set-Content -Encoding utf8` adds a byte-order mark**, which made
+   replayed payloads unparseable, and ACS answered them with an allow. Strip it before replaying.
+4. **This machine's agy runs in `toolPermission: always-proceed`.** Test permission behaviour with a
+   session-only `--settings` file (`{"toolPermission":"request-review"}`); headless runs list refused
+   calls as `denied_actions`.
+5. **`agy -p` output with `--output-format stream-json` leaves out edit arguments**; the
+   conversation's `transcript_full.jsonl` under `~/.gemini/antigravity-cli/brain/<id>/` has them.

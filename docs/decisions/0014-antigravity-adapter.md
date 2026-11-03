@@ -1,6 +1,7 @@
 # 0014 — Antigravity adapter and plugin (WP2.3)
 
-Date: 2026-10-30. Status: accepted (WP2.3), pending orchestrator review.
+Date: 2026-10-30. Status: accepted (WP2.3). Point 4's `allow` rendering is superseded by decision
+0024 (ACS `allow` is now `{"decision":"allow"}`), which also records the real runs.
 
 ## Context
 

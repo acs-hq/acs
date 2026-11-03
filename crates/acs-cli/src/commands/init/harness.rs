@@ -51,7 +51,7 @@ pub const HARNESSES: &[Harness] = &[
         name: "Antigravity",
         binaries: &["agy", "antigravity"],
         dirs: &[".agents", ".agent"],
-        install: &["agy plugin install <acs checkout>/integrations/antigravity"],
+        install: &["acs plugin install antigravity"],
         without_acs: "its hooks fail CLOSED: Antigravity denies every tool call",
         fails_closed: true,
     },

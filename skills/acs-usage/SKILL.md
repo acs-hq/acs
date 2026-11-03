@@ -13,7 +13,9 @@ The ACS tools are the MCP server `acs` of this plugin. In Claude Code their full
 `mcp__plugin_acs_acs__acs_status`, `mcp__plugin_acs_acs__acs_intent`,
 `mcp__plugin_acs_acs__acs_claim`, `mcp__plugin_acs_acs__acs_release` and
 `mcp__plugin_acs_acs__acs_why`. If they are not loaded yet, find them with ToolSearch
-(search for `acs`).
+(search for `acs`). In Antigravity the server is `acs_acs` and the tools are
+`mcp_acs_acs_acs_status`, `mcp_acs_acs_acs_intent`, `mcp_acs_acs_acs_claim`,
+`mcp_acs_acs_acs_release` and `mcp_acs_acs_acs_why`.
 
 ## Do this
 

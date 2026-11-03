@@ -162,7 +162,7 @@ fn init_prints_install_commands_for_detected_harnesses() {
     assert_success(&out);
     let text = stdout(&out);
     assert!(text.contains("acs plugin install claude-code"), "{text}");
-    assert!(text.contains("agy plugin install"), "{text}");
+    assert!(text.contains("acs plugin install antigravity"), "{text}");
     assert_fits_80(&text);
     // Printed, not run: no settings file appeared.
     assert!(!world.repo.join(".claude/settings.json").exists());

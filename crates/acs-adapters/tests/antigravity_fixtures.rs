@@ -188,6 +188,158 @@ fn tool_fixtures_parse_as_expected() {
     }
 }
 
+/// Payloads captured from a real `agy` 1.4.12 run on Windows (`real_*.json`), with the workspace
+/// and home directories replaced.
+#[test]
+fn real_captures_parse_as_expected() {
+    let w = "C:/Users/dev/proj";
+    let cases = [
+        (
+            "real_pre_tool_read_file",
+            Phase::PreTool,
+            "read_file",
+            ToolKind::Read,
+            Some("C:/Users/dev/proj/src/a.rs"),
+        ),
+        (
+            "real_pre_tool_edit_file",
+            Phase::PreTool,
+            "edit_file",
+            ToolKind::Edit,
+            Some("C:/Users/dev/proj/src/a.rs"),
+        ),
+        (
+            "real_pre_tool_edit_file_backslash",
+            Phase::PreTool,
+            "edit_file",
+            ToolKind::Edit,
+            Some("C:\\Users\\dev\\proj\\src\\a.rs"),
+        ),
+        (
+            "real_pre_tool_write_file",
+            Phase::PreTool,
+            "write_file",
+            ToolKind::Write,
+            Some("C:/Users/dev/proj/src/b.rs"),
+        ),
+        (
+            "real_pre_tool_run_command",
+            Phase::PreTool,
+            "run_command (powershell)",
+            SHELL,
+            None,
+        ),
+        (
+            "real_pre_tool_mcp_acs_status",
+            Phase::PreTool,
+            "mcp_acs_acs_acs_status",
+            ToolKind::Other,
+            None,
+        ),
+        (
+            "real_pre_tool_invoke_subagent",
+            Phase::PreTool,
+            "invoke_subagent",
+            ToolKind::Other,
+            None,
+        ),
+        (
+            "real_post_tool_edit_file",
+            Phase::PostTool,
+            "edit_file",
+            ToolKind::Edit,
+            Some("C:/Users/dev/proj/src/a.rs"),
+        ),
+        (
+            "real_post_tool_read_file_error",
+            Phase::PostTool,
+            "read_file",
+            ToolKind::Read,
+            Some("C:/Users/dev/proj/src"),
+        ),
+    ];
+    for (file, phase, tool, kind, path) in cases {
+        for given in [Some(phase), None] {
+            let event = parse(file, given);
+            assert_eq!(event.phase, phase, "{file}");
+            let t = event.tool.as_ref().unwrap();
+            assert_eq!((t.name.as_str(), t.kind), (tool, kind), "{file}");
+            assert_eq!(event.paths, path.into_iter().collect::<Vec<_>>(), "{file}");
+            assert_eq!(event.cwd, w, "{file}");
+            assert!(event.prompt.is_none(), "{file}");
+        }
+    }
+    let edit = parse("real_pre_tool_edit_file", None).edit.unwrap();
+    assert_eq!(
+        (edit.old_text.as_str(), edit.new_text.as_str()),
+        ("    1", "    2")
+    );
+    assert_eq!(
+        parse("real_pre_tool_run_command", None).command.as_deref(),
+        Some("git status --short")
+    );
+    assert!(
+        parse("real_post_tool_edit_file", None)
+            .result
+            .unwrap()
+            .success
+    );
+    assert!(
+        !parse("real_post_tool_read_file_error", None)
+            .result
+            .unwrap()
+            .success
+    );
+
+    // `invocationNum` counts from 0; the first call of a turn has the user's message as its one
+    // initial step, later calls see the steps added since.
+    let first = parse("real_pre_invocation_first", Some(Phase::PromptSubmit));
+    assert_eq!(first.phase, Phase::SessionStart);
+    assert!(
+        first
+            .prompt
+            .as_deref()
+            .unwrap()
+            .starts_with("Do these steps")
+    );
+    assert_eq!(
+        parse("real_pre_invocation_second", Some(Phase::PromptSubmit)).phase,
+        Phase::PromptSubmit
+    );
+    // A resumed conversation (`agy --conversation`) restarts `invocationNum` but carries the
+    // earlier steps: not a session start. A subagent's first call has no initial steps at all and
+    // is its own session start (subagents are separate seats).
+    assert_eq!(
+        parse(
+            "real_pre_invocation_resumed_turn",
+            Some(Phase::PromptSubmit)
+        )
+        .phase,
+        Phase::PromptSubmit
+    );
+    let subagent = parse(
+        "real_pre_invocation_subagent_first",
+        Some(Phase::PromptSubmit),
+    );
+    assert_eq!(subagent.phase, Phase::SessionStart);
+    assert_ne!(subagent.harness_session_id, first.harness_session_id);
+    // ACS registers neither SessionStart, PostInvocation nor Stop hooks, but they parse when
+    // given a phase; SessionStart has no counters, so it keeps the phase it was given.
+    assert_eq!(
+        parse("real_session_start", Some(Phase::SessionStart)).phase,
+        Phase::SessionStart
+    );
+    for (file, phase) in [
+        ("real_session_start", Phase::SessionStart),
+        ("real_post_invocation", Phase::PromptSubmit),
+        ("real_stop", Phase::SessionEnd),
+    ] {
+        let event = parse(file, Some(phase));
+        assert_eq!(event.cwd, w, "{file}");
+        assert!(event.tool.is_none(), "{file}");
+    }
+}
+
 #[test]
 fn edit_fixtures_carry_old_and_new_text() {
     let new = parse("pre_tool_edit_file", Some(Phase::PreTool))
@@ -277,10 +429,10 @@ fn output_fixtures_are_what_the_adapter_renders() {
         ask
     );
 
-    // ACS allow is "no objection", never `allow`.
+    // ACS allow is "no objection": `allow`, which defers to Antigravity's own policy.
     let allow = rendered(Phase::PreTool, &decision(Outcome::Allow, ""));
-    assert_eq!(allow, json("out_pre_tool_ask_defer"));
-    assert_ne!(allow, json("out_pre_tool_allow"));
+    assert_eq!(allow, json("out_pre_tool_allow"));
+    assert_ne!(allow, json("out_pre_tool_ask_defer"));
 
     let inject = json("out_pre_invocation_inject");
     let mut with_context = decision(Outcome::Allow, "");
@@ -310,10 +462,10 @@ fn output_fixtures_are_what_the_adapter_renders() {
 
 #[test]
 fn fixtures_not_produced_by_the_adapter_are_still_valid_json() {
-    // `allow` and the Stop continue answer are documented shapes ACS deliberately never emits;
-    // the MCP request is the acs-mcp crate's input.
+    // `ask` (the "no objection" answer before decision 0024) and the Stop continue answer are
+    // shapes ACS never emits; the MCP request is the acs-mcp crate's input.
     for name in [
-        "out_pre_tool_allow",
+        "out_pre_tool_ask_defer",
         "out_stop_continue",
         "mcp_tools_call_meta",
     ] {
@@ -352,6 +504,22 @@ fn every_fixture_is_covered_by_a_test() {
         "out_empty_object",
         "out_stop_continue",
         "mcp_tools_call_meta",
+        "real_pre_tool_read_file",
+        "real_pre_tool_edit_file",
+        "real_pre_tool_edit_file_backslash",
+        "real_pre_tool_write_file",
+        "real_pre_tool_run_command",
+        "real_post_tool_edit_file",
+        "real_post_tool_read_file_error",
+        "real_pre_invocation_first",
+        "real_pre_invocation_second",
+        "real_post_invocation",
+        "real_session_start",
+        "real_stop",
+        "real_pre_tool_mcp_acs_status",
+        "real_pre_tool_invoke_subagent",
+        "real_pre_invocation_resumed_turn",
+        "real_pre_invocation_subagent_first",
         // Replayed by the MCP server tests (`crates/acs-cli/tests/mcp.rs`), not by the adapter.
         "mcp_tools_call.documented",
     ];

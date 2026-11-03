@@ -247,7 +247,7 @@ fn an_undetected_plugin_gets_the_install_command() {
         plugin["hint"]
             .as_str()
             .unwrap()
-            .contains("agy plugin install")
+            .contains("acs plugin install antigravity")
     );
 }
 

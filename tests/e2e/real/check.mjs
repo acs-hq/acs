@@ -1,4 +1,5 @@
-// Judges a run of three_sessions.sh from Claude Code's own logs, not from ACS's records:
+// Judges a run of three_sessions.sh from the harnesses' own logs (Claude Code's stream, Antigravity's
+// conversation transcript), not from ACS's records:
 //
 //   node check.mjs <repo> <logs>
 //
@@ -50,11 +51,66 @@ function readSession(file) {
   });
 }
 
+// Antigravity's transcript: a step with `tool_calls` is followed by one result step per call, whose
+// `status` is `ERROR` (with `error`) when the call failed or a hook denied it. Its file tools are
+// mapped onto Claude Code's names so one check covers both.
+function readAgySession(file) {
+  const pending = [];
+  const calls = [];
+  for (const line of fs.readFileSync(file, 'utf8').split('\n')) {
+    let step;
+    try {
+      step = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (Array.isArray(step.tool_calls)) {
+      pending.push(...step.tool_calls);
+      continue;
+    }
+    const call = step.source === 'MODEL' && step.type === 'GENERIC' ? pending.shift() : undefined;
+    if (!call) continue;
+    const args = call.args ?? {};
+    const error = step.status === 'ERROR';
+    const text = String(step.error ?? step.content ?? '');
+    if (call.name === 'edit_file' || call.name === 'replace_file_content') {
+      calls.push({
+        name: 'Edit',
+        input: {
+          file_path: args.Path ?? args.TargetFile,
+          old_string: args.Target ?? args.TargetContent,
+          new_string: args.Replacement ?? args.ReplacementContent,
+        },
+        error,
+        text,
+      });
+    } else if (call.name === 'write_file' || call.name === 'write_to_file') {
+      calls.push({
+        name: 'Write',
+        input: { file_path: args.Path ?? args.TargetFile, content: args.Content ?? args.CodeContent },
+        error,
+        text,
+      });
+    } else if (call.name === 'run_command') {
+      calls.push({ name: 'Bash', input: { command: args.CommandLine }, error, text });
+    } else {
+      calls.push({ name: call.name, input: args, error, text });
+    }
+  }
+  return calls;
+}
+
 const sessions = fs
   .readdirSync(logs)
-  .filter((name) => name.endsWith('.jsonl') && name.startsWith('round'))
+  .filter((name) => name.startsWith('round'))
   .sort()
-  .map((name) => ({ name: name.replace('.jsonl', ''), calls: readSession(path.join(logs, name)) }));
+  .flatMap((name) => {
+    const file = path.join(logs, name);
+    if (name.endsWith('.agy-transcript.ndjson')) {
+      return [{ name: name.replace('.agy-transcript.ndjson', ' (antigravity)'), calls: readAgySession(file) }];
+    }
+    return name.endsWith('.jsonl') ? [{ name: name.replace('.jsonl', ''), calls: readSession(file) }] : [];
+  });
 
 const problems = [];
 const writes = [];
