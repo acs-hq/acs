@@ -7,7 +7,10 @@ version **1.4.11** that day.
 
 Read this first:
 
-- **No official documentation page could be read.** `antigravity.google` (including
+- **Verified on 2026-11-03 against a real `agy` 1.4.12 on Windows and the official docs.** Section
+  15 records what the runs and the official pages showed, and wins wherever it disagrees with
+  sections 1 to 14, which are kept as the research record. Decision 0024 has the resulting changes.
+- **No official documentation page could be read** (on 2026-10-30; see section 15 for 2026-11-03). `antigravity.google` (including
   `/docs/hooks`) is refused by this environment's egress proxy (HTTP 403 on CONNECT, policy
   denial), so the pages Google calls "the official docs" were never opened. What is official
   here is the `google-antigravity` GitHub organisation (2 public repositories:
@@ -514,14 +517,16 @@ code is verified against documented and third-party payloads only. The binary wa
 with the fixtures (`acs hook antigravity --phase ...` in a temporary repository) and printed the
 shapes below, but that tests ACS, not Antigravity.
 
-Resolved from the proposals above (orchestrator answers):
+Resolved from the proposals above (orchestrator answers; the `allow` rendering changed in decision
+0024, see section 15):
 
 - `Stop` is **not** mapped and no `Stop` hook is registered. Claims expire by TTL; crashed-session
   detection covers the rest.
-- ACS `allow` renders `{"decision":"ask"}`; `ask` renders `{"decision":"force_ask","reason":...}`;
+- ACS `allow` renders `{"decision":"allow"}` (was `{"decision":"ask"}` until decision 0024); `ask`
+  renders `{"decision":"force_ask","reason":...}`;
   `deny` and `queue` render `{"decision":"deny","reason":...}`. Warnings are appended to the
   reason of a deny or ask and dropped on an allow. Exactly one JSON object, exit 0, always. An
-  unparseable payload renders `{"decision":"ask"}` (the adapter does not know the event then, and
+  unparseable payload renders `{"decision":"allow"}` (the adapter does not know the event then, and
   `PreToolUse` fails closed on anything else).
 - `PreInvocation` is `session_start` when `invocationNum <= 1` and `initialNumSteps <= 1` (a
   missing field does not count against it; with neither field, `prompt_submit`), else
@@ -542,7 +547,7 @@ Rendered output, by phase:
 
 | Phase | Allow | Ask | Deny / queue |
 | --- | --- | --- | --- |
-| `pre_tool` (and unparsed) | `{"decision":"ask"}` | `{"decision":"force_ask","reason":"..."}` | `{"decision":"deny","reason":"..."}` |
+| `pre_tool` (and unparsed) | `{"decision":"allow"}` | `{"decision":"force_ask","reason":"..."}` | `{"decision":"deny","reason":"..."}` |
 | `session_start`, `prompt_submit` | `{}` or `{"injectSteps":[...]}` | same as allow | same as allow (never produced) |
 | `post_tool`, `session_end` | `{}` | `{}` | `{}` |
 
@@ -598,6 +603,45 @@ Rendered output, by phase:
   run, subagents appear as separate sessions, build-dependent tool names, plugin-bundled hook
   vetoes unverified.
 
+## 15. Verified (2026-11-03, `agy` 1.4.12, Windows 11)
+
+Runs with `agy -p`, model `gemini-3.8-flash-medium`, in throwaway repositories, hooks and plugin in
+the workspace only. A recording hook (stdin to a file) captured every event; the `real_*.json`
+fixtures are those captures with the workspace and home paths replaced. The official pages
+`antigravity.google/docs/{hooks,plugins,build-plugins,mcp,rules,skills}` were read the same day
+[S24]. `agy changelog` prints the changelog offline; 1.4.12 changed nothing about hooks.
+
+### Answers to the open points
+
+| Point (section) | Answer |
+| --- | --- |
+| Hook locations (2.1) | Confirmed: workspace `.agents/hooks.json`, user `~/.gemini/config/hooks.json`, plugin root `hooks.json`. Workspace plugins in `.agents/plugins/<name>/` load too. `agy -p` loads workspace hooks and plugins with no trust prompt |
+| Events (2.3) | Six, per the official reference: `SessionStart` exists and fires in the CLI once per new conversation and once per subagent, but not when a conversation is resumed with `--conversation` |
+| Payload keys (2.4, 12.2) | camelCase, no event name. Every event carries `conversationId`, `workspacePaths` (forward slashes on Windows), `transcriptPath` (`transcript_full.jsonl`), `artifactDirectoryPath`, `modelName` and `lastUserInput` (empty in a subagent). `Stop`'s `terminationReason` was `NO_TOOL_CALL` |
+| Counters (2.6, checklist 8) | `invocationNum` restarts at 0 every turn. First call of a new conversation: `initialNumSteps` 1; of a resumed turn: the earlier steps (4); of a subagent: 0. Decision 0024 keeps the first-invocation rule |
+| Tool names (3, 12.8) | 1.4.12: `read_file {Path}`, `edit_file {Path, Target, Replacement}`, `write_file {Path, Content}`, `run_command {CommandLine, WaitMsBeforeAsync, toolSummary}` (no `Cwd`). No list or search tool was offered: the agent listed and searched through `run_command`. The official reference still lists the pre-1.4.3 names. Paths arrive with either slash |
+| MCP in hooks (7) | `mcp_<server>_<tool>` (`mcp_acs_acs_acs_status`), not `call_mcp_tool`. Stream output lists `call_mcp_tool` among the tools, but the model called the MCP tools directly |
+| `allow` (2.5, checklist 5) | The official reference: `allow` delegates "to the next hook or default policy"; `auto_approve` approves; `ask` prompts but respects always-allow; `force_ask` always prompts; also `deny_unless_prior_grant`, `overwrite`, `permissionOverrides`. Measured under `request-review`: no hook, `allow` and `ask` refused the same calls (`run_command`); `force_ask` refused `read_file`. Decision 0024 renders ACS allow as `allow` |
+| `force_ask` (checklist 6) | Prompts (refused headless) in `request-review`. **Approved without a prompt in `always-proceed`**: a write outside the repository went through although ACS answered `force_ask` |
+| Fail closed (2.5, 10, checklist 7) | Confirmed for `PreToolUse`: with `acs` missing, every call was denied with cmd's "'acs' is not recognized ..." (hook commands run through `cmd.exe`). A failing `PreInvocation` hook is logged and ignored. The build-plugins page says failures fail open; not for `PreToolUse` in the CLI |
+| Plugin hooks gate (5, checklist 4) | Yes: the plugin's `PreToolUse` deny blocked `edit_file` and the model quoted the reason exactly, then did not try another way |
+| Context (2.6, checklist 8) | `ephemeralMessage` from `PreInvocation` reaches the model (quoted verbatim) and is stored in the transcript as an `EPHEMERAL_MESSAGE` step |
+| MCP binding (7, checklist 9) | `acs_status` listed a file the agent had just edited as its own claim: MCP and hooks share the seat |
+| Hook environment (8) | `ANTIGRAVITY_CONVERSATION_ID` is set, equal to the payload's `conversationId` (the subagent's own id in a subagent). The hook's working directory is the folder holding its `hooks.json` |
+| Subagents (3, checklist 9) | Separate seats, confirmed: a subagent was refused an edit of a file its parent had just created. The parent id appears only in the subagent's transcript (`[Message] ... sender=<id>`, step 1) and in MCP `_meta`. Decision 0024 leaves the fix to the orchestrator |
+| Windows shell (checklist 10) | A PowerShell `Remove-Item` of an unclaimed file was refused (`delete_outside_claims`) |
+| Rule (checklist 11) | The plugin's always-on rule loaded: the agent called `acs_status` and `acs_intent` unprompted and could summarize the rule |
+| Validator (checklist 2) | `agy plugin validate --strict` passes; the only note is the missing logo |
+
+### Not verified
+
+- **The desktop app**, by the human's decision: whether `allow` skips the user's prompts there,
+  whether `force_ask` prompts, whether workspace plugins and hooks load, and the counters. See
+  `docs/HANDOFF.md`.
+- Interactive TUI sessions (`agy` without `-p`): prompts and trust dialogs.
+- macOS and Linux, a user-scope (global) plugin install, `ANTIGRAVITY_CONVERSATION_ID` in an MCP
+  server's environment.
+
 ## Sources
 
 Reliability: **official** = Google's `google-antigravity` GitHub organisation; **GDE** = a
@@ -628,5 +672,6 @@ integrators (several are AI-assisted and mark their own claims "unverified").
 | S20 | web-search result summaries mentioning `https://antigravity.google/docs/hooks/`, `.../docs/rules-workflows`, `.../docs/skills`, `.../docs/mcp` | the pages themselves were **not read** |
 | S21 | https://github.com/jmmshn/bees/pull/178 | third party |
 | S23 | https://raw.githubusercontent.com/google-gemini/gemini-cli/main/docs/hooks/reference.md (Gemini CLI, for the comparison) | official (Gemini CLI) |
+| S24 | https://antigravity.google/docs/hooks, `/docs/plugins`, `/docs/build-plugins`, `/docs/mcp`, `/docs/rules`, `/docs/skills` (read 2026-11-03) | official; disagrees with the CLI on tool names and on failing open |
 
 Fetched or searched on 2026-10-30. Fixtures: `tests/fixtures/antigravity/`.
