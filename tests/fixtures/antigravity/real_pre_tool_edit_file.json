@@ -1,0 +1,19 @@
+{
+  "artifactDirectoryPath": "C:/Users/dev/.gemini/antigravity-cli/brain/3c014482-ab5e-4c8c-a537-4372edccdda3",
+  "conversationId": "3c014482-ab5e-4c8c-a537-4372edccdda3",
+  "lastUserInput": "Do these steps in order, one tool call each, then stop and reply DONE. Use your file tools (not the shell) for steps 1-3. 1) Read src/a.rs. 2) Edit src/a.rs so the function returns 2 instead of 1. 3) Create a new file src/b.rs containing exactly: fn b() {} 4) Run the shell command: git status --short 5) List the src directory with your directory listing tool. 6) Search for the text fn under src with your search tool.",
+  "modelName": "gemini-3.8-flash-medium",
+  "stepIdx": 4,
+  "toolCall": {
+    "args": {
+      "Path": "C:/Users/dev/proj/src/a.rs",
+      "Replacement": "    2",
+      "Target": "    1"
+    },
+    "name": "edit_file"
+  },
+  "transcriptPath": "C:/Users/dev/.gemini/antigravity-cli/brain/3c014482-ab5e-4c8c-a537-4372edccdda3/.system_generated/logs/transcript_full.jsonl",
+  "workspacePaths": [
+    "C:/Users/dev/proj"
+  ]
+}
