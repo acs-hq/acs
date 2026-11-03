@@ -7,6 +7,6 @@ deterministic; these skills tell the agent what to do.
   a commit on `acs/adopt`.
 - `acs-usage/SKILL.md` is the etiquette for an agent working in an ACS repository.
 
-The Claude Code plugin ships copies in `integrations/claude-code/skills/`. Edit the files here and
-copy them over; `crates/acs-cli/tests/packaging.rs` fails if the copies differ. The interim
-`acs-usage` copy in `integrations/antigravity/` is synced when Antigravity returns (decision 0019).
+Both plugins ship copies: `integrations/claude-code/skills/` and
+`integrations/antigravity/skills/`. Edit the files here and copy them over;
+`crates/acs-cli/tests/packaging.rs` fails if a copy differs.

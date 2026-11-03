@@ -30,13 +30,15 @@ fn both_skills_exist() {
 }
 
 #[test]
-fn the_claude_code_plugin_ships_exact_copies() {
-    for skill in canonical_skills() {
-        assert_eq!(
-            read(&format!("skills/{skill}/SKILL.md")),
-            read(&format!("integrations/claude-code/skills/{skill}/SKILL.md")),
-            "{skill}: copy skills/{skill}/SKILL.md over the plugin's copy"
-        );
+fn both_plugins_ship_exact_copies() {
+    for plugin in ["claude-code", "antigravity"] {
+        for skill in canonical_skills() {
+            assert_eq!(
+                read(&format!("skills/{skill}/SKILL.md")),
+                read(&format!("integrations/{plugin}/skills/{skill}/SKILL.md")),
+                "{skill}: copy skills/{skill}/SKILL.md over the {plugin} plugin's copy"
+            );
+        }
     }
 }
 
@@ -74,6 +76,8 @@ fn the_usage_skill_names_every_mcp_tool() {
             text.contains(&format!("mcp__plugin_acs_acs__{tool}")),
             "{tool}"
         );
+        // Antigravity names plugin MCP tools `mcp_<plugin>_<server>_<tool>`.
+        assert!(text.contains(&format!("mcp_acs_acs_{tool}")), "{tool}");
     }
 }
 
@@ -93,7 +97,10 @@ fn the_setup_skill_points_at_the_installers_dist_builds() {
 #[test]
 fn the_setup_skill_stays_clear_of_user_scope_and_commits_before_the_gate() {
     let text = read("skills/acs-setup/SKILL.md");
-    assert!(text.contains("acs plugin install claude-code\n"));
+    assert!(text.contains("acs plugin install <harness id>\n"));
+    for id in ["claude-code", "antigravity"] {
+        assert!(text.contains(&format!("| `{id}` |")), "{id}");
+    }
     assert!(text.contains("Commit before the gate starts"));
     let commit = text.find("## 5. Commit").unwrap();
     let tell = text.find("## 6. Tell your pilot").unwrap();
@@ -105,9 +112,13 @@ fn the_setup_skill_stays_clear_of_user_scope_and_commits_before_the_gate() {
 
 #[test]
 fn the_plugin_version_is_the_release_version() {
-    let manifest: serde_json::Value =
-        serde_json::from_str(&read("integrations/claude-code/.claude-plugin/plugin.json")).unwrap();
-    assert_eq!(manifest["version"], env!("CARGO_PKG_VERSION"));
+    for path in [
+        "integrations/claude-code/.claude-plugin/plugin.json",
+        "integrations/antigravity/plugin.json",
+    ] {
+        let manifest: serde_json::Value = serde_json::from_str(&read(path)).unwrap();
+        assert_eq!(manifest["version"], env!("CARGO_PKG_VERSION"), "{path}");
+    }
 }
 
 #[test]
