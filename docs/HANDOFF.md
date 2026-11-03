@@ -255,8 +255,19 @@ cannot seal (file tools get `path_escapes_repo` ask; shell writes are uncovered)
 
 ## 5. For the human
 
-- **Antigravity (section 7):** the desktop app checks, the three decisions of 0024, and whether to
-  merge `antigravity-gate`. The cloud environment's network setting for `antigravity.google` only
+- **Antigravity (section 7):** the desktop app checks, the decisions of 0024, and whether to
+  merge `antigravity-gate`.
+- **Reminder: a missing `acs` breaks the two harnesses in opposite ways.** Both plugins' hooks run
+  `acs`, found on the `PATH` the harness started with. Once a repository has adopted ACS and pushed
+  its plugin files (`.agents/plugins/acs/`, `.claude/settings.json`), anyone who opens it without
+  `acs` on `PATH` gets:
+  - **Antigravity:** every tool call in that repository denied ("'acs' is not recognized ...") until
+    they install `acs` and restart `agy` from a terminal that has it. Agy works normally elsewhere.
+  - **Claude Code:** nothing blocked. Hooks fail open, so every tool call runs and ACS checks
+    nothing (no claims, no sealed paths), with no message to the agent.
+
+  Tell teammates to install `acs` before opening an adopted repository; `acs doctor` checks it. A
+  strict mode that makes Claude Code fail closed too is noted in decision 0013, not enabled. The cloud environment's network setting for `antigravity.google` only
   matters if a cloud session ever needs the docs; this machine reads them.
 - After M1: run `acs init` in this repository to start dogfooding. Agents then cannot edit
   `.acs/**`, `.github/workflows/**` or the Claude settings files, so those changes fall to the human.
