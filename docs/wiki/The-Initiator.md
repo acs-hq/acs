@@ -22,6 +22,7 @@ acs doctor
 
 - `acs plugin install claude-code` turns on the ACS plugin for this repository by writing `.claude/settings.json`. Keep the default scope, `project`: it is the one that reaches your team when you commit it. `--scope user` would apply ACS to every repository you open, including ones that never adopted it.
 - `acs init` writes the policy files to `.acs/policy/`, adds a git setting for sharing claims and installs git hooks. A claim is one session's temporary hold on one file. It is safe to run `acs init` again.
+- `acs init` also proposes zones for `territory.toml` from folder names and recent git history, and prints them. It writes them only if you run `acs init --yes` or answer yes when it asks. See [Zones acs init proposes](Configuring-Policy#zones-acs-init-proposes).
 - `acs doctor` checks the result. Look for `0 failure(s)` and no warning on the `Claude Code plugin` line.
 
 Then start a new Claude Code session so the plugin loads.

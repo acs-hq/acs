@@ -20,6 +20,9 @@ pub enum FileAction {
     Created,
     /// The file exists; it was left as it is.
     Exists,
+    /// The file held the untouched default and was replaced (`territory.toml` with
+    /// `acs init --yes`).
+    Replaced,
 }
 
 /// One policy file and what `init` did with it.
@@ -41,15 +44,23 @@ pub fn templates() -> [(&'static str, String); 3] {
     ]
 }
 
-/// Writes the policy directory and the files that are missing.
+/// Writes the policy directory and the files that are missing. `territory`, when given, is
+/// written in place of the `territory.toml` template.
 ///
 /// # Errors
 ///
 /// An I/O error (for example `.acs` is a file, or the directory is read-only).
-pub fn write_missing(policy_dir: &Path) -> io::Result<Vec<PolicyFileReport>> {
+pub fn write_missing(
+    policy_dir: &Path,
+    territory: Option<&str>,
+) -> io::Result<Vec<PolicyFileReport>> {
     fs::create_dir_all(policy_dir)?;
     let mut reports = Vec::new();
-    for (file, contents) in templates() {
+    for (file, template) in templates() {
+        let contents = match territory {
+            Some(text) if file == "territory.toml" => text.to_owned(),
+            _ => template,
+        };
         let path = policy_dir.join(file);
         // `create_new` makes "never overwrite" atomic: a file that appears meanwhile is kept.
         let action = match OpenOptions::new().write(true).create_new(true).open(&path) {
@@ -130,13 +141,25 @@ fn guards_template() -> String {
     )
 }
 
-fn territory_template() -> String {
-    "\
+/// The opening comment of `territory.toml`, shared by the template and proposals.
+pub const TERRITORY_HEADER: &str = "\
 # ACS territory: who may change what. Without zones the whole repository is `shared`: any
 # agent may change a file after claiming it. When zones overlap, the most specific one wins.
 # kinds: owned (only the owners' agents), shared (any agent after a claim), open (no claim
 # needed), sealed (no agent).
+";
 
+/// Whether `text` is the `territory.toml` template as `acs init` writes it (line endings aside).
+#[must_use]
+pub fn is_territory_template(text: &str) -> bool {
+    text.replace("\r\n", "\n") == territory_template()
+}
+
+/// The `territory.toml` written when nothing is proposed or the proposal is not taken.
+#[must_use]
+pub fn territory_template() -> String {
+    TERRITORY_HEADER.to_owned()
+        + "
 # [[zone]]
 # paths = [\"payments/**\"]
 # kind = \"owned\"
@@ -150,7 +173,6 @@ fn territory_template() -> String {
 # [teams]
 # platform = [\"omar@example.com\", \"lina@example.com\"]
 "
-    .to_owned()
 }
 
 #[cfg(test)]
@@ -162,7 +184,7 @@ mod tests {
     fn the_templates_are_valid_policy_equal_to_the_defaults() {
         let dir = tempfile::tempdir().unwrap();
         let policy_dir = dir.path().join("policy");
-        let reports = write_missing(&policy_dir).unwrap();
+        let reports = write_missing(&policy_dir, None).unwrap();
         assert!(reports.iter().all(|r| r.action == FileAction::Created));
         let loaded = load(&policy_dir, LoadOptions::default()).unwrap();
         assert!(loaded.warnings.is_empty(), "{:?}", loaded.warnings);
@@ -206,7 +228,7 @@ mod tests {
             "spec = \"acs/0.1\"\n# mine\n",
         )
         .unwrap();
-        let reports = write_missing(dir.path()).unwrap();
+        let reports = write_missing(dir.path(), None).unwrap();
         assert_eq!(reports[0].action, FileAction::Exists);
         assert_eq!(reports[1].action, FileAction::Created);
         assert!(

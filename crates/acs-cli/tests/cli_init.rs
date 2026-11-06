@@ -275,3 +275,210 @@ fn init_notes_that_husky_9_hook_files_are_committed() {
     assert!(world.repo.join(".husky/pre-commit").is_file());
     assert_fits_80(&text);
 }
+
+/// Commits `count` changes to `file` as `email`, before any ACS hook is installed.
+fn commits_by(world: &World, email: &str, file: &str, count: usize) {
+    let path = world.repo.join(file);
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    for i in 0..count {
+        fs::write(&path, format!("{email} {i}\n")).unwrap();
+        git(&world.repo, &world.git_config, &["add", "-A"]);
+        let author = format!("user.email={email}");
+        git(
+            &world.repo,
+            &world.git_config,
+            &["-c", &author, "commit", "-q", "-m", "change"],
+        );
+    }
+}
+
+/// A team repository: `payments/` is Sara's, `lib/` is Omar's, `docs/` is documentation.
+fn team_world() -> World {
+    let world = World::new();
+    commits_by(&world, "sara@example.com", "payments/refund.rs", 10);
+    commits_by(&world, "omar@example.com", "lib/money.rs", 11);
+    commits_by(&world, "sara@example.com", "lib/money.rs", 1);
+    commits_by(&world, "omar@example.com", "docs/guide.md", 2);
+    world
+}
+
+fn zones(report: &serde_json::Value) -> Vec<String> {
+    report["territory"]["proposal"]["zones"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|z| {
+            let owners: Vec<&str> = z["owners"]
+                .as_array()
+                .map(|o| o.iter().map(|v| v.as_str().unwrap()).collect())
+                .unwrap_or_default();
+            format!(
+                "{} {} {}",
+                z["kind"].as_str().unwrap(),
+                z["folder"].as_str().unwrap(),
+                owners.join(",")
+            )
+        })
+        .collect()
+}
+
+fn territory_action(report: &serde_json::Value) -> String {
+    report["policy_files"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|f| f["file"] == "territory.toml")
+        .unwrap()["action"]
+        .as_str()
+        .unwrap()
+        .to_owned()
+}
+
+fn loaded_zones(world: &World) -> Vec<acs_core::Zone> {
+    let loaded = acs_policy::load(
+        &world.repo.join(".acs/policy"),
+        acs_policy::LoadOptions::default(),
+    )
+    .unwrap();
+    assert!(loaded.warnings.is_empty(), "{:?}", loaded.warnings);
+    loaded.policy.files().territory.zone.clone()
+}
+
+#[test]
+fn init_proposes_territory_and_writes_it_only_with_yes() {
+    let world = team_world();
+    let expected = [
+        "open docs ",
+        "owned lib omar@example.com",
+        "owned payments sara@example.com",
+    ];
+
+    // Without a terminal and without --yes: reported, the template is written.
+    let first = acs(&world, &["init", "--json"]);
+    assert_success(&first);
+    let report = json(&first);
+    assert_eq!(report["territory"]["status"], "proposed");
+    assert_eq!(zones(&report), expected);
+    assert_eq!(report["territory"]["proposal"]["authors"], 2);
+    assert!(loaded_zones(&world).is_empty());
+    let human = stdout(&acs(&world, &["init"]));
+    assert!(human.contains("acs init --yes"), "{human}");
+    assert!(
+        human.contains("owned  payments/  sara@example.com"),
+        "{human}"
+    );
+    assert_fits_80(&human);
+
+    // --yes replaces the untouched template.
+    let second = acs(&world, &["init", "--yes", "--json"]);
+    assert_success(&second);
+    let report = json(&second);
+    assert_eq!(report["territory"]["status"], "applied");
+    assert_eq!(territory_action(&report), "replaced");
+    assert_eq!(report["changed"], true);
+    let written = loaded_zones(&world);
+    assert_eq!(written.len(), 3);
+    assert_eq!(written[0].paths, ["docs/**"]);
+    assert_eq!(written[0].kind, acs_core::ZoneKind::Open);
+    let text = fs::read_to_string(world.repo.join(".acs/policy/territory.toml")).unwrap();
+    assert!(text.contains("# payments/: 10 of 10 commits"), "{text}");
+    assert!(text.contains("owners = [\"omar@example.com\"]"), "{text}");
+
+    // The written file counts as edited: nothing is proposed or changed again.
+    let before = snapshot(&world);
+    let third = acs(&world, &["init", "--yes", "--json"]);
+    let report = json(&third);
+    assert_eq!(report["territory"]["status"], "kept");
+    assert!(report["territory"].get("proposal").is_none());
+    assert_eq!(report["changed"], false);
+    assert_eq!(snapshot(&world), before);
+}
+
+#[test]
+fn init_yes_on_a_fresh_repository_writes_the_proposal_directly() {
+    let world = team_world();
+    let out = acs(&world, &["init", "--yes"]);
+    assert_success(&out);
+    let text = stdout(&out);
+    assert!(
+        text.contains("written from folder names and git history"),
+        "{text}"
+    );
+    assert!(text.contains("does not enforce owned zones"), "{text}");
+    assert_fits_80(&text);
+    assert_eq!(loaded_zones(&world).len(), 3);
+}
+
+#[test]
+fn an_edited_territory_is_never_replaced() {
+    let world = team_world();
+    let dir = world.repo.join(".acs/policy");
+    fs::create_dir_all(&dir).unwrap();
+    let mine = "[[zone]]\npaths = [\"lib/**\"]\nkind = \"open\"\n";
+    fs::write(dir.join("territory.toml"), mine).unwrap();
+    let report = json(&acs(&world, &["init", "--yes", "--json"]));
+    assert_eq!(report["territory"]["status"], "kept");
+    assert_eq!(territory_action(&report), "exists");
+    assert_eq!(
+        fs::read_to_string(dir.join("territory.toml")).unwrap(),
+        mine
+    );
+}
+
+#[test]
+fn the_thresholds_can_be_raised() {
+    let world = team_world();
+    let report = json(&acs(
+        &world,
+        &["init", "--json", "--min-commits", "11", "--min-share", "95"],
+    ));
+    // payments/ has 10 commits (under 11); lib/ has 11 of 12 by Omar (92%, under 95%).
+    assert_eq!(zones(&report), ["open docs "]);
+    let refused = acs(&world, &["init", "--min-share", "50"]);
+    assert_failure(&refused);
+}
+
+#[test]
+fn a_one_author_repository_gets_no_owned_zones() {
+    let world = World::new();
+    commits_by(&world, "sara@example.com", "payments/refund.rs", 15);
+    let out = acs(&world, &["init", "--yes", "--json"]);
+    assert_success(&out);
+    let report = json(&out);
+    assert_eq!(report["territory"]["status"], "nothing_proposed");
+    assert_eq!(territory_action(&report), "created");
+    let notes = report["territory"]["proposal"]["notes"].to_string();
+    assert!(notes.contains("Only one author"), "{notes}");
+    assert!(loaded_zones(&world).is_empty());
+    let human = stdout(&acs(&world, &["init"]));
+    assert!(human.contains("nothing to propose"), "{human}");
+}
+
+#[test]
+fn old_history_is_left_out() {
+    let world = World::new();
+    let path = world.repo.join("payments/refund.rs");
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    for email in ["sara@example.com", "omar@example.com"] {
+        for n in 0..10 {
+            fs::write(&path, format!("{email} {n}\n")).unwrap();
+            git(&world.repo, &world.git_config, &["add", "-A"]);
+            let status = Command::new("git")
+                .arg("-C")
+                .arg(&world.repo)
+                .args(["-c", &format!("user.email={email}")])
+                .args(["commit", "-q", "-m", "old"])
+                .env("GIT_CONFIG_GLOBAL", &world.git_config)
+                .env("GIT_CONFIG_NOSYSTEM", "1")
+                .env("GIT_AUTHOR_DATE", "2020-01-01T12:00:00Z")
+                .env("GIT_COMMITTER_DATE", "2020-01-01T12:00:00Z")
+                .status()
+                .unwrap();
+            assert!(status.success());
+        }
+    }
+    let report = json(&acs(&world, &["init", "--json"]));
+    // The 2020 commits are outside the window, so neither author can own payments/.
+    assert!(report["territory"]["proposal"]["commits"].as_u64().unwrap() <= 1);
+    assert_eq!(report["territory"]["status"], "nothing_proposed");
+}
