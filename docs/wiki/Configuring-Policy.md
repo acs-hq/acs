@@ -90,11 +90,60 @@ When `territory.toml` does not exist yet, or still holds the commented default, 
 - **Folder names.** Top-level and second-level folders named `docs`, `doc`, `documentation`, `examples`, `example`, `samples`, `sandbox`, `playground`, `scratch` or `tmp` are proposed as `open`.
 - **Git history.** For each top-level folder, and each second-level folder under a top-level one with no clear owner, it counts the commits of the last 12 months that touched it, by author. A folder with at least 10 commits where one person made at least 75% of them is proposed as `owned` by that person. Owned zones are only proposed when at least two people committed in that time. Bots and `noreply@` addresses are left out.
 
-Everything else stays `shared`. `acs init` prints the proposal but only writes it if you run `acs init --yes`, or answer yes when it asks in a terminal. `--yes` also replaces a `territory.toml` that still holds the untouched default, but never one you have edited. `--min-share` and `--min-commits` change the two thresholds. Each proposed zone has a comment saying why it was proposed. Treat the result as a starting point and edit it like any other zone.
+Everything else stays `shared`. `--min-share` and `--min-commits` change the two thresholds.
+
+`acs init` always shows the proposal, but writes it only when you say yes. You can say yes in two ways.
+
+**In your own terminal**, `acs init` asks, but only the first time, when `territory.toml` does not exist yet:
+
+```text
+Proposed territory
+    open   docs/      folder name
+    owned  payments/  sara@example.com, 10 of 10 commits in the last 12 months
+  ACS does not enforce owned zones yet: until it does, they act like shared.
+
+Write these zones to .acs/policy/territory.toml? [y/N]
+```
+
+Type `y` to write the zones. Press Enter, or type anything else, to get the commented default with no zones.
+
+**When an agent runs it, or with `--json`**, nothing can answer a question, so `acs init` does not ask. It writes the commented default and shows the proposal in its output:
+
+```text
+Territory (territory.toml)
+  proposed from folder names and git history, not written:
+    open   docs/      folder name
+    owned  payments/  sara@example.com, 10 of 10 commits in the last 12 months
+  ACS does not enforce owned zones yet: until it does, they act like shared.
+  To write it, run `acs init --yes`, then edit the file as you like.
+```
+
+To accept it, run:
 
 ```bash
 acs init --yes
 ```
+
+During setup, the agent shows you this proposal and runs `acs init --yes` if you accept it.
+
+Either way, `territory.toml` then holds the zones, each with a comment saying why it was proposed:
+
+```toml
+# docs/: folder name
+[[zone]]
+paths = ["docs/**"]
+kind = "open"
+
+# payments/: 10 of 10 commits in the last 12 months
+[[zone]]
+paths = ["payments/**"]
+kind = "owned"
+owners = ["sara@example.com"]
+```
+
+Treat this as a starting point and edit it like any other zone.
+
+`--yes` only replaces a `territory.toml` that still holds the untouched default. Once you have edited the file, or zones have been written, `acs init --yes` leaves it alone, so running `acs init` again never overwrites your own changes.
 
 When zones overlap, the most specific one wins. In this example everything under `docs/` is open, except `docs/legal/`, which still needs a claim:
 
