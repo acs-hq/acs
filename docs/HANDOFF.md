@@ -13,6 +13,10 @@ human must be reminded. Check its triggers before starting any WP.
 `antigravity-gate`, **not merged into `main`** (decision 0024, section 7 below). What is left of the
 gate is the human's: the desktop app checks and three decisions.
 
+**WP5.3 (`acs init` proposals) is built (2026-11-07, decision 0025).** The human dropped CODEOWNERS
+from the plan as future work: proposals come from git history and folder names, and the setup
+skill has the pilot review them. Section 6's GitLab items change to match.
+
 ## 1. Where things stand
 
 - `main` has Phase 0, Phase 1, **Phase 2 (WP2.1–WP2.6)**, **Phase 3 (WP3.1)**, including the rule
@@ -47,7 +51,7 @@ gate is the human's: the desktop app checks and three decisions.
   **0017** harness paths in the default sealed list (orchestrator, with an amendment for
   `.husky/**`), **0018** CLI. Phase 3: **0020** team sync, including the GitHub push check and the
   `acs-os` exception to `unsafe_code = forbid`. Phase 5: **0021** distribution and `acs plugin
-  install`, **0022** skills.
+  install`, **0022** skills, **0025** `acs init` proposals without CODEOWNERS (WP5.3).
 - Shared rules handed to every Phase 2 subagent: `docs/phase2-rules.md` (reuse it for Phase 3+,
   updating the reading list and decision numbers).
 
@@ -57,12 +61,13 @@ gate is the human's: the desktop app checks and three decisions.
 | acs-git | 2.1, 2.4, 3.1 | `repo::discover`, `status::scan_changes`, `hooks::{install, uninstall, status}`, `trailers`, `refs::{SyncStorage, CustomRefs}`, `sync::run` |
 | acs-store | 2.1 adds | migration 0003: `SeatInfo` (session id, intent), last decision, flags (`gate_off`), attributions, `stale_live_seats` |
 | acs-mcp | 2.6 | `Backend` trait, `serve_stdio` (rmcp 3.8, the only async runtime in the binary) |
-| acs-cli | 2.1, 2.4–2.6, 3.1, 5.2 | `runtime` (`RepoContext`, seats, `status`/`claim_paths`/`release_paths`/`set_intent`/`last_decision`, `sync::{lock, spawn_if_due, spawn_now}`), `hook`, `cli`, `commands/{init,status,claim,release,off,doctor,git_hook,mcp,sync,plugin}` |
+| acs-cli | 2.1, 2.4–2.6, 3.1, 5.2, 5.3 | `runtime` (`RepoContext`, seats, `status`/`claim_paths`/`release_paths`/`set_intent`/`last_decision`, `sync::{lock, spawn_if_due, spawn_now}`), `hook`, `cli`, `commands/{init,status,claim,release,off,doctor,git_hook,mcp,sync,plugin}`, `init::propose::{propose, propose_for, territory_toml}` |
 | acs-os | 3.1 | `keep_stdio_from_children`; the only crate allowed `unsafe`, one Windows call (decision 0020) |
 
 Commands: `acs hook --canonical <phase>`, `acs hook <claude-code|antigravity|canonical>`,
 `acs mcp [--harness]`, `acs git-hook <name>`, `acs init|status|claim|release|off|on|doctor|sync`
-and `acs plugin install <harness>` (each with `--json`).
+and `acs plugin install <harness>` (each with `--json`). `acs init` also takes `--yes`,
+`--min-share` and `--min-commits` for its territory proposal.
 
 Integrations: `integrations/claude-code/` (plugin `acs`, marketplace `acs-plugins` in the root
 `.claude-plugin/marketplace.json`), `integrations/antigravity/` (plugin `acs`, always-on rule) and
@@ -215,6 +220,12 @@ hook binary is missing (confirmed), so the `acs`-on-`PATH` check matters more th
 Code, which fails open; an optional strict mode (`onFailure: block`) is recorded in 0013. A change
 to `integrations/antigravity/` needs a rebuild to reach `acs plugin install antigravity`.
 
+**WP7.1 (territory)** — unblocked now that WP5.3 is built. `acs init` can write `owned` zones with
+single-pilot owners (decision 0025), and four places say ACS does not enforce them yet: the
+comment `propose::territory_toml` writes, `render_zones` in `commands/init/mod.rs`, the
+`acs-setup` skill (and its two plugin copies) and `docs/wiki/Configuring-Policy.md`. Change all
+four when enforcement lands. The setup skill already tells pilots what `owned` will mean.
+
 **WP7.2 (hardening)** — known bypasses: an agent starting a nested harness with hooks disabled
 (`claude --bare -p`, `claude --settings '{"disableAllHooks":true}'`); writes to harness config
 outside the repo (`~/.claude/settings.json`, `~/.gemini/config/hooks.json`), which repository globs
@@ -301,7 +312,8 @@ assume every harness sends session start, session end or prompt events.
 **Changed until GitLab returns:**
 
 - WP3.1 verifies `refs/acs/*` pushes on GitHub only.
-- WP5.3 parses GitHub CODEOWNERS only.
+- ~~WP5.3 parses GitHub CODEOWNERS only.~~ Superseded by decision 0025: WP5.3 parses no
+  CODEOWNERS at all. CODEOWNERS is future work, for GitHub and GitLab alike.
 - WP9.2 ships the GitHub Action only.
 
 **Remind the human at these points, and do not continue past a hard stop without their answer:**
@@ -309,10 +321,10 @@ assume every harness sends session start, session end or prompt events.
 | When | What to tell the human | Type |
 | --- | --- | --- |
 | WP3.1 starts (raised 2026-10-31) | A one-off push of `refs/acs/*` to GitLab is optional now. If GitLab rejects it later, the fallback is a dedicated branch instead of custom refs. | Reminder |
-| WP5.3 starts | GitLab CODEOWNERS parsing is skipped; it returns with WP9.2. | Reminder |
+| ~~WP5.3 starts~~ | Done; no longer needed: decision 0025 dropped CODEOWNERS parsing. | — |
 | Any public launch | ACS has only been proven across Claude Code sessions, not across harnesses. | Reminder |
 | WP8.3 merges, before WP9.1 starts | Antigravity must come back now. **Brought forward on 2026-11-03; the CLI part is done on `antigravity-gate` (section 7).** At this point, check that section 7's human items are settled and the branch is merged before WP9.1. | **Hard stop** |
-| WP9.2 starts | GitLab must come back now: the CI template, the GitLab CODEOWNERS format and the push check. | **Hard stop** |
+| WP9.2 starts | GitLab must come back now: the CI template and the push check (GitLab CODEOWNERS is future work, decision 0025). | **Hard stop** |
 
 Antigravity must be verified before WP9.1 because its known gaps (`allow` rendered as `ask`, no
 session events) may need contract changes, which are cheap in draft 0.1 and costly after Spec 1.0.

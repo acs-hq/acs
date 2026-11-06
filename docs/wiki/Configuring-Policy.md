@@ -83,6 +83,19 @@ A zone gives some paths a different rule:
 
 The comment in `territory.toml` says `owned` limits a path to the owners' agents. It does not do that today, so any agent can claim and edit an `owned` path. The `owners` key and the `[teams]` section have no effect yet either.
 
+### Zones `acs init` proposes
+
+When `territory.toml` does not exist yet, or still holds the commented default, `acs init` proposes zones. It never calls an AI model; it looks at two things:
+
+- **Folder names.** Top-level and second-level folders named `docs`, `doc`, `documentation`, `examples`, `example`, `samples`, `sandbox`, `playground`, `scratch` or `tmp` are proposed as `open`.
+- **Git history.** For each top-level folder, and each second-level folder under a top-level one with no clear owner, it counts the commits of the last 12 months that touched it, by author. A folder with at least 10 commits where one person made at least 75% of them is proposed as `owned` by that person. Owned zones are only proposed when at least two people committed in that time. Bots and `noreply@` addresses are left out.
+
+Everything else stays `shared`. `acs init` prints the proposal but only writes it if you run `acs init --yes`, or answer yes when it asks in a terminal. `--yes` also replaces a `territory.toml` that still holds the untouched default, but never one you have edited. `--min-share` and `--min-commits` change the two thresholds. Each proposed zone has a comment saying why it was proposed. Treat the result as a starting point and edit it like any other zone.
+
+```bash
+acs init --yes
+```
+
 When zones overlap, the most specific one wins. In this example everything under `docs/` is open, except `docs/legal/`, which still needs a claim:
 
 ```toml
