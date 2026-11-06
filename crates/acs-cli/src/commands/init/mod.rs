@@ -7,18 +7,25 @@
 //!    not run them.
 //! 5. Checks that `acs` resolves on `PATH` and warns loudly if it does not.
 //!
-//! Running it again changes nothing. There are no prompts, so there is no `--yes` yet (WP5.3's
-//! proposals add the first prompt and the flag).
+//! Before step 1, while `territory.toml` is missing or still the untouched template, it proposes
+//! zones from folder names and git history ([`propose`], decision 0025). The proposal is written
+//! with `--yes`, or when the person answers yes at the one prompt (only in a terminal, only when
+//! `territory.toml` is missing). Otherwise it is reported and the template is written.
+//!
+//! Running it again without `--yes` changes nothing.
 
 pub mod harness;
 pub mod hooks;
 pub mod policy;
+pub mod propose;
 pub mod remotes;
 
 use std::fmt::Write as _;
-use std::path::PathBuf;
+use std::io::{BufRead as _, IsTerminal as _, Write as _};
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
+use acs_core::ZoneKind;
 use acs_paths::PathResolver;
 use acs_policy::{LoadOptions, load};
 use clap::Args;
@@ -26,7 +33,10 @@ use serde::Serialize;
 
 use self::harness::{Detected, detect};
 use self::hooks::{HooksInstall, install as install_hooks};
-use self::policy::{FileAction, PolicyFileReport, write_missing};
+use self::policy::{
+    FileAction, PolicyFileReport, TERRITORY_HEADER, is_territory_template, write_missing,
+};
+use self::propose::{Proposal, Thresholds, propose_for, territory_toml};
 use self::remotes::{RemoteAction, RemoteReport};
 use super::support::{
     CliError, OutputArgs, ellipsize_start, find_on_path, finish, print_json, wrap,
@@ -36,9 +46,25 @@ use super::support::{
 #[derive(Debug, Args)]
 #[command(
     after_help = "Safe to run again: existing policy files are never overwritten and nothing \
-                  that is already set up changes."
+                  that is already set up changes. The one exception is `--yes`, which replaces a \
+                  territory.toml that still holds the untouched default with the proposal."
 )]
 pub struct InitArgs {
+    /// Write the proposed territory (zones from folder names and git history) without asking.
+    #[arg(long, short = 'y')]
+    pub yes: bool,
+
+    /// Share of a folder's recent commits one author needs to be proposed as its owner, in
+    /// percent.
+    #[arg(long, value_name = "PERCENT", default_value_t = 75,
+          value_parser = clap::value_parser!(u8).range(51..=100))]
+    pub min_share: u8,
+
+    /// Commits a folder needs in the last 12 months before anyone is proposed as its owner.
+    #[arg(long, value_name = "N", default_value_t = 10,
+          value_parser = clap::value_parser!(u32).range(1..))]
+    pub min_commits: u32,
+
     /// Output format.
     #[command(flatten)]
     pub output: OutputArgs,
@@ -73,12 +99,98 @@ pub struct InitReport {
     pub git_hooks: HooksInstall,
     /// Harnesses found, with the install commands.
     pub harnesses: Vec<Detected>,
+    /// The territory proposal and what became of it.
+    pub territory: TerritoryReport,
     /// The `PATH` check for `acs`.
     pub acs_on_path: AcsOnPath,
     /// Things that need attention but did not stop `init`.
     pub warnings: Vec<String>,
     /// Steps that failed.
     pub errors: Vec<String>,
+}
+
+/// What `init` did about `territory.toml`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TerritoryStatus {
+    /// The proposal was written.
+    Applied,
+    /// Zones were proposed but not written (no `--yes`, or the person said no).
+    Proposed,
+    /// Nothing to propose; the whole repository stays `shared`.
+    NothingProposed,
+    /// `territory.toml` has been edited, so nothing was proposed and it was kept.
+    Kept,
+}
+
+/// The territory step of the report.
+#[derive(Debug, Clone, Serialize)]
+pub struct TerritoryReport {
+    /// What happened.
+    pub status: TerritoryStatus,
+    /// The proposal, unless `territory.toml` was kept or history could not be read.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub proposal: Option<Proposal>,
+}
+
+/// The state of `territory.toml` before `init`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TerritoryFile {
+    /// It does not exist.
+    Missing,
+    /// It holds the untouched template.
+    Template,
+    /// It has been edited (or cannot be read).
+    Edited,
+}
+
+/// The territory proposal for a repository, before anything is written.
+#[derive(Debug, Clone)]
+pub struct TerritoryPlan {
+    /// `territory.toml` as it is now.
+    pub file: TerritoryFile,
+    /// The proposal; `None` when the file was edited or history could not be read.
+    pub proposal: Option<Proposal>,
+    /// Why history could not be read.
+    pub error: Option<String>,
+}
+
+impl TerritoryPlan {
+    /// Whether there are zones to write.
+    #[must_use]
+    pub fn has_zones(&self) -> bool {
+        self.proposal.as_ref().is_some_and(|p| !p.zones.is_empty())
+    }
+}
+
+/// Looks at `territory.toml` and, unless it has been edited, proposes zones.
+#[must_use]
+pub fn plan_territory(work_tree: &Path, thresholds: &Thresholds) -> TerritoryPlan {
+    let path = work_tree.join(".acs").join("policy").join("territory.toml");
+    let file = match std::fs::read_to_string(&path) {
+        Ok(text) if is_territory_template(&text) => TerritoryFile::Template,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => TerritoryFile::Missing,
+        Ok(_) | Err(_) => TerritoryFile::Edited,
+    };
+    if file == TerritoryFile::Edited {
+        return TerritoryPlan {
+            file,
+            proposal: None,
+            error: None,
+        };
+    }
+    match propose_for(work_tree, thresholds) {
+        Ok(proposal) => TerritoryPlan {
+            file,
+            proposal: Some(proposal),
+            error: None,
+        },
+        Err(err) => TerritoryPlan {
+            file,
+            proposal: None,
+            error: Some(err),
+        },
+    }
 }
 
 /// Runs `acs init`.
@@ -92,7 +204,20 @@ fn execute(args: &InitArgs) -> Result<ExitCode, CliError> {
         .map_err(|err| CliError::new("cwd", format!("cannot read the current directory: {err}")))?;
     let layout =
         acs_git::discover(&cwd).map_err(|err| CliError::new("not_a_repo", err.to_string()))?;
-    let report = initialize(&layout);
+    let thresholds = Thresholds {
+        min_share_percent: args.min_share,
+        min_commits: args.min_commits,
+        ..Thresholds::default()
+    };
+    let plan = plan_territory(&layout.work_tree, &thresholds);
+    let apply = args.yes
+        || (!args.output.json
+            && plan.file == TerritoryFile::Missing
+            && plan.has_zones()
+            && std::io::stdin().is_terminal()
+            && std::io::stdout().is_terminal()
+            && ask(&plan));
+    let report = initialize(&layout, &plan, apply);
     let report = report.map_err(|err| CliError::new("init_failed", err))?;
     if args.output.json {
         print_json(&report);
@@ -106,18 +231,90 @@ fn execute(args: &InitArgs) -> Result<ExitCode, CliError> {
     })
 }
 
-/// Performs the steps against `layout`'s repository.
+/// Shows the proposal and asks whether to write it. Anything but yes is no.
+fn ask(plan: &TerritoryPlan) -> bool {
+    let mut text = String::from("Proposed territory\n");
+    render_zones(&mut text, plan.proposal.as_ref());
+    print!("{text}");
+    print!("\nWrite these zones to .acs/policy/territory.toml? [y/N] ");
+    let _ = std::io::stdout().flush();
+    let mut answer = String::new();
+    if std::io::stdin().lock().read_line(&mut answer).is_err() {
+        return false;
+    }
+    println!();
+    matches!(answer.trim(), "y" | "Y" | "yes" | "Yes" | "YES")
+}
+
+/// Performs the steps against `layout`'s repository. `apply` writes `plan`'s zones.
 ///
 /// # Errors
 ///
 /// A message when the policy directory cannot be written (nothing else is attempted then).
-pub fn initialize(layout: &acs_git::RepoLayout) -> Result<InitReport, String> {
+pub fn initialize(
+    layout: &acs_git::RepoLayout,
+    plan: &TerritoryPlan,
+    apply: bool,
+) -> Result<InitReport, String> {
     let work_tree = &layout.work_tree;
     let policy_dir = work_tree.join(".acs").join("policy");
-    let policy_files = write_missing(&policy_dir)
+    let proposed = plan
+        .proposal
+        .as_ref()
+        .filter(|p| apply && !p.zones.is_empty())
+        .map(|p| territory_toml(TERRITORY_HEADER, p));
+    let new_territory = proposed
+        .as_deref()
+        .filter(|_| plan.file == TerritoryFile::Missing);
+    let mut policy_files = write_missing(&policy_dir, new_territory)
         .map_err(|err| format!("cannot write {}: {err}", policy_dir.display()))?;
     let mut warnings = Vec::new();
     let mut errors = Vec::new();
+
+    let mut applied = new_territory.is_some()
+        && policy_files
+            .iter()
+            .any(|f| f.file == "territory.toml" && f.action == FileAction::Created);
+    if let Some(text) = proposed
+        .as_deref()
+        .filter(|_| plan.file == TerritoryFile::Template)
+    {
+        let path = policy_dir.join("territory.toml");
+        // Re-check right before writing, so an edit made meanwhile is never lost.
+        let untouched = std::fs::read_to_string(&path).is_ok_and(|t| is_territory_template(&t));
+        if untouched {
+            match std::fs::write(&path, text) {
+                Ok(()) => {
+                    applied = true;
+                    for file in &mut policy_files {
+                        if file.file == "territory.toml" {
+                            file.action = FileAction::Replaced;
+                        }
+                    }
+                }
+                Err(err) => errors.push(format!("cannot write {}: {err}", path.display())),
+            }
+        }
+    }
+    if let Some(err) = &plan.error {
+        warnings.push(format!(
+            "could not read git history to propose territory, so the whole repository stays \
+             shared: {err}"
+        ));
+    }
+    let status = if plan.file == TerritoryFile::Edited {
+        TerritoryStatus::Kept
+    } else if applied {
+        TerritoryStatus::Applied
+    } else if plan.has_zones() {
+        TerritoryStatus::Proposed
+    } else {
+        TerritoryStatus::NothingProposed
+    };
+    let territory = TerritoryReport {
+        status,
+        proposal: plan.proposal.clone(),
+    };
 
     // Validate what is on disk now (ours or the team's); a broken policy is reported, not fatal.
     let case_insensitive = PathResolver::new(work_tree).is_ok_and(|r| r.case_insensitive());
@@ -164,7 +361,7 @@ pub fn initialize(layout: &acs_git::RepoLayout) -> Result<InitReport, String> {
         warnings.push(text);
     }
 
-    let changed = policy_files.iter().any(|f| f.action == FileAction::Created)
+    let changed = policy_files.iter().any(|f| f.action != FileAction::Exists)
         || remote_reports
             .iter()
             .any(|r| r.action == RemoteAction::Added)
@@ -178,6 +375,7 @@ pub fn initialize(layout: &acs_git::RepoLayout) -> Result<InitReport, String> {
         remotes: remote_reports,
         git_hooks,
         harnesses,
+        territory,
         acs_on_path: AcsOnPath {
             found: acs.is_some(),
             path: acs.map(|p: PathBuf| p.to_string_lossy().into_owned()),
@@ -185,6 +383,44 @@ pub fn initialize(layout: &acs_git::RepoLayout) -> Result<InitReport, String> {
         warnings,
         errors,
     })
+}
+
+/// The zones of `proposal`, one per line, then the note about `owned`.
+fn render_zones(out: &mut String, proposal: Option<&Proposal>) {
+    let Some(proposal) = proposal else { return };
+    let mut any_owned = false;
+    // Folders are padded to one column, but a very long one does not push the others out.
+    let width = proposal
+        .zones
+        .iter()
+        .map(|z| z.folder.chars().count() + 1)
+        .filter(|w| *w <= 30)
+        .max()
+        .unwrap_or(0);
+    for zone in &proposal.zones {
+        let (kind, detail) = match zone.kind {
+            ZoneKind::Owned => {
+                any_owned = true;
+                (
+                    "owned",
+                    format!("{}, {}", zone.owners.join(", "), zone.reason),
+                )
+            }
+            ZoneKind::Open => ("open", zone.reason.clone()),
+            ZoneKind::Shared => ("shared", zone.reason.clone()),
+            ZoneKind::Sealed => ("sealed", zone.reason.clone()),
+        };
+        let folder = format!("{}/", zone.folder);
+        let first = format!("    {kind:<6} {folder:<width$}  ");
+        out.push_str(&wrap(&detail, &first, &" ".repeat(13 + width)));
+    }
+    if any_owned {
+        out.push_str(&wrap(
+            "ACS does not enforce owned zones yet: until it does, they act like shared.",
+            "  ",
+            "  ",
+        ));
+    }
 }
 
 /// The human view, at most 80 columns wide.
@@ -202,8 +438,32 @@ pub fn render(report: &InitReport) -> String {
         let word = match file.action {
             FileAction::Created => "created",
             FileAction::Exists => "kept",
+            FileAction::Replaced => "replaced",
         };
-        let _ = writeln!(out, "  {word:<8}{}", file.file);
+        let _ = writeln!(out, "  {word:<9}{}", file.file);
+    }
+
+    out.push_str("\nTerritory (territory.toml)\n");
+    let proposal = report.territory.proposal.as_ref();
+    match report.territory.status {
+        TerritoryStatus::Kept => {
+            out.push_str("  kept: it has been edited, so nothing is proposed\n");
+        }
+        TerritoryStatus::Applied => {
+            out.push_str("  written from folder names and git history:\n");
+            render_zones(&mut out, proposal);
+        }
+        TerritoryStatus::Proposed => {
+            out.push_str("  proposed from folder names and git history, not written:\n");
+            render_zones(&mut out, proposal);
+            out.push_str("  To write it, run `acs init --yes`, then edit the file as you like.\n");
+        }
+        TerritoryStatus::NothingProposed => {
+            out.push_str("  nothing to propose: the whole repository is shared\n");
+            for note in proposal.map(|p| p.notes.as_slice()).unwrap_or_default() {
+                out.push_str(&wrap(note, "  ", "  "));
+            }
+        }
     }
 
     out.push_str("\nFetch refspec for claims shared through git\n");
