@@ -22,9 +22,11 @@ skill has the pilot review them. Section 6's GitLab items change to match.
 - `main` has Phase 0, Phase 1, **Phase 2 (WP2.1–WP2.6)**, **Phase 3 (WP3.1)**, including the rule
   that the first of two machines' claims keeps the file, and **WP5.2 and WP5.1 for Claude Code**
   (decisions 0021, 0022). Fmt, clippy `-D warnings` and the workspace tests pass locally on Windows
-  (560 passed, 1 ignored). CI was green up to WP5.1 and WP5.2. Its first run with WP10
-  (`92dd3a3`, 2026-11-01) failed on the new tests and on the perf comparison, not on ACS; the fixes
-  follow it and have not been through CI yet, because the human pushes.
+  (560 passed, 1 ignored). CI's first run with WP10 (`92dd3a3`, 2026-11-01) failed on the new
+  tests and on the perf comparison, not on ACS; the fixes passed CI (`2176a14`). **CI is green on
+  `main` at `d832a71` (2026-11-06, run 42307284800): every job, macOS included,** with the
+  Antigravity gate merged. Its own merge run had failed only because the macOS jobs got no runner.
+  WP5.3 (`8aeeec5`, 2026-11-07) has its own run; its `acs-cli` tests passed locally on Windows.
   `.github/workflows/installers.yml` and `scoop-manifest.yml` have had no YAML parser run over them,
   so GitHub is their first real check.
 - **Every M1 work package is built, the M1 parts of WP10.1 and WP10.2 are on `main` (decision 0023),
