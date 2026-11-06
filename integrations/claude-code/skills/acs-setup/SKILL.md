@@ -74,6 +74,23 @@ acs doctor
 claims. Running it in a repository that already has `.acs/policy/` is safe and keeps that policy.
 In `acs doctor`, stop on any `FAIL`. A `WARN` about a harness you are not running in is fine.
 
+**Territory.** `acs init` also proposes zones: `open` for folders named like documentation,
+examples or scratch space, and `owned` for folders where one person made most of the last 12
+months' commits. It does not write them yet. Read the `Territory` part of its output:
+
+- `nothing to propose` or `kept`: go on to step 5.
+- `proposed`: show your pilot the zones as `acs init` printed them and ask one question: write
+  them as they are, write them with changes, or skip them. Tell them what the kinds mean in one
+  line each: `owned` will let only the owner's agents change that folder (ACS does not enforce it
+  yet, so for now it acts like `shared`); `open` lets agents edit without claims, so two agents
+  can overwrite each other's changes there. Then:
+  - As they are: run `acs init --yes`.
+  - With changes: run `acs init --yes`, edit `.acs/policy/territory.toml` the way your pilot said
+    (remove a zone, change a `kind`, add or change an owner), and run `acs doctor` again. Stop on
+    a `FAIL`. If the edit is denied as sealed, the plugin is already active in this session: give
+    your pilot the change to make in their editor.
+  - Skip: do nothing. Every folder stays `shared`: any agent may change a file after claiming it.
+
 ## 5. Commit on the branch `acs/adopt`
 
 Commit before the gate starts. Once the plugin is active, agents may not commit `.acs/**` or the
@@ -109,6 +126,8 @@ ACS is set up in <repository>.
 Binary     acs <version>, <path from `acs doctor`>
 Plugin     <acs@acs-plugins, or .agents/plugins/acs> for this repository
 Policy     .acs/policy/ with the defaults (`acs status` lists the sealed paths)
+Territory  <the zones written, for example "docs/ open, payments/ owned by sara@...">, or: none,
+           every folder is shared
 Git hooks  pre-commit, prepare-commit-msg, pre-push
 Claims     shared through <remote>, or: on this machine only, no remote
 Doctor     <n> ok, <n> warnings, 0 failures
