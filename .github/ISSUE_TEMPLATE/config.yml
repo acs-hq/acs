@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: User guide
+    url: https://github.com/acs-hq/acs/tree/main/docs/wiki
+    about: Setup, configuration, troubleshooting and known limits.
+  - name: Specification
+    url: https://github.com/acs-hq/acs/blob/main/spec/SPEC.md
+    about: What ACS is meant to do. A difference between it and ACS is worth a bug report.

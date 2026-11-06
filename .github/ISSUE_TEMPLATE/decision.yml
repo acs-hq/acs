@@ -1,0 +1,47 @@
+name: Decision needed
+description: An open question about how ACS should behave, with options to choose between.
+labels: ["decision-needed"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this when the work is blocked on a choice rather than on code. Once decided, the outcome
+        goes into a record in `docs/decisions/` and the issue links to it.
+  - type: textarea
+    id: question
+    attributes:
+      label: Question
+      description: The decision in one or two sentences.
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: What was observed or measured, and links to the decision records, spec sections or runs it comes from.
+    validations:
+      required: true
+  - type: textarea
+    id: options
+    attributes:
+      label: Options
+      description: Each option with its cost and what it gives up.
+      placeholder: |
+        1. **Keep as is**: ...
+        2. **Change to ...**: ...
+    validations:
+      required: true
+  - type: textarea
+    id: recommendation
+    attributes:
+      label: Recommendation
+      description: Optional. Which option, and why.
+    validations:
+      required: false
+  - type: input
+    id: deadline
+    attributes:
+      label: Needed before
+      description: The milestone, work package or release this blocks, if any.
+    validations:
+      required: false

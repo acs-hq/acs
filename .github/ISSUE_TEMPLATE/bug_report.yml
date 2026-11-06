@@ -1,0 +1,68 @@
+name: Bug report
+description: ACS does something different from what it, its docs or the spec say.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. Run `acs doctor` first and include its output if it is relevant.
+        Claims hold file paths and git emails, so redact anything you do not want public.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you did and what ACS did. Paste the exact message an agent or you received.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+      description: And where that expectation comes from (spec section, docs page, `--help` text), if anywhere.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Ideally in a throwaway repository, starting from `acs init`.
+      placeholder: |
+        1. git init demo && cd demo && acs init
+        2. ...
+    validations:
+      required: false
+  - type: dropdown
+    id: harness
+    attributes:
+      label: Harness
+      options:
+        - Claude Code
+        - Antigravity
+        - None (acs CLI or git hooks only)
+        - Several / not sure
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Windows
+        - macOS
+        - Linux
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Versions
+      description: "`acs --version`, and the harness version (`claude --version` or `agy --version`)."
+    validations:
+      required: false
+  - type: textarea
+    id: doctor
+    attributes:
+      label: "`acs doctor` output"
+      render: text
+    validations:
+      required: false
