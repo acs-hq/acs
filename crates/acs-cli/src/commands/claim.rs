@@ -15,8 +15,8 @@ use crate::runtime::{ClaimOutcome, claim_paths, sync};
 #[derive(Debug, Args)]
 #[command(
     after_help = "Examples:\n  acs claim src/lib.rs src/util.rs\n  acs claim src/payments/\n\n\
-                  A directory claims the files under it. Claims are judged like an agent's edit: \
-                  sealed paths, owned zones and other seats' claims refuse."
+                  A directory claims the files under it. Sealed paths and files another session \
+                  holds are refused. Owned zones bind agents only, so you may claim there."
 )]
 pub struct ClaimArgs {
     /// Files or directories to claim, relative to the current directory.
