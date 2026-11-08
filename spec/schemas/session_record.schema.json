@@ -231,6 +231,68 @@
         }
       ]
     },
+    "OverrideId": {
+      "description": "Identifier of a human override, which lets agents change files in `owned` zones they do\nnot own.\n\nStarts with `ovr_`.",
+      "pattern": "^ovr_[0-9a-z_-]{1,64}$",
+      "type": "string"
+    },
+    "OverrideMode": {
+      "description": "How long a human override lasts.",
+      "oneOf": [
+        {
+          "const": "once",
+          "description": "One tool call: the first call that needs the override uses it up.",
+          "type": "string"
+        },
+        {
+          "const": "session",
+          "description": "The rest of the session of the first seat that uses it.",
+          "type": "string"
+        }
+      ]
+    },
+    "OverrideUse": {
+      "description": "A human override a session used: the pilot let the session's agent change files in `owned`\nzones it does not own.",
+      "properties": {
+        "granted_at": {
+          "description": "When it was granted (UTC).",
+          "format": "date-time",
+          "type": "string"
+        },
+        "granted_by": {
+          "description": "The human who granted it, identified by git email address.",
+          "type": "string"
+        },
+        "mode": {
+          "$ref": "#/$defs/OverrideMode",
+          "description": "How long it lasts."
+        },
+        "override_id": {
+          "$ref": "#/$defs/OverrideId",
+          "description": "Identifier of the override."
+        },
+        "paths": {
+          "description": "The files the session changed or claimed under it, each once, in order of first use.",
+          "items": {
+            "$ref": "#/$defs/RepoPath"
+          },
+          "type": "array"
+        },
+        "pattern": {
+          "description": "The glob the override covers, repository-relative.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "override_id",
+        "pattern",
+        "mode",
+        "granted_by",
+        "granted_at",
+        "paths"
+      ],
+      "type": "object"
+    },
     "ReasonCode": {
       "description": "A stable machine-readable code saying why the engine decided as it did.\n\nThe set is closed: a new code is a spec change. The typical outcome of each code is listed in\nthe spec's reason-code table and by [`ReasonCode::typical_outcomes`].",
       "oneOf": [
@@ -241,17 +303,17 @@
         },
         {
           "const": "gate_off",
-          "description": "`acs off` is active for this repository; the gate is disabled except for sealed paths.\nOutcome `allow`.",
+          "description": "`acs off` is active for this repository; the gate is disabled except for sealed paths,\nbanned commands and self-protection. Outcome `allow`.",
           "type": "string"
         },
         {
           "const": "sealed_path",
-          "description": "A target matches a sealed glob. Always denied for agents. Outcome `deny`.",
+          "description": "A target matches a sealed glob or zone, or reaches a protected location outside the\nrepository; or a command with unknown effects mentions one. Always denied for agents.\nOutcome `deny`.",
           "type": "string"
         },
         {
           "const": "banned_command",
-          "description": "A shell command matches a `destructive.ban` pattern. Always denied. Outcome `deny`.",
+          "description": "A shell command matches a `destructive.ban` pattern, or breaks a self-protection rule\n(running state-changing `acs` commands, skipping git hooks, starting a harness with its\nhooks off). Always denied. Outcome `deny`.",
           "type": "string"
         },
         {
@@ -286,7 +348,7 @@
         },
         {
           "const": "owned_territory",
-          "description": "A non-owner agent touched an `owned` zone. Implementations that do not yet enforce\nownership treat `owned` zones as `shared` and never return this code. Outcome `deny`.",
+          "description": "An agent whose pilot is not an owner wrote or deleted a file in an `owned` zone, and no\nhuman override covers it. Outcome `deny`.",
           "type": "string"
         },
         {
@@ -462,6 +524,13 @@
       "description": "Lore entries injected into the session.",
       "items": {
         "$ref": "#/$defs/LoreId"
+      },
+      "type": "array"
+    },
+    "overrides": {
+      "description": "Human overrides the session used. Omitted when there were none.",
+      "items": {
+        "$ref": "#/$defs/OverrideUse"
       },
       "type": "array"
     },

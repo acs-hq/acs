@@ -43,6 +43,8 @@ pub enum Command {
     Off(commands::off::OffArgs),
     /// Turn the gate back on.
     On(commands::off::OnArgs),
+    /// Let agents change files in owned territory they do not own (for a person at a terminal).
+    Override(commands::r#override::OverrideArgs),
     /// Check the installation and repair what can be repaired.
     Doctor(commands::doctor::DoctorArgs),
     /// Share claims with other machines through the git remote.
@@ -142,6 +144,7 @@ pub fn run(cli: Cli) -> ExitCode {
         Command::Release(args) => commands::release::run(&args),
         Command::Off(args) => commands::off::run_off(&args),
         Command::On(args) => commands::off::run_on(&args),
+        Command::Override(args) => commands::r#override::run(&args),
         Command::Doctor(args) => commands::doctor::run(&args),
         Command::Sync(args) => commands::sync::run(&args),
         Command::Plugin(args) => commands::plugin::run(&args),
@@ -250,9 +253,20 @@ mod tests {
             vec!["sync", "--json"],
             vec!["sync", "--wait", "--json"],
             vec!["plugin", "install", "claude-code", "--json"],
+            vec!["override", "--path", "a/**", "--once", "--json"],
+            vec!["override", "--revoke", "ovr_x", "--json"],
         ] {
             assert!(parse(&args).is_ok(), "{args:?}");
         }
+    }
+
+    #[test]
+    fn override_needs_a_path_or_a_revoke_and_one_duration() {
+        assert!(parse(&["override"]).is_err());
+        assert!(parse(&["override", "--path", "a/**", "--once", "--session"]).is_err());
+        assert!(parse(&["override", "--path", "a/**", "--revoke", "ovr_x"]).is_err());
+        assert!(parse(&["override", "--revoke", "ovr_x", "--once"]).is_err());
+        assert!(parse(&["override", "--path", "a/**", "--session"]).is_ok());
     }
 
     #[test]

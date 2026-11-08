@@ -136,6 +136,7 @@ pub fn render(view: &StatusView, now: Timestamp, all_sealed: bool) -> String {
     }
 
     out.push_str(&collision_lines(view, now));
+    out.push_str(&override_lines(view, now));
 
     let _ = writeln!(
         out,
@@ -158,6 +159,49 @@ pub fn render(view: &StatusView, now: Timestamp, all_sealed: bool) -> String {
             "  and {} more (`acs status --sealed` lists all)",
             view.sealed.len() - shown
         );
+    }
+    out
+}
+
+/// The overrides of owned territory still in force. Absent when there are none.
+fn override_lines(view: &StatusView, now: Timestamp) -> String {
+    let mut out = String::new();
+    if view.overrides.is_empty() {
+        return out;
+    }
+    let _ = writeln!(
+        out,
+        "\nOverrides of owned territory ({}):",
+        view.overrides.len()
+    );
+    for item in &view.overrides {
+        let mode = match item.mode {
+            acs_core::OverrideMode::Once => "once",
+            acs_core::OverrideMode::Session => "session",
+        };
+        let state = match (&item.seat_id, item.expires_at) {
+            (Some(seat), _) => format!("held by {seat}"),
+            (None, Some(at)) => format!(
+                "unused, lapses in {}",
+                crate::commands::support::short_duration(
+                    at.as_second().saturating_sub(now.as_second())
+                )
+            ),
+            (None, None) => "unused".to_owned(),
+        };
+        let right = format!("{mode}, {state}");
+        out.push_str(&row(&item.pattern, &right));
+        out.push('\n');
+        out.push_str(&wrap(
+            &format!(
+                "granted {} ago by {}; `acs override --revoke {}` withdraws it",
+                age(now, item.granted_at),
+                item.granted_by,
+                item.override_id
+            ),
+            "    ",
+            "    ",
+        ));
     }
     out
 }
@@ -288,6 +332,15 @@ mod tests {
                 })
                 .collect(),
             collisions_total: 9,
+            overrides: vec![crate::runtime::OverrideItem {
+                override_id: "ovr_abc".to_owned(),
+                pattern: format!("{}/**", "payments/".repeat(12)),
+                mode: acs_core::OverrideMode::Once,
+                granted_by: "someone.with.a.very.long.address@example.com".to_owned(),
+                granted_at: now,
+                expires_at: Some(now),
+                seat_id: None,
+            }],
             sealed: (0..9)
                 .map(|i| format!("{}{i}/**", "g".repeat(100)))
                 .collect(),

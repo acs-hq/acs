@@ -411,8 +411,8 @@ pub fn territory_toml(header: &str, proposal: &Proposal) -> String {
     let _ = write!(
         out,
         "\n#\n# Proposed by `acs init` from folder names and the last {} months of git history. It is\n\
-         # only a starting point: edit it freely. ACS does not enforce `owned` zones yet; until\n\
-         # it does they act like `shared`.\n",
+         # only a starting point: edit it freely. Only the owners' agents may change an `owned`\n\
+         # zone; a person can let another agent in with `acs override`.\n",
         proposal.months
     );
     let mut by_kind: BTreeMap<u8, Vec<&ProposedZone>> = BTreeMap::new();

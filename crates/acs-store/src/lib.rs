@@ -9,7 +9,7 @@
 //!   [`attributions`]: the SQLite state database (`repos/<repo-id>/state.db`): seats (with their
 //!   session id and intent), atomic claims with lazy expiry, the remote-claims view, the event
 //!   log, notices, counters, the last decision per seat, repository flags and post-tool
-//!   attributions. Start at [`StateDb`].
+//!   attributions, and human overrides of owned territory ([`overrides`]). Start at [`StateDb`].
 //! - [`snapshots`]: content-addressed, zstd-compressed pre- and post-images with their own index
 //!   (`repos/<repo-id>/snapshots/index.db`) and LRU eviction. Start at [`SnapshotStore`].
 
@@ -22,6 +22,7 @@ pub mod flags;
 pub mod fsutil;
 pub mod home;
 pub mod notices;
+pub mod overrides;
 pub mod repo_id;
 pub mod seats;
 pub mod snapshots;
@@ -33,6 +34,7 @@ pub use decisions::LastDecision;
 pub use events::{Collision, NewEvent, StoredEvent};
 pub use flags::FLAG_GATE_OFF;
 pub use home::{AcsHome, HomeError, Migration, RepoHome};
+pub use overrides::{NewOverride, StoredOverride};
 pub use repo_id::{
     GitCli, IdKind, IdSource, InvalidRepoId, RepoId, RepoIdError, RepoIdentity, RootFinder,
     find_common_dir,

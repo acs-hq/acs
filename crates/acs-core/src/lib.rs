@@ -20,7 +20,7 @@ mod values;
 pub use decision::{Decision, Outcome, ReasonCode};
 pub use error::ParseError;
 pub use event::{EditInfo, Phase, Tool, ToolEvent, ToolKind, ToolResult};
-pub use ids::{ClaimId, LoreId, NoticeId, SeatId, SessionId, pilot_id};
+pub use ids::{ClaimId, LoreId, NoticeId, OverrideId, SeatId, SessionId, pilot_id};
 pub use jiff::Timestamp;
 pub use policy_types::{
     Config, DEFAULT_SEALED, Destructive, Guards, LedgerConfig, LoreFrontMatter, Owner, Territory,
@@ -28,6 +28,7 @@ pub use policy_types::{
 };
 pub use records::{
     Claim, ClaimHistoryEntry, ClaimOrigin, ClaimScope, ClaimsDocument, EndedReason, FileChange,
-    GuardDecisions, NotableDecision, Notice, NoticeKind, ReleaseReason, Seat, SessionRecord,
+    GuardDecisions, NotableDecision, Notice, NoticeKind, OverrideMode, OverrideUse, ReleaseReason,
+    Seat, SessionRecord,
 };
 pub use values::{ContentHash, RepoPath, SPEC_VERSION, SpecVersion, SymbolPath};

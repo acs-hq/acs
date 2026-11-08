@@ -7,7 +7,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::decision::{Outcome, ReasonCode};
-use crate::ids::{ClaimId, LoreId, NoticeId, SeatId, SessionId};
+use crate::ids::{ClaimId, LoreId, NoticeId, OverrideId, SeatId, SessionId};
 use crate::values::{ContentHash, RepoPath, SpecVersion, SymbolPath};
 
 /// One agent session (or human editing session) working in a repository.
@@ -233,6 +233,34 @@ pub struct GuardDecisions {
     pub notable: Vec<NotableDecision>,
 }
 
+/// How long a human override lasts.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum OverrideMode {
+    /// One tool call: the first call that needs the override uses it up.
+    Once,
+    /// The rest of the session of the first seat that uses it.
+    Session,
+}
+
+/// A human override a session used: the pilot let the session's agent change files in `owned`
+/// zones it does not own.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct OverrideUse {
+    /// Identifier of the override.
+    pub override_id: OverrideId,
+    /// The glob the override covers, repository-relative.
+    pub pattern: String,
+    /// How long it lasts.
+    pub mode: OverrideMode,
+    /// The human who granted it, identified by git email address.
+    pub granted_by: String,
+    /// When it was granted (UTC).
+    pub granted_at: Timestamp,
+    /// The files the session changed or claimed under it, each once, in order of first use.
+    pub paths: Vec<RepoPath>,
+}
+
 /// Why a session record was finalized.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -269,6 +297,9 @@ pub struct SessionRecord {
     pub commits: Vec<String>,
     /// Lore entries injected into the session.
     pub lore_loaded: Vec<LoreId>,
+    /// Human overrides the session used. Omitted when there were none.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub overrides: Vec<OverrideUse>,
     /// When the session started (UTC).
     pub started_at: Timestamp,
     /// When the session ended (UTC). For crashed sessions, the last time the seat was seen.

@@ -40,17 +40,17 @@
         },
         {
           "const": "gate_off",
-          "description": "`acs off` is active for this repository; the gate is disabled except for sealed paths.\nOutcome `allow`.",
+          "description": "`acs off` is active for this repository; the gate is disabled except for sealed paths,\nbanned commands and self-protection. Outcome `allow`.",
           "type": "string"
         },
         {
           "const": "sealed_path",
-          "description": "A target matches a sealed glob. Always denied for agents. Outcome `deny`.",
+          "description": "A target matches a sealed glob or zone, or reaches a protected location outside the\nrepository; or a command with unknown effects mentions one. Always denied for agents.\nOutcome `deny`.",
           "type": "string"
         },
         {
           "const": "banned_command",
-          "description": "A shell command matches a `destructive.ban` pattern. Always denied. Outcome `deny`.",
+          "description": "A shell command matches a `destructive.ban` pattern, or breaks a self-protection rule\n(running state-changing `acs` commands, skipping git hooks, starting a harness with its\nhooks off). Always denied. Outcome `deny`.",
           "type": "string"
         },
         {
@@ -85,7 +85,7 @@
         },
         {
           "const": "owned_territory",
-          "description": "A non-owner agent touched an `owned` zone. Implementations that do not yet enforce\nownership treat `owned` zones as `shared` and never return this code. Outcome `deny`.",
+          "description": "An agent whose pilot is not an owner wrote or deleted a file in an `owned` zone, and no\nhuman override covers it. Outcome `deny`.",
           "type": "string"
         },
         {

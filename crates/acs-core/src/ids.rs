@@ -124,6 +124,14 @@ id_type! {
     LoreId, "lore id", "lore_"
 }
 
+id_type! {
+    /// Identifier of a human override, which lets agents change files in `owned` zones they do
+    /// not own.
+    ///
+    /// Starts with `ovr_`.
+    OverrideId, "override id", "ovr_"
+}
+
 /// Derives the pilot id used in ref names from a git email address.
 ///
 /// The pilot id is the first 16 lowercase hex characters of the SHA-256 of the email after

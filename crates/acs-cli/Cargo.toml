@@ -45,6 +45,7 @@ acs-policy = { path = "../acs-policy" }
 acs-shell = { path = "../acs-shell" }
 acs-store = { path = "../acs-store" }
 clap.workspace = true
+getrandom.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

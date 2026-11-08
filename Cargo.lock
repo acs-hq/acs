@@ -26,6 +26,7 @@ dependencies = [
  "clap",
  "criterion",
  "dunce",
+ "getrandom 0.4.3",
  "serde",
  "serde_json",
  "tempfile",

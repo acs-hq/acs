@@ -416,7 +416,7 @@ fn render_zones(out: &mut String, proposal: Option<&Proposal>) {
     }
     if any_owned {
         out.push_str(&wrap(
-            "ACS does not enforce owned zones yet: until it does, they act like shared.",
+            "Only the owners' agents may change owned zones; `acs override` lets others in.",
             "  ",
             "  ",
         ));
