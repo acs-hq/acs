@@ -262,7 +262,6 @@ const INERT: &[&str] = &[
     "export",
     "unset",
     "set",
-    "alias",
     "unalias",
     "read",
     "wait",
@@ -676,6 +675,9 @@ fn dispatch(name: &str, args: &[Word]) -> Outcome {
         "powershell" | "pwsh" => tools::powershell(args, o),
         "cmd" => tools::cmd_exe(args, o),
         "eval" => tools::eval(args, o),
+        "alias" => tools::alias(args, o),
+        "script" => tools::script(args, o),
+        "su" | "runuser" => tools::su(args, o),
         "source" | "." => {
             o.and_unknown();
         }

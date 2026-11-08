@@ -107,16 +107,16 @@ The set is closed; adding a code is a spec change. The "outcome" column lists wh
 | Code | Outcome | Meaning |
 | --- | --- | --- |
 | `ok` | allow | Nothing blocked. |
-| `gate_off` | allow | `acs off` is active for this repository on this machine. Sealed paths are still enforced. |
-| `sealed_path` | deny | A target matches a sealed glob (`guards.toml`) or lies in a `sealed` zone (`territory.toml`). |
-| `banned_command` | deny | A shell command matches a `destructive.ban` pattern. |
+| `gate_off` | allow | `acs off` is active for this repository on this machine. Sealed paths, banned commands and self-protection are still enforced. |
+| `sealed_path` | deny | A target matches a sealed glob (`guards.toml`), lies in a `sealed` zone (`territory.toml`) or reaches a protected location outside the repository (section 11.1); or a command whose effects cannot be determined mentions one. |
+| `banned_command` | deny | A shell command matches a `destructive.ban` pattern, or breaks a self-protection rule (section 11.1). |
 | `protected_branch` | deny | A history rewrite or force push targets a protected branch. |
 | `path_escapes_repo` | ask | A write, delete or move target resolves outside the repository root, including through a symlink or junction. |
 | `delete_outside_claims` | deny | Deletes exceed `destructive.max_files_deleted_outside_claims`. |
 | `destructive_budget` | ask | Deletes in one command exceed `destructive.max_files_deleted_per_command`. |
 | `destructive_unknown_targets` | ask | A destructive shell command whose targets cannot be determined. |
 | `claim_conflict` | deny | An overlapping live claim is held by another seat (section 6). |
-| `owned_territory` | deny | A non-owner agent touched an `owned` zone. Implementations that do not enforce ownership treat `owned` as `shared` and never return this code. |
+| `owned_territory` | deny | An agent whose pilot is not an owner wrote or deleted a file in an `owned` zone, and no human override covers the file (section 6.1). |
 | `state_unavailable` | deny, or allow with a warning | The state database is locked, corrupt or missing (section 11). |
 | `unknown_payload` | allow | The adapter could not parse the harness payload (section 11). |
 | `claim_queued` | queue | Reserved with `queue`. MUST NOT be returned yet. |
@@ -152,7 +152,7 @@ A claim is **expired** at time `now` when `now - heartbeat_at >= ttl_secs`. Expi
 
 ### 4.3 `SessionRecord`
 
-The ledger entry for one session. `session_id` is the value of the `ACS-Session` trailer on the session's commits. Fields: `spec`, `session_id`, `seat` (the full `Seat`), `intent` (optional text the agent declared through the `acs_intent` MCP tool), `claims` (history: `claim_id`, `scope`, `acquired_at`, optional `released_at` and `release_reason` of `released`, `expired` or `session_end`), `files_changed` (`path`, `pre_hash`, `post_hash`; `null` means the file did not exist before or no longer exists), `guard_decisions` (`counts` per reason code and a list of `notable` decisions with `at`, `reason_code`, `outcome`, `path_or_command`), `commits` (full commit hashes carrying the trailer), `lore_loaded` (lore ids), `started_at`, `ended_at`, `ended_reason` (`clean` or `crashed`), `acs_version`.
+The ledger entry for one session. `session_id` is the value of the `ACS-Session` trailer on the session's commits. Fields: `spec`, `session_id`, `seat` (the full `Seat`), `intent` (optional text the agent declared through the `acs_intent` MCP tool), `claims` (history: `claim_id`, `scope`, `acquired_at`, optional `released_at` and `release_reason` of `released`, `expired` or `session_end`), `files_changed` (`path`, `pre_hash`, `post_hash`; `null` means the file did not exist before or no longer exists), `guard_decisions` (`counts` per reason code and a list of `notable` decisions with `at`, `reason_code`, `outcome`, `path_or_command`), `commits` (full commit hashes carrying the trailer), `lore_loaded` (lore ids), `overrides` (optional, omitted when empty: each human override the session used, with `override_id`, `pattern`, `mode`, `granted_by`, `granted_at` and the `paths` it let through, section 6.1), `started_at`, `ended_at`, `ended_reason` (`clean` or `crashed`), `acs_version`.
 
 A record for a session that ended without an end event is assembled on a later run with `ended_reason: crashed` and `ended_at` set to the seat's `last_seen_at`.
 
@@ -283,6 +283,19 @@ A conflict yields `deny` with `claim_conflict`; the message names the holder, th
 
 Territory is checked before claims: a `sealed` zone always denies agents; an `owned` zone denies non-owner agents unless a human override exists; a `shared` zone requires a claim; an `open` zone needs none.
 
+### 6.1 Owned zones and overrides
+
+An agent's seat may write or delete a file in an `owned` zone when its pilot is one of the zone's owners, after expanding `team:` owners through `[teams]` and comparing email addresses ignoring ASCII case. It still needs a claim, as in a `shared` zone. Any other agent is denied with `owned_territory`, and the message names the zone and its owners. Territory binds agents only: a human claiming files through the command line is not checked against it.
+
+A **human override** lets agents into owned zones for a while. It has an id (`ovr_` prefix), a glob in the dialect of section 5, a `mode`, the pilot who granted it and when:
+
+- `once`: the first tool call that relies on it uses it up;
+- `session`: it binds to the first seat that relies on it and lasts as long as that seat.
+
+An override no seat has used lapses after `claim_ttl_secs`. It can be revoked until it is used up. It lifts `owned_territory` only: sealed paths, claims and every other rule still apply. Relying on an override and recording that use MUST be atomic, so that a `once` override is used by one tool call only; a seat that loses that race is decided again without it.
+
+Granting an override MUST require a person: the reference implementation's `acs override` needs an interactive terminal and a typed confirmation code, and agents are denied the command (section 11.1). Every use is recorded with the seat, and appears in the session's record (`overrides`, section 4.3).
+
 ## 7. Commit trailers
 
 Commits are linked to sessions with a git trailer `ACS-Session: <session_id>` (a `ses_` id), added by the `prepare-commit-msg` git hook.
@@ -334,8 +347,8 @@ For every event the engine proceeds as follows. A step that denies ends evaluati
 1. The adapter parses the harness payload into a `ToolEvent` (failure: `unknown_payload`).
 2. Resolve the repository and the seat (created on the first event of a session).
 3. Normalize every path: absolute, canonical, symlinks and junctions resolved, case-folded where the filesystem is case-insensitive. Flag any path that escapes the repository root (`path_escapes_repo`).
-4. Guards: sealed paths, banned commands, protected-branch rules, destructive budgets (`sealed_path`, `banned_command`, `protected_branch`, `delete_outside_claims`, `destructive_budget`).
-5. Territory and claims: compute the required claims and acquire them atomically (`owned_territory`, `claim_conflict`).
+4. Guards: sealed paths including protected locations outside the repository, self-protection, banned commands, protected-branch rules, destructive budgets (`sealed_path`, `banned_command`, `protected_branch`, `delete_outside_claims`, `destructive_budget`).
+5. Territory and claims: deny non-owner agents in `owned` zones unless an override covers the file, then compute the required claims and acquire them atomically (`owned_territory`, `claim_conflict`).
 6. Snapshot the pre-images of files about to change. For a destructive shell command whose targets cannot be determined, ask (`destructive_unknown_targets`).
 7. Collect context to inject: lore for scopes entered for the first time in the session, and pending notices.
 8. Render the `Decision` back through the adapter.
@@ -370,12 +383,23 @@ ACS_HOME/
 
 | Situation | Behavior |
 | --- | --- |
-| Sealed path or banned command | Fail closed: deny, always |
+| Sealed path, banned command or self-protection rule | Fail closed: deny, always, including while `acs off` is active |
 | State database locked, corrupt or missing | Deny destructive actions; allow ordinary edits with a warning in `context` (`state_unavailable`); `acs doctor` repairs |
 | Remote unreachable, claims view stale | Fail open on remote claims, with a one-line warning; local claims are still enforced |
 | Policy file invalid | Fall back to the last valid compiled policy and warn; if none, built-in default guards only |
 | Unknown harness payload | Allow, log the raw payload, show a warning once per session (`unknown_payload`) |
-| `acs off` | Gate disabled for this repository on this machine, except sealed paths (`gate_off`); visible in `acs status` |
+| `acs off` | Gate disabled for this repository on this machine, except sealed paths, banned commands and self-protection (`gate_off`); visible in `acs status` |
+
+### 11.1 Self-protection
+
+Agents must not be able to switch ACS off. Whatever the policy and the gate state, an implementation denies an agent:
+
+- writing or deleting a protected location outside the repository (`sealed_path`): its own state directory (`ACS_HOME`), git directories outside the work tree, and the user-level hook, plugin and settings files of every supported harness. A command whose effects cannot be determined (an interpreter, a script) is denied when one of its words mentions such a location or the repository's `.acs/`, `.git/hooks`, `.git/config`, harness settings or `.husky/`;
+- running a command of the ACS command line that changes state (`banned_command`). The reference implementation allows agents only `acs status`, `acs sync`, `acs doctor` without `--fix` and help; agents claim and release through the MCP tools, which act on their own seat;
+- skipping or redirecting git hooks (`banned_command`): `--no-verify`, `git commit -n`, setting `core.hooksPath` for one command or in the configuration;
+- starting an agent harness with its hooks or the ACS plugin turned off (`banned_command`), such as Claude Code's `--bare`, `--settings` and `--setting-sources`, Antigravity's `--settings`, and either harness's `plugin disable` or `plugin uninstall`.
+
+These rules see the effective command: wrappers such as `sudo` and `env` removed, and the scripts of `sh -c`, `eval`, aliases, here-documents, text piped into a shell and encoded PowerShell commands analyzed as commands of their own. What they cannot see (script files, interpreters, a program named by a variable) is a residual risk an implementation SHOULD document.
 
 **Privacy.** Prompts are never stored unless `ledger.store_prompts = true`. Intent comes from the agent calling the `acs_intent` MCP tool, which the usage skill tells it to do at the start of a task. Ledger records are pushed to the remote, so they MUST contain nothing that is not already safe to push.
 

@@ -128,11 +128,33 @@ The gate is ACS's check on each tool call. To turn it off for this repository on
 acs off
 ```
 
-Claims, the delete rule and banned commands then stop applying, on this machine only. Sealed paths still hold. `acs status` shows a `GATE OFF` warning until you turn it back on:
+Claims, owned zones and the delete rule then stop applying, on this machine only. Sealed paths and banned commands still hold, and agents still cannot run `acs` commands that change its state or skip the git hooks. `acs status` shows a `GATE OFF` warning until you turn it back on:
 
 ```bash
 acs on
 ```
+
+## Letting an agent into owned territory
+
+An `owned` zone lets only its owners' agents change it. To let another agent in, grant an override from your own terminal:
+
+```bash
+acs override --path 'payments/**' --once
+```
+
+```text
+This lets agents change files matching `payments/**` in owned territory, for the next tool call
+that needs it. Claims and sealed paths still apply.
+Type KXRM to confirm: KXRM
+Override ovr_... granted for `payments/**`.
+```
+
+- `--once` covers one tool call: the first agent call that needs it uses it up.
+- `--session` covers the rest of the session of the first agent that uses it.
+- An override nobody uses lapses after `claim_ttl_secs` (15 minutes by default).
+- It only opens owned zones. Claims, sealed paths and every other rule still apply.
+
+`acs override` asks you to type a code, so it only works in a terminal, and agents are not allowed to run it. `acs status` lists the overrides still in force; `acs override --revoke <id>` withdraws one. Every use is recorded with the session that made it.
 
 ## Syncing by hand
 

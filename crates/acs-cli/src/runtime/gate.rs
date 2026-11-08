@@ -9,12 +9,15 @@
 use std::time::Duration;
 
 use acs_core::engine::decide;
-use acs_core::gate::{ClaimRequest, ClaimsSnapshot, GateInput, GateOutput, GateState, HeldClaim};
+use acs_core::gate::{
+    ClaimRequest, ClaimsSnapshot, GateInput, GateOutput, GateState, HeldClaim, PathLocation,
+};
 use acs_core::{ClaimOrigin, Decision, Notice, Outcome, ReasonCode, Seat, Timestamp, ToolEvent};
 use acs_store::{AcquireOutcome, FLAG_GATE_OFF, StateDb, StoreError};
 
 use super::RepoContext;
 use super::paths::Normalized;
+use super::protect::{StoreOverrides, outside_seals};
 
 /// What to decide.
 #[derive(Debug, Clone, Copy)]
@@ -66,26 +69,51 @@ pub fn run_gate(ctx: &RepoContext, params: &GateParams<'_>) -> GateRun {
         }
     }
 
+    // Outside seals cost a few filesystem calls, so they are only computed when the event writes
+    // outside the repository or runs a shell command (whose words they are checked against).
+    let needs_seals = params.norm.shell.is_some()
+        || params
+            .norm
+            .targets
+            .iter()
+            .any(|t| matches!(t.path.location, PathLocation::Outside(_)));
+    let seals = if needs_seals {
+        outside_seals(ctx)
+    } else {
+        Vec::new()
+    };
+
     let mut lost_races = 0;
     let mut run = None;
     for _ in 0..4 {
-        let (claims, notices) = match db.filter(|_| !unavailable) {
+        let (claims, notices, overrides) = match db.filter(|_| !unavailable) {
             Some(db) => match load_view(ctx, db, params, stale_after) {
                 Ok(view) => view,
                 Err(_) => {
                     unavailable = true;
-                    (ClaimsSnapshot::default(), Vec::new())
+                    (
+                        ClaimsSnapshot::default(),
+                        Vec::new(),
+                        StoreOverrides::default(),
+                    )
                 }
             },
-            None => (ClaimsSnapshot::default(), Vec::new()),
+            None => (
+                ClaimsSnapshot::default(),
+                Vec::new(),
+                StoreOverrides::default(),
+            ),
         };
         let input = GateInput {
             event: params.event,
             seat: params.seat,
+            origin: params.origin,
             targets: &params.norm.targets,
             shell: params.norm.shell.as_ref(),
             claims: &claims,
             notices: &notices,
+            overrides: &overrides,
+            outside_sealed: &seals,
             state: GateState {
                 gate_off,
                 state_unavailable: unavailable,
@@ -93,6 +121,26 @@ pub fn run_gate(ctx: &RepoContext, params: &GateParams<'_>) -> GateRun {
             now: params.now,
         };
         let mut output = decide(&input, policy);
+        if output.decision.outcome != Outcome::Deny
+            && !output.overrides_applied.is_empty()
+            && let Some(db) = db.filter(|_| !unavailable)
+        {
+            let uses: Vec<_> = output
+                .overrides_applied
+                .iter()
+                .map(|applied| (applied.override_id.clone(), applied.path.clone()))
+                .collect();
+            match db.apply_overrides(&params.seat.seat_id, &uses, params.now) {
+                Ok(true) => {}
+                // Another seat used it, or it lapsed or was revoked since the view was loaded:
+                // decide again without it.
+                Ok(false) => continue,
+                Err(_) => {
+                    unavailable = true;
+                    continue;
+                }
+            }
+        }
         let wants_claims = output.decision.outcome != Outcome::Deny
             && !output.claim_requests.is_empty()
             && !unavailable
@@ -141,7 +189,7 @@ fn load_view(
     db: &StateDb,
     params: &GateParams<'_>,
     stale_after: Duration,
-) -> Result<(ClaimsSnapshot, Vec<Notice>), StoreError> {
+) -> Result<(ClaimsSnapshot, Vec<Notice>, StoreOverrides), StoreError> {
     let mut claims = db.claims_snapshot(
         &params.norm.repo_paths,
         &params.seat.target_branch,
@@ -157,7 +205,8 @@ fn load_view(
         }
     }
     let notices = db.pending_notices(&params.seat.seat_id)?;
-    Ok((claims, notices))
+    let overrides = StoreOverrides::load(ctx, db, &params.seat.seat_id, params.now)?;
+    Ok((claims, notices, overrides))
 }
 
 fn acquire(
@@ -205,5 +254,6 @@ fn unavailable_fallback(_params: &GateParams<'_>) -> GateOutput {
         claim_requests: Vec::new(),
         snapshot_requests: Vec::new(),
         delivered_notices: Vec::new(),
+        overrides_applied: Vec::new(),
     }
 }

@@ -404,7 +404,7 @@ fn init_yes_on_a_fresh_repository_writes_the_proposal_directly() {
         text.contains("written from folder names and git history"),
         "{text}"
     );
-    assert!(text.contains("does not enforce owned zones"), "{text}");
+    assert!(text.contains("Only the owners' agents"), "{text}");
     assert_fits_80(&text);
     assert_eq!(loaded_zones(&world).len(), 3);
 }

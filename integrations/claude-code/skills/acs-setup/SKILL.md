@@ -81,9 +81,9 @@ months' commits. It does not write them yet. Read the `Territory` part of its ou
 - `nothing to propose` or `kept`: go on to step 5.
 - `proposed`: show your pilot the zones as `acs init` printed them and ask one question: write
   them as they are, write them with changes, or skip them. Tell them what the kinds mean in one
-  line each: `owned` will let only the owner's agents change that folder (ACS does not enforce it
-  yet, so for now it acts like `shared`); `open` lets agents edit without claims, so two agents
-  can overwrite each other's changes there. Then:
+  line each: `owned` lets only the owner's agents change that folder (your pilot can let another
+  agent in with `acs override`); `open` lets agents edit without claims, so two agents can
+  overwrite each other's changes there. Then:
   - As they are: run `acs init --yes`.
   - With changes: run `acs init --yes`, edit `.acs/policy/territory.toml` the way your pilot said
     (remove a zone, change a `kind`, add or change an owner), and run `acs doctor` again. Stop on

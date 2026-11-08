@@ -425,7 +425,7 @@ proptest! {
         }
         prop_assert!(!matches!(
             out.decision.reason_code,
-            ReasonCode::OwnedTerritory | ReasonCode::ClaimQueued | ReasonCode::UnknownPayload
+            ReasonCode::ClaimQueued | ReasonCode::UnknownPayload
         ));
         // Only deny, ask and allow are ever produced.
         prop_assert!(matches!(

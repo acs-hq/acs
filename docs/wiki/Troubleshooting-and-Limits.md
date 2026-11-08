@@ -60,11 +60,11 @@ Run `acs off`, and `acs on` when you finish. See [Turning the gate off](Working-
 
 **ACS only coordinates people who run it.** A teammate without it is invisible to it, and it does not block them. It also does not see your own editor, unless you use `acs claim`.
 
-**ACS is not a security boundary.** Its agent instructions tell agents not to bypass it, but it does not stop an agent that runs `acs off` or `git commit --no-verify`. It guards against accidents.
+**ACS is not a security boundary.** It denies the ways of switching it off that it can see: an agent running `acs off`, `acs override` or `git commit --no-verify`, writing to ACS's state or a harness's settings, or starting another agent with its hooks off. It cannot see inside scripts and programs it does not know, so an agent that hides what it does there can still get past it. It guards against accidents and careless agents, not against an agent set on getting around it. The project's security notes list what is not covered.
 
-**The git hooks can be skipped.** They let everything through if `acs` is not on `PATH`, and `git commit --no-verify` skips them.
+**The git hooks can be skipped by people.** They let everything through if `acs` is not on `PATH`, and `git commit --no-verify` skips them. ACS denies `--no-verify` to agents, not to you.
 
-**`owned` zones are not enforced yet.** They behave like `shared`. See [territory.toml](Configuring-Policy#territorytoml).
+**Owned zones bind agents, not people.** Only the owners' agents may change an `owned` zone; you can still edit it yourself. See [territory.toml](Configuring-Policy#territorytoml).
 
 **Sealed paths only stop edits ACS can see.** A tool that writes files itself, such as `dotnet ef migrations add`, is not blocked when it writes. The commit is where an agent gets caught.
 

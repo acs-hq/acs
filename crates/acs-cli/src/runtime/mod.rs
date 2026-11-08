@@ -10,17 +10,20 @@
 //! - [`ops`] holds the operations later work packages call: [`status`], [`claim_paths`],
 //!   [`release_paths`], [`set_intent`] and [`last_decision`].
 //! - [`sync`] starts detached syncs and holds the lock that keeps one running at a time.
+//! - [`protect`] supplies the overrides in force for a seat and the locations outside the
+//!   repository that agents may never write.
 
 mod context;
 pub mod gate;
 mod ops;
 pub mod paths;
+pub mod protect;
 pub mod seats;
 pub mod sync;
 
 pub use context::{OpenError, RepoContext};
 pub use ops::{
-    COLLISION_WINDOW_HOURS, ClaimOutcome, ClaimView, CollisionView, MAX_INTENT_CHARS,
+    COLLISION_WINDOW_HOURS, ClaimOutcome, ClaimView, CollisionView, MAX_INTENT_CHARS, OverrideItem,
     ReleaseReport, RemoteView, SeatSummary, StatusView, claim_paths, last_decision,
     record_collision, release_paths, set_intent, status,
 };

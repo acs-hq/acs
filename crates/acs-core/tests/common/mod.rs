@@ -5,12 +5,13 @@
 
 use acs_core::gate::{
     ClaimSource, ClaimsSnapshot, Confidence, Expansion, GateInput, GateState, GitInvocation,
-    HeldClaim, PathLocation, PolicyView, ResolvedPath, ShellAnalysis, ShellTarget, SimpleCommand,
-    Target, TargetOp, ZoneMatch,
+    HeldClaim, OutsideSeal, OverrideView, PathLocation, PolicyView, ResolvedPath, ShellAnalysis,
+    ShellTarget, SimpleCommand, Target, TargetOp, ZoneMatch,
 };
 use acs_core::{
-    Claim, ClaimOrigin, ClaimScope, Config, DEFAULT_SEALED, Destructive, Notice, NoticeKind, Owner,
-    Phase, RepoPath, Seat, SpecVersion, Timestamp, Tool, ToolEvent, ToolKind, ZoneKind,
+    Claim, ClaimOrigin, ClaimScope, Config, DEFAULT_SEALED, Destructive, Notice, NoticeKind,
+    OverrideId, Owner, Phase, RepoPath, Seat, SpecVersion, Timestamp, Tool, ToolEvent, ToolKind,
+    ZoneKind,
 };
 
 /// The time of every fixture.
@@ -103,6 +104,17 @@ impl FakePolicy {
             kind,
             owners: vec![Owner::Pilot("sara@example.com".into())],
             pilots: vec!["sara@example.com".into()],
+        });
+        self
+    }
+
+    /// An `owned` zone whose only owner is `pilot`.
+    pub fn owned_by(mut self, pattern: &str, pilot: &str) -> Self {
+        self.zones.push(FakeZone {
+            pattern: pattern.to_owned(),
+            kind: ZoneKind::Owned,
+            owners: vec![Owner::Pilot(pilot.into())],
+            pilots: vec![pilot.into()],
         });
         self
     }
@@ -369,14 +381,30 @@ pub fn analysis(commands: Vec<SimpleCommand>) -> ShellAnalysis {
     }
 }
 
+/// Overrides as `(glob, id)` pairs, matched with [`glob`].
+#[derive(Debug, Default)]
+pub struct FakeOverrides(pub Vec<(String, OverrideId)>);
+
+impl OverrideView for FakeOverrides {
+    fn covering(&self, path: &RepoPath) -> Option<&OverrideId> {
+        self.0
+            .iter()
+            .find(|(pattern, _)| glob(pattern, path.as_str()))
+            .map(|(_, id)| id)
+    }
+}
+
 /// Everything a `GateInput` borrows, owned in one place.
 pub struct Fixture {
     pub event: ToolEvent,
     pub seat: Seat,
+    pub origin: ClaimOrigin,
     pub targets: Vec<Target>,
     pub shell: Option<ShellAnalysis>,
     pub claims: ClaimsSnapshot,
     pub notices: Vec<Notice>,
+    pub overrides: FakeOverrides,
+    pub outside_sealed: Vec<OutsideSeal>,
     pub state: GateState,
 }
 
@@ -386,10 +414,13 @@ impl Fixture {
         Self {
             event: event(kind, Phase::PreTool),
             seat: seat("seat_me", "omar@example.com", "feature/x", "main"),
+            origin: ClaimOrigin::Agent,
             targets: Vec::new(),
             shell: None,
             claims: ClaimsSnapshot::default(),
             notices: Vec::new(),
+            overrides: FakeOverrides::default(),
+            outside_sealed: Vec::new(),
             state: GateState::default(),
         }
     }
@@ -415,6 +446,30 @@ impl Fixture {
         self
     }
 
+    /// A human acting through the CLI rather than an agent.
+    pub fn human(mut self) -> Self {
+        self.origin = ClaimOrigin::Human;
+        self
+    }
+
+    /// An override in force for the seat.
+    pub fn overridden(mut self, pattern: &str, id: &str) -> Self {
+        self.overrides
+            .0
+            .push((pattern.to_owned(), id.parse().unwrap()));
+        self
+    }
+
+    /// A location outside the repository that agents may not write.
+    pub fn sealing_outside(mut self, path: &str, label: &str, home_relative: Option<&str>) -> Self {
+        self.outside_sealed.push(OutsideSeal {
+            path: path.to_owned(),
+            label: label.to_owned(),
+            home_relative: home_relative.map(str::to_owned),
+        });
+        self
+    }
+
     pub fn gate_off(mut self) -> Self {
         self.state.gate_off = true;
         self
@@ -429,10 +484,13 @@ impl Fixture {
         GateInput {
             event: &self.event,
             seat: &self.seat,
+            origin: self.origin,
             targets: &self.targets,
             shell: self.shell.as_ref(),
             claims: &self.claims,
             notices: &self.notices,
+            overrides: &self.overrides,
+            outside_sealed: &self.outside_sealed,
             state: self.state,
             now: now(),
         }

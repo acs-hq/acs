@@ -6,7 +6,9 @@
 use jiff::Timestamp;
 
 use super::plan::Sealed;
+use super::protect::Breach;
 use crate::gate::{ClaimSource, HeldClaim, ResolvedPath};
+use crate::policy_types::Owner;
 use crate::values::RepoPath;
 
 /// How many paths a message names before it says "and N more".
@@ -105,6 +107,71 @@ pub(super) fn banned_command(command: &str, pattern: &str) -> String {
          Use a safer alternative, or ask your pilot to run it themselves.",
         tick(truncate(command, COMMAND_SHOWN)),
         tick(pattern)
+    )
+}
+
+/// A target outside the repository that ACS protects, for a [`Shown`] list.
+pub(super) fn outside_sealed_item(raw: &str, label: &str) -> String {
+    format!("`{raw}` ({label})")
+}
+
+/// A command with unknown effects that mentions a protected location.
+pub(super) fn sealed_mention(command: &str, what: &str) -> String {
+    format!(
+        "The command {} may change {what}, which is protected by ACS, and ACS cannot see what it \
+         does. Agents may not change it, so a human must. Continue with other work, or ask your \
+         pilot to make this change.",
+        tick(truncate(command, COMMAND_SHOWN))
+    )
+}
+
+/// A command that breaks one of ACS's self-protection rules.
+pub(super) fn self_protection(breach: &Breach) -> String {
+    match breach {
+        Breach::AcsCli(shown) => format!(
+            "Agents may not run {}: it changes ACS state as your pilot, not as you. To claim or \
+             release your own files use the ACS tools (`acs_claim`, `acs_release`); for \
+             anything else, ask your pilot to run it in their own terminal.",
+            tick(shown)
+        ),
+        Breach::GitHooks(shown) => format!(
+            "Agents may not run {}: it skips the git hooks that check this repository's claims \
+             and sealed paths. Run the command without it; if a hook fails, fix the cause or \
+             ask your pilot.",
+            tick(shown)
+        ),
+        Breach::Harness(shown) => format!(
+            "Agents may not run {}: it starts an agent with its hooks or the ACS plugin turned \
+             off, so ACS could not protect the repository from it. Run it without that option, \
+             or ask your pilot.",
+            tick(shown)
+        ),
+    }
+}
+
+/// Paths in `owned` zones the seat's pilot does not own, each with its zone, for a [`Shown`]
+/// list.
+pub(super) fn owned_item(path: &RepoPath, pattern: &str, owners: &[Owner]) -> String {
+    let names: Vec<String> = owners.iter().map(ToString::to_string).collect();
+    let owners = if names.is_empty() {
+        "nobody".to_owned()
+    } else {
+        quoted(&names[..names.len().min(HOLDERS_SHOWN)], names.len())
+    };
+    format!("`{path}` (zone `{pattern}`, owned by {owners})")
+}
+
+pub(super) fn owned_territory(list: &Shown, pattern: &str) -> String {
+    let (subject, pronoun) = if list.total == 1 {
+        ("is", "it")
+    } else {
+        ("are", "them")
+    };
+    format!(
+        "{} {subject} owned territory: only the owners' agents may change {pronoun}. Work on \
+         other files, or ask your pilot to coordinate with an owner or to let you in from \
+         their own terminal (`acs override --path '{pattern}' --once`).",
+        list.render()
     )
 }
 

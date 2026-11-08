@@ -213,6 +213,8 @@ pub struct StatusView {
     pub collisions: Vec<CollisionView>,
     /// How many there were, which can be more than [`StatusView::collisions`] lists.
     pub collisions_total: u64,
+    /// Human overrides of owned territory still in force, oldest first.
+    pub overrides: Vec<OverrideItem>,
     /// Globs of paths no agent may write (built-in defaults, `guards.toml`, sealed zones).
     pub sealed: Vec<String>,
     /// The link to the git remote.
@@ -318,6 +320,7 @@ pub fn status(ctx: &RepoContext, seat: Option<&SeatInfo>, now: Timestamp) -> Sta
         other_claims: Vec::new(),
         collisions: Vec::new(),
         collisions_total: 0,
+        overrides: Vec::new(),
         sealed,
         remote: RemoteView {
             configured: ctx.has_remote,
@@ -357,6 +360,19 @@ pub fn status(ctx: &RepoContext, seat: Option<&SeatInfo>, now: Timestamp) -> Sta
         let (collisions, total) = db.collisions_since(since, MAX_COLLISIONS)?;
         view.collisions = collisions.into_iter().map(CollisionView::of).collect();
         view.collisions_total = total;
+        view.overrides = db
+            .active_overrides(now)?
+            .into_iter()
+            .map(|o| OverrideItem {
+                override_id: o.override_id.to_string(),
+                pattern: o.pattern,
+                mode: o.mode,
+                granted_by: o.granted_by,
+                granted_at: o.granted_at,
+                expires_at: o.seat_id.is_none().then_some(o.expires_at),
+                seat_id: o.seat_id.map(|s| s.to_string()),
+            })
+            .collect();
         let sync = db.remote_sync_status()?;
         let stale_after = files.config.sync_interval_secs.get().saturating_mul(3);
         view.remote.sync_ran = sync.last_attempt_at.is_some();
@@ -375,6 +391,27 @@ pub fn status(ctx: &RepoContext, seat: Option<&SeatInfo>, now: Timestamp) -> Sta
         view.state_unavailable = Some(err.to_string());
     }
     view
+}
+
+/// A human override of owned territory, as `acs status` shows it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct OverrideItem {
+    /// Identifier, for `acs override --revoke`.
+    pub override_id: String,
+    /// The glob it covers.
+    pub pattern: String,
+    /// `once` or `session`.
+    pub mode: acs_core::OverrideMode,
+    /// Who granted it.
+    pub granted_by: String,
+    /// When.
+    pub granted_at: Timestamp,
+    /// When it lapses if no seat uses it; absent once a seat holds it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expires_at: Option<Timestamp>,
+    /// The seat holding it (a `session` override after its first use).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub seat_id: Option<String>,
 }
 
 /// The result of [`claim_paths`].

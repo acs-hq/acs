@@ -142,9 +142,23 @@ fn cases() -> Vec<Case> {
             R::GateOff,
         ),
         case(
-            "gate off ignores claims, banned commands and deletes",
+            "gate off ignores claims and deletes",
             rm(&["src/a.rs"]).gate_off().claimed(theirs("src/a.rs")),
+            plain(),
+            Allow,
+            R::GateOff,
+        ),
+        case(
+            "banned commands hold with the gate off",
+            rm(&["src/a.rs"]).gate_off(),
             plain().banning("rm *"),
+            Deny,
+            R::BannedCommand,
+        ),
+        case(
+            "gate off ignores owned territory",
+            Fixture::edit("payments/a.rs").gate_off(),
+            plain().zone_of("payments/**", ZoneKind::Owned),
             Allow,
             R::GateOff,
         ),
@@ -630,19 +644,78 @@ fn cases() -> Vec<Case> {
             Allow,
             R::Ok,
         ),
+        // owned_territory
         case(
-            "owned zone behaves as shared: edit is allowed",
+            "owned zone denies a non-owner agent",
             Fixture::edit("payments/a.rs"),
+            plain().zone_of("payments/**", ZoneKind::Owned),
+            Deny,
+            R::OwnedTerritory,
+        ),
+        case(
+            "owned zone lets an owner's agent edit",
+            Fixture::edit("payments/a.rs"),
+            plain().owned_by("payments/**", "Omar@Example.com"),
+            Allow,
+            R::Ok,
+        ),
+        case(
+            "an owner's agent still needs the claim",
+            Fixture::edit("payments/a.rs").claimed(theirs("payments/a.rs")),
+            plain().owned_by("payments/**", "omar@example.com"),
+            Deny,
+            R::ClaimConflict,
+        ),
+        case(
+            "owned territory is decided before claims",
+            Fixture::edit("payments/a.rs").claimed(theirs("payments/a.rs")),
+            plain().zone_of("payments/**", ZoneKind::Owned),
+            Deny,
+            R::OwnedTerritory,
+        ),
+        case(
+            "an override lets a non-owner agent edit",
+            Fixture::edit("payments/a.rs").overridden("payments/**", "ovr_1"),
             plain().zone_of("payments/**", ZoneKind::Owned),
             Allow,
             R::Ok,
         ),
         case(
-            "owned zone behaves as shared: conflict denies as claim_conflict",
-            Fixture::edit("payments/a.rs").claimed(theirs("payments/a.rs")),
+            "an override does not lift a claim",
+            Fixture::edit("payments/a.rs")
+                .overridden("payments/**", "ovr_1")
+                .claimed(theirs("payments/a.rs")),
             plain().zone_of("payments/**", ZoneKind::Owned),
             Deny,
             R::ClaimConflict,
+        ),
+        case(
+            "an override does not lift a seal",
+            Fixture::edit("payments/.env").overridden("payments/**", "ovr_1"),
+            plain().zone_of("payments/**", ZoneKind::Owned),
+            Deny,
+            R::SealedPath,
+        ),
+        case(
+            "an override for other paths does not help",
+            Fixture::edit("payments/a.rs").overridden("billing/**", "ovr_1"),
+            plain().zone_of("payments/**", ZoneKind::Owned),
+            Deny,
+            R::OwnedTerritory,
+        ),
+        case(
+            "humans are not bound by territory",
+            Fixture::edit("payments/a.rs").human(),
+            plain().zone_of("payments/**", ZoneKind::Owned),
+            Allow,
+            R::Ok,
+        ),
+        case(
+            "owned territory holds with state unavailable",
+            Fixture::edit("payments/a.rs").state_unavailable(),
+            plain().zone_of("payments/**", ZoneKind::Owned),
+            Deny,
+            R::OwnedTerritory,
         ),
         // state_unavailable
         case(
@@ -873,15 +946,10 @@ fn every_case_yields_its_outcome_and_reason_code() {
         }
         seen.insert(c.code);
     }
-    // Every code the engine can return is covered; the others are not produced in Phase 1.
+    // Every code the engine can return is covered; the others are not produced by the engine.
     let expected: BTreeSet<_> = ReasonCode::ALL
         .into_iter()
-        .filter(|c| {
-            !matches!(
-                c,
-                ReasonCode::OwnedTerritory | ReasonCode::ClaimQueued | ReasonCode::UnknownPayload
-            )
-        })
+        .filter(|c| !matches!(c, ReasonCode::ClaimQueued | ReasonCode::UnknownPayload))
         .collect();
     assert_eq!(seen, expected);
 }
@@ -891,10 +959,7 @@ fn engine_never_emits_codes_reserved_for_later() {
     for c in cases() {
         let code = run(&c.fixture, &c.policy).decision.reason_code;
         assert!(
-            !matches!(
-                code,
-                ReasonCode::OwnedTerritory | ReasonCode::ClaimQueued | ReasonCode::UnknownPayload
-            ),
+            !matches!(code, ReasonCode::ClaimQueued | ReasonCode::UnknownPayload),
             "{}",
             c.name
         );
@@ -1372,7 +1437,9 @@ fn long_banned_commands_are_truncated_in_the_message() {
 #[test]
 fn messages_never_suggest_bypassing_acs() {
     for c in cases() {
-        let text = run(&c.fixture, &c.policy).decision.message.to_lowercase();
+        let message = run(&c.fixture, &c.policy).decision.message.to_lowercase();
+        // Quoted spans name the command that was refused, or a command only the pilot can run.
+        let text: String = message.split('`').step_by(2).collect::<Vec<_>>().join(" ");
         for forbidden in ["bypass", "acs off", "--no-verify", "disable", "override"] {
             assert!(!text.contains(forbidden), "{}: {text}", c.name);
         }

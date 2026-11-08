@@ -698,8 +698,19 @@ fn ps_command(words: Vec<Word>, redirects: Vec<Redirect>, piped: bool, ctx: &mut
             out.class(CommandClass::Read);
             out.chdir = Some(Chdir::To(None));
         }
-        "invoke-expression" | "iex" | "start-process" | "saps" | "start" | "invoke-command"
-        | "icm" | "invoke-item" | "ii" => {
+        "invoke-expression" | "iex" => {
+            // The string is a script: analyze it when it is literal.
+            out.and_unknown();
+            let script = params
+                .value("command")
+                .or(params.positional.first())
+                .filter(|w| w.is_exact());
+            if let Some(script) = script {
+                out.nested
+                    .push((crate::Dialect::PowerShell, script.text.clone()));
+            }
+        }
+        "start-process" | "saps" | "start" | "invoke-command" | "icm" | "invoke-item" | "ii" => {
             out.and_unknown();
         }
         "echo" | "write-host" | "write-output" | "write" | "write-error" | "write-warning"

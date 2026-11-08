@@ -36,12 +36,16 @@ pub enum Outcome {
 pub enum ReasonCode {
     /// Nothing is blocked. Outcome `allow`.
     Ok,
-    /// `acs off` is active for this repository; the gate is disabled except for sealed paths.
-    /// Outcome `allow`.
+    /// `acs off` is active for this repository; the gate is disabled except for sealed paths,
+    /// banned commands and self-protection. Outcome `allow`.
     GateOff,
-    /// A target matches a sealed glob. Always denied for agents. Outcome `deny`.
+    /// A target matches a sealed glob or zone, or reaches a protected location outside the
+    /// repository; or a command with unknown effects mentions one. Always denied for agents.
+    /// Outcome `deny`.
     SealedPath,
-    /// A shell command matches a `destructive.ban` pattern. Always denied. Outcome `deny`.
+    /// A shell command matches a `destructive.ban` pattern, or breaks a self-protection rule
+    /// (running state-changing `acs` commands, skipping git hooks, starting a harness with its
+    /// hooks off). Always denied. Outcome `deny`.
     BannedCommand,
     /// A history rewrite or force push targets a protected branch. Outcome `deny`.
     ProtectedBranch,
@@ -57,8 +61,8 @@ pub enum ReasonCode {
     /// An overlapping live claim is held by another seat (claim rules, spec section 8).
     /// Outcome `deny`.
     ClaimConflict,
-    /// A non-owner agent touched an `owned` zone. Implementations that do not yet enforce
-    /// ownership treat `owned` zones as `shared` and never return this code. Outcome `deny`.
+    /// An agent whose pilot is not an owner wrote or deleted a file in an `owned` zone, and no
+    /// human override covers it. Outcome `deny`.
     OwnedTerritory,
     /// The state database is locked, corrupt or missing. Outcome `deny` for destructive actions,
     /// otherwise `allow` with a warning.

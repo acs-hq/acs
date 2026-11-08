@@ -6,7 +6,7 @@ use std::collections::HashSet;
 use std::str::FromStr;
 
 use crate::gate::{
-    GateInput, PathLocation, PolicyView, ResolvedPath, SnapshotRequest, Target, TargetOp,
+    GateInput, PathLocation, PolicyView, ResolvedPath, SnapshotRequest, Target, TargetOp, ZoneMatch,
 };
 use crate::policy_types::ZoneKind;
 use crate::values::RepoPath;
@@ -33,6 +33,8 @@ pub(super) struct Touch<'a, 'p> {
     pub sealed: Option<Sealed<'p>>,
     /// Whether the path lies in an `open` zone (no claim, never "outside claims").
     pub open: bool,
+    /// The zone that governs the path, if any.
+    pub zone: Option<ZoneMatch<'p>>,
 }
 
 /// The event's targets, flattened and checked against the policy's zones.
@@ -140,6 +142,7 @@ impl<'a, 'p> Builder<'a, 'p> {
             dir,
             sealed,
             open: zone.is_some_and(|z| z.kind == ZoneKind::Open),
+            zone,
         });
     }
 

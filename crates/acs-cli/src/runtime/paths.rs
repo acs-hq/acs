@@ -10,13 +10,18 @@
 //! - every recursive target and every glob pattern is expanded into an [`Expansion`], including
 //!   the repository root (`rm -rf .`), so a recursive delete is never "unlisted" by accident;
 //! - `Partial` shell targets are dropped here: the engine still asks about a destructive command
-//!   with unknown targets through [`ShellAnalysis::has_unknown_targets`].
+//!   with unknown targets through [`ShellAnalysis::has_unknown_targets`]. The exception is a
+//!   target that starts with the home directory (`~`, `$HOME`, `%USERPROFILE%`, ...) or
+//!   `$ACS_HOME`: it is expanded, and kept when it reaches a location agents may never write
+//!   ([`outside_seals`](super::protect::outside_seals)), so the engine denies it.
 
 use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use acs_core::gate::{Confidence, Expansion, PathLocation, ShellAnalysis, Target, TargetOp};
+use acs_core::gate::{
+    Confidence, Expansion, OutsideSeal, PathLocation, ShellAnalysis, Target, TargetOp,
+};
 use acs_core::{RepoPath, ToolEvent, ToolKind};
 use acs_paths::has_glob_meta;
 use acs_shell::{Dialect, analyze};
@@ -59,6 +64,54 @@ pub struct NormalizeOptions {
     pub expand_write_dirs: bool,
 }
 
+/// Expands a leading home-directory or `ACS_HOME` reference in a shell word (`~/x`, `$HOME/x`,
+/// `${HOME}/x`, `$env:USERPROFILE\x`, `%USERPROFILE%\x`, `$ACS_HOME/x`, `$CLAUDE_CONFIG_DIR/x`).
+/// `None` when the word starts with anything else, or still holds an expansion after it.
+fn expand_home(raw: &str, var: impl Fn(&str) -> Option<std::ffi::OsString>) -> Option<String> {
+    const HOME: &[&str] = &["HOME", "USERPROFILE"];
+    let lower = raw.to_ascii_lowercase();
+    let (name, rest): (Option<&str>, &str) =
+        if raw == "~" || raw.starts_with("~/") || raw.starts_with("~\\") {
+            (None, &raw[1..])
+        } else {
+            let candidates = [
+                ("$home", "HOME"),
+                ("${home}", "HOME"),
+                ("$env:home", "HOME"),
+                ("$userprofile", "USERPROFILE"),
+                ("${userprofile}", "USERPROFILE"),
+                ("$env:userprofile", "USERPROFILE"),
+                ("%userprofile%", "USERPROFILE"),
+                ("%home%", "HOME"),
+                ("$acs_home", "ACS_HOME"),
+                ("${acs_home}", "ACS_HOME"),
+                ("$env:acs_home", "ACS_HOME"),
+                ("%acs_home%", "ACS_HOME"),
+                ("$claude_config_dir", "CLAUDE_CONFIG_DIR"),
+                ("${claude_config_dir}", "CLAUDE_CONFIG_DIR"),
+            ];
+            let (prefix, name) = candidates.iter().find(|(prefix, _)| {
+                lower.starts_with(prefix)
+                    && matches!(raw.as_bytes().get(prefix.len()), None | Some(b'/' | b'\\'))
+            })?;
+            (Some(*name), &raw[prefix.len()..])
+        };
+    if rest.contains(['$', '`', '%']) {
+        return None;
+    }
+    let base = match name {
+        None => std::env::home_dir()?.into_os_string(),
+        Some(n) if HOME.contains(&n) => var(n)
+            .filter(|v| !v.is_empty())
+            .or_else(|| std::env::home_dir().map(PathBuf::into_os_string))?,
+        Some("ACS_HOME") => var("ACS_HOME")
+            .filter(|v| !v.is_empty())
+            .or_else(|| std::env::home_dir().map(|h| h.join(".acs").into_os_string()))?,
+        Some(n) => var(n).filter(|v| !v.is_empty())?,
+    };
+    Some(format!("{}{rest}", base.to_string_lossy()))
+}
+
 /// The shell dialect for a tool name (decision 0011 section 3): a name containing `powershell`
 /// or `pwsh` is PowerShell, one containing `cmd` is cmd, everything else is bash.
 #[must_use]
@@ -96,6 +149,7 @@ pub fn normalize(ctx: &RepoContext, event: &ToolEvent, options: NormalizeOptions
         delete_cap,
         options,
         out: Normalized::default(),
+        seals: None,
     };
     let Some(tool) = &event.tool else {
         return builder.finish();
@@ -134,6 +188,8 @@ struct Builder<'a> {
     delete_cap: usize,
     options: NormalizeOptions,
     out: Normalized,
+    /// The outside seals, computed on first need.
+    seals: Option<Vec<OutsideSeal>>,
 }
 
 impl Builder<'_> {
@@ -252,7 +308,11 @@ impl Builder<'_> {
                 self.out.creates_commit = true;
             }
             for target in &simple.targets {
-                if target.op == TargetOp::Read || target.confidence == Confidence::Partial {
+                if target.op == TargetOp::Read {
+                    continue;
+                }
+                if target.confidence == Confidence::Partial {
+                    self.home_target(&target.path, target.op, target.recursive);
                     continue;
                 }
                 let raw = target.path.as_str();
@@ -266,6 +326,34 @@ impl Builder<'_> {
             }
         }
         self.out.shell = Some(analysis);
+    }
+
+    /// A `Partial` target that starts with the home directory or `ACS_HOME`: kept only when it
+    /// reaches an outside seal.
+    fn home_target(&mut self, raw: &str, op: TargetOp, recursive: bool) {
+        let Some(expanded) = expand_home(raw, |name| std::env::var_os(name)) else {
+            return;
+        };
+        let path = if op == TargetOp::Delete {
+            self.ctx.resolver.resolve_entry(&expanded, &self.cwd)
+        } else {
+            self.ctx.resolver.resolve(&expanded, &self.cwd)
+        };
+        let PathLocation::Outside(abs) = &path.location else {
+            return;
+        };
+        let ctx = self.ctx;
+        let seals = self
+            .seals
+            .get_or_insert_with(|| super::protect::outside_seals(ctx));
+        if seals.iter().any(|seal| seal.covers(abs)) {
+            self.out.targets.push(Target {
+                path,
+                op,
+                recursive,
+                expansion: None,
+            });
+        }
     }
 
     fn finish(mut self) -> Normalized {
@@ -356,6 +444,42 @@ pub fn resolve_for_claim(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn home_references_are_expanded_and_nothing_else() {
+        let env = |name: &str| match name {
+            "HOME" | "USERPROFILE" => Some("/home/me".into()),
+            "ACS_HOME" => Some("/state".into()),
+            _ => None,
+        };
+        let home = std::env::home_dir().unwrap().to_string_lossy().into_owned();
+        assert_eq!(
+            expand_home("~/.claude/settings.json", env).unwrap(),
+            format!("{home}/.claude/settings.json")
+        );
+        assert_eq!(
+            expand_home("$HOME/.claude/x", env).as_deref(),
+            Some("/home/me/.claude/x")
+        );
+        assert_eq!(expand_home("${HOME}", env).as_deref(), Some("/home/me"));
+        assert_eq!(
+            expand_home("%USERPROFILE%\\.claude", env).as_deref(),
+            Some("/home/me\\.claude")
+        );
+        assert_eq!(
+            expand_home("$env:USERPROFILE/.gemini", env).as_deref(),
+            Some("/home/me/.gemini")
+        );
+        assert_eq!(
+            expand_home("$ACS_HOME/repos", env).as_deref(),
+            Some("/state/repos")
+        );
+        assert_eq!(expand_home("$HOMER/x", env), None);
+        assert_eq!(expand_home("$HOME/$X", env), None);
+        assert_eq!(expand_home("$OTHER/x", env), None);
+        assert_eq!(expand_home("~bob/x", env), None);
+        assert_eq!(expand_home("$CLAUDE_CONFIG_DIR/x", env), None, "unset");
+    }
 
     #[test]
     fn dialect_follows_the_tool_name() {

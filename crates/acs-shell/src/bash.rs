@@ -255,7 +255,11 @@ impl<'a, 't> Walker<'a> {
                     .named_children(&mut cursor)
                     .filter(|n| n.kind() != "comment")
                     .collect();
+                let start = self.ctx.out.len();
                 self.operands(&operands);
+                if let Some((dialect, script)) = crate::feed::piped_script(&self.ctx.out[start..]) {
+                    self.ctx.nested(dialect, &script);
+                }
                 self.ctx.cwd = saved;
             }
             "subshell"
@@ -292,11 +296,23 @@ impl<'a, 't> Walker<'a> {
             ([left, right], true) => {
                 let before = self.ctx.cwd.clone();
                 let mut held = std::mem::take(&mut self.pending);
+                let first = self.ctx.out.len();
                 self.walk(*left);
+                let lone_command = self.ctx.out.len() == first + 1;
                 let after_left = std::mem::replace(&mut self.ctx.cwd, before.clone());
+                // The right side runs when the left failed. A lone failed `cd` changes nothing,
+                // but a `cd` that succeeded before something else failed does (`cd dir && make
+                // || rm x` runs `rm` in `dir` if `make` fails), so the right's directory is then
+                // unknown.
+                let right_start = if after_left != before && !lone_command {
+                    Cwd::Unknown
+                } else {
+                    before.clone()
+                };
+                self.ctx.cwd = right_start.clone();
                 self.pending.append(&mut held);
                 self.walk(*right);
-                self.ctx.cwd = if self.ctx.cwd == before {
+                self.ctx.cwd = if self.ctx.cwd == right_start && right_start == before {
                     after_left
                 } else {
                     Cwd::Unknown
@@ -417,10 +433,15 @@ impl<'a, 't> Walker<'a> {
         let mut words = Vec::new();
         let mut subs = Vec::new();
         let mut redirects = std::mem::take(&mut self.pending);
+        let mut fed = None;
         let mut cursor = node.walk();
         for child in node.children(&mut cursor) {
             match child.kind() {
-                "variable_assignment" | "herestring_redirect" | "heredoc_redirect" => {
+                "herestring_redirect" => {
+                    fed = child.named_child(0).map(|n| self.word(n, &mut Vec::new()));
+                    Self::collect_subs(child, &mut subs);
+                }
+                "variable_assignment" | "heredoc_redirect" => {
                     Self::collect_subs(child, &mut subs);
                 }
                 "file_redirect" => self.redirect(child, &mut redirects, &mut subs),
@@ -431,12 +452,26 @@ impl<'a, 't> Walker<'a> {
         }
         // The parser invents an empty command name for a dangling operator (`rm x &&`).
         let missing = words.first().is_some_and(|w| w.text.is_empty()) && redirects.is_empty();
+        let shell = Self::stdin_shell_of(&words);
         if !missing {
             self.ctx.command(words, redirects, false);
+        }
+        if let (Some(dialect), Some(script)) = (shell, fed.filter(|w| w.kind != Kind::Opaque)) {
+            self.ctx.nested(dialect, &script.text);
         }
         for sub in subs {
             self.walk(sub);
         }
+    }
+
+    /// The dialect of a shell that reads its script from standard input, for known words.
+    fn stdin_shell_of(words: &[Word]) -> Option<crate::Dialect> {
+        let texts: Vec<String> = words
+            .iter()
+            .take_while(|w| w.is_exact())
+            .map(|w| w.text.clone())
+            .collect();
+        crate::feed::stdin_shell(&texts)
     }
 
     /// `export A=1`, `local x`, `declare -r y`, `unset z`: no effect on files.
@@ -494,6 +529,7 @@ impl<'a, 't> Walker<'a> {
         let mut redirects = Vec::new();
         let mut subs = Vec::new();
         let mut trailing = Vec::new();
+        let mut heredoc = None;
         let mut cursor = node.walk();
         for child in node.children(&mut cursor) {
             if body.is_some_and(|b| b.id() == child.id()) {
@@ -507,7 +543,10 @@ impl<'a, 't> Walker<'a> {
                     for part in child.children(&mut inner) {
                         match part.kind() {
                             "file_redirect" => self.redirect(part, &mut redirects, &mut subs),
-                            "heredoc_body" => Self::collect_subs(part, &mut subs),
+                            "heredoc_body" => {
+                                heredoc = Some(self.text(part).to_owned());
+                                Self::collect_subs(part, &mut subs);
+                            }
                             _ if part.is_named() => trailing.push(part),
                             _ => {}
                         }
@@ -517,8 +556,18 @@ impl<'a, 't> Walker<'a> {
             }
         }
         self.pending.extend(redirects);
+        let start = self.ctx.out.len();
         if let Some(body) = body {
             self.walk(body);
+        }
+        // A here-document fed to a shell is its script.
+        let fed_shell = self
+            .ctx
+            .out
+            .get(start)
+            .and_then(|c| crate::feed::stdin_shell(&c.words));
+        if let (Some(dialect), Some(script)) = (fed_shell, heredoc) {
+            self.ctx.nested(dialect, &script);
         }
         if !self.pending.is_empty() {
             let leftover = std::mem::take(&mut self.pending);

@@ -11,12 +11,19 @@
 //!
 //! 1. **Paths.** A write or delete target outside the repository, or one that cannot be resolved,
 //!    asks (`path_escapes_repo`). Reads outside the repository are fine.
-//! 2. **Guards.** Sealed paths (`sealed_path`), banned commands (`banned_command`), history
-//!    rewrites on protected branches (`protected_branch`), deletes outside the seat's claims
-//!    (`delete_outside_claims`), the per-command delete budget (`destructive_budget`) and
-//!    destructive commands with unknown targets (`destructive_unknown_targets`).
-//! 3. **Territory and claims.** Every written or deleted repository file in a `shared` zone, an
-//!    `owned` zone (treated as `shared` until ownership is enforced) or no zone needs a file claim;
+//! 2. **Guards.** Sealed paths, including the [`OutsideSeal`](crate::gate::OutsideSeal)s outside
+//!    the repository (`sealed_path`); ACS's self-protection rules (agents running state-changing
+//!    `acs` subcommands, skipping git hooks, starting a harness with hooks off: `banned_command`;
+//!    a command with unknown effects that mentions a protected location: `sealed_path`); banned
+//!    commands (`banned_command`); history rewrites on protected branches (`protected_branch`);
+//!    deletes outside the seat's claims (`delete_outside_claims`), the per-command delete budget
+//!    (`destructive_budget`) and destructive commands with unknown targets
+//!    (`destructive_unknown_targets`).
+//! 3. **Territory and claims.** An agent writing or deleting a file in an `owned` zone whose
+//!    owners do not include its pilot is denied (`owned_territory`) unless a human override
+//!    covers the file ([`OverrideView`](crate::gate::OverrideView)); the overrides relied on are
+//!    returned. Humans (`GateInput::origin`) are not bound by territory. Then every written or
+//!    deleted repository file in a `shared` zone, an `owned` zone or no zone needs a file claim;
 //!    `open` zones need none. A live claim of another seat (decided by
 //!    [`blocking_claims`](crate::gate::blocking_claims), the only implementation of the conflict
 //!    rule) denies with `claim_conflict`; otherwise a [`ClaimRequest`](crate::gate::ClaimRequest)
@@ -35,10 +42,11 @@
 //!
 //! # Gate states
 //!
-//! - `gate_off`: only sealed paths are enforced. Everything else is allowed with `gate_off`, no
+//! - `gate_off`: only sealed paths, the self-protection rules and banned commands are enforced
+//!   (spec section 11: they fail closed, always). Everything else is allowed with `gate_off`, no
 //!   claims are requested, no notices are delivered, snapshots are still requested.
-//! - `state_unavailable`: no claims are checked or requested. Sealed paths, banned commands,
-//!   protected branches and path escapes are still enforced. A delete, a destructive shell
+//! - `state_unavailable`: no claims are checked or requested. Sealed paths, self-protection,
+//!   banned commands, protected branches, territory and path escapes are still enforced. A delete, a destructive shell
 //!   command or a history rewrite is denied with `state_unavailable`; anything else is allowed
 //!   with that reason and a warning. Snapshots are still requested.
 //!
@@ -49,6 +57,7 @@
 
 mod messages;
 mod plan;
+mod protect;
 
 use std::collections::HashSet;
 
@@ -57,9 +66,11 @@ use self::plan::Plan;
 use crate::decision::{Decision, Outcome, ReasonCode};
 use crate::event::{Phase, ToolKind};
 use crate::gate::{
-    ClaimRequest, GateInput, GateOutput, HeldClaim, PolicyView, ShellAnalysis, blocking_claims,
+    ClaimRequest, GateInput, GateOutput, HeldClaim, OverrideApplied, PathLocation, PolicyView,
+    ShellAnalysis, blocking_claims,
 };
 use crate::ids::NoticeId;
+use crate::policy_types::ZoneKind;
 use crate::records::{ClaimOrigin, ClaimScope};
 use crate::values::RepoPath;
 
@@ -72,6 +83,7 @@ pub fn decide(input: &GateInput<'_>, policy: &dyn PolicyView) -> GateOutput {
             claim_requests: Vec::new(),
             snapshot_requests: Vec::new(),
             delivered_notices: Vec::new(),
+            overrides_applied: Vec::new(),
         };
     }
 
@@ -87,6 +99,11 @@ pub fn decide(input: &GateInput<'_>, policy: &dyn PolicyView) -> GateOutput {
         path_step(&plan, &mut verdict);
     }
     guards(input, policy, &plan, off, unavailable, &mut verdict);
+    let overrides_applied = if off {
+        Vec::new()
+    } else {
+        territory_step(input, &plan, &mut verdict)
+    };
     let claim_requests = if off || unavailable {
         Vec::new()
     } else {
@@ -121,6 +138,7 @@ pub fn decide(input: &GateInput<'_>, policy: &dyn PolicyView) -> GateOutput {
             claim_requests: Vec::new(),
             snapshot_requests: Vec::new(),
             delivered_notices: Vec::new(),
+            overrides_applied: Vec::new(),
         };
     }
     let delivered_notices = if off {
@@ -133,6 +151,7 @@ pub fn decide(input: &GateInput<'_>, policy: &dyn PolicyView) -> GateOutput {
         claim_requests,
         snapshot_requests: plan.snapshots,
         delivered_notices,
+        overrides_applied,
     }
 }
 
@@ -167,8 +186,8 @@ fn path_step(plan: &Plan<'_, '_>, verdict: &mut Verdict) {
     }
 }
 
-/// Step 2: sealed paths, banned commands, protected branches and destructive budgets. With the
-/// gate off only the sealed check runs.
+/// Step 2: sealed paths, self-protection, banned commands, protected branches and destructive
+/// budgets. With the gate off only the first three run.
 fn guards(
     input: &GateInput<'_>,
     policy: &dyn PolicyView,
@@ -183,15 +202,25 @@ fn guards(
             sealed.push(|| messages::sealed_item(touch.path, seal));
         }
     }
+    for escape in &plan.escapes {
+        if let PathLocation::Outside(path) = &escape.location
+            && let Some(seal) = input.outside_sealed.iter().find(|s| s.covers(path))
+        {
+            sealed.push(|| messages::outside_sealed_item(&escape.raw, &seal.label));
+        }
+    }
     if !sealed.is_empty() {
         verdict.deny(ReasonCode::SealedPath, || messages::sealed_path(&sealed));
+    }
+    if let Some(shell) = input.shell {
+        self_protection(input, shell, verdict);
+        banned_commands(policy, shell, verdict);
     }
     if off {
         return;
     }
 
     if let Some(shell) = input.shell {
-        banned_commands(policy, shell, verdict);
         protected_branches(input, policy, shell, verdict);
     }
 
@@ -216,6 +245,23 @@ fn guards(
             ReasonCode::DestructiveUnknownTargets,
             messages::destructive_unknown_targets,
         );
+    }
+}
+
+/// ACS's own rules (decision 0026): commands that would switch ACS off or skip it, and commands
+/// with unknown effects that mention a protected location.
+fn self_protection(input: &GateInput<'_>, shell: &ShellAnalysis, verdict: &mut Verdict) {
+    for command in &shell.commands {
+        if let Some(what) = protect::mentioned(command, input.outside_sealed) {
+            verdict.deny(ReasonCode::SealedPath, || {
+                messages::sealed_mention(&command.words.join(" "), &what)
+            });
+        }
+        if let Some(breach) = protect::check(command) {
+            verdict.deny(ReasonCode::BannedCommand, || {
+                messages::self_protection(&breach)
+            });
+        }
     }
 }
 
@@ -355,7 +401,50 @@ fn delete_budget(policy: &dyn PolicyView, plan: &Plan<'_, '_>, verdict: &mut Ver
     }
 }
 
-/// Step 3: claims. Returns the claims to acquire; denies on a conflict.
+/// Step 3, first half: territory. Denies an agent changing files in `owned` zones its pilot does
+/// not own, unless an override covers them; returns the overrides relied on.
+fn territory_step(
+    input: &GateInput<'_>,
+    plan: &Plan<'_, '_>,
+    verdict: &mut Verdict,
+) -> Vec<OverrideApplied> {
+    if input.origin == ClaimOrigin::Human {
+        return Vec::new();
+    }
+    let pilot = input.seat.pilot.trim();
+    let mut applied = Vec::new();
+    let mut owned = Shown::new();
+    let mut first_pattern = None;
+    for touch in plan.touches.iter().filter(|t| !t.dir && t.sealed.is_none()) {
+        let Some(zone) = touch.zone.filter(|z| z.kind == ZoneKind::Owned) else {
+            continue;
+        };
+        if zone
+            .owner_pilots
+            .iter()
+            .any(|owner| owner.trim().eq_ignore_ascii_case(pilot))
+        {
+            continue;
+        }
+        if let Some(id) = input.overrides.covering(touch.path) {
+            applied.push(OverrideApplied {
+                override_id: id.clone(),
+                path: touch.path.clone(),
+            });
+            continue;
+        }
+        first_pattern.get_or_insert(zone.pattern);
+        owned.push(|| messages::owned_item(touch.path, zone.pattern, zone.owners));
+    }
+    if let Some(pattern) = first_pattern {
+        verdict.deny(ReasonCode::OwnedTerritory, || {
+            messages::owned_territory(&owned, pattern)
+        });
+    }
+    applied
+}
+
+/// Step 3, second half: claims. Returns the claims to acquire; denies on a conflict.
 fn claims_step(
     input: &GateInput<'_>,
     policy: &dyn PolicyView,
@@ -390,7 +479,7 @@ fn claims_step(
                 scope,
                 target_branch: seat.target_branch.clone(),
                 ttl_secs,
-                origin: ClaimOrigin::Agent,
+                origin: input.origin,
             });
         }
     }

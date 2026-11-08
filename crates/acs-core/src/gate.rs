@@ -13,12 +13,14 @@
 //!
 //! The serde derives exist for test fixtures and debugging output only.
 
+use std::fmt;
+
 use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 
 use crate::decision::Decision;
 use crate::event::ToolEvent;
-use crate::ids::{NoticeId, SeatId};
+use crate::ids::{NoticeId, OverrideId, SeatId};
 use crate::policy_types::{Config, Destructive, Owner, ZoneKind};
 use crate::records::{Claim, ClaimOrigin, ClaimScope, Notice, Seat};
 use crate::values::RepoPath;
@@ -403,11 +405,97 @@ pub struct Expansion {
 /// Gate-wide conditions for this event.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct GateState {
-    /// `acs off` is active for this repository on this machine: only sealed paths are enforced.
+    /// `acs off` is active for this repository on this machine: only sealed paths, banned
+    /// commands and ACS's self-protection rules are enforced.
     pub gate_off: bool,
     /// The state database could not be used (locked, corrupt or missing): destructive actions
     /// are denied, other actions allowed with a warning, and no claims are acquired.
     pub state_unavailable: bool,
+}
+
+/// The human overrides in force for the requesting seat (spec section 7, overrides). An
+/// override lets a non-owner agent change files in an `owned` zone; it lifts nothing else.
+///
+/// The pipeline implements it over the state database, matching each override's glob with the
+/// policy's glob dialect; the engine only asks which override, if any, covers a path.
+pub trait OverrideView: fmt::Debug {
+    /// The override in force for the seat whose glob matches `path`, if any.
+    fn covering(&self, path: &RepoPath) -> Option<&OverrideId>;
+}
+
+/// An [`OverrideView`] with no overrides.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct NoOverrides;
+
+impl OverrideView for NoOverrides {
+    fn covering(&self, _path: &RepoPath) -> Option<&OverrideId> {
+        None
+    }
+}
+
+/// An override the engine relied on for one path of the event. The pipeline records the use,
+/// and for a `once` override uses it up.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OverrideApplied {
+    /// The override.
+    pub override_id: OverrideId,
+    /// The path it let through.
+    pub path: RepoPath,
+}
+
+/// A location outside the repository that agents may never write or delete: ACS's own state
+/// (`ACS_HOME`), git directories outside the work tree, and the user-level configuration of every
+/// supported harness. The pipeline supplies them; the engine denies a write or delete that reaches
+/// one with `sealed_path`, like a sealed glob, whatever the gate state.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OutsideSeal {
+    /// The absolute path. A target equal to it or below it is sealed. Compared after turning
+    /// backslashes into `/` and ignoring ASCII case, which errs on the side of sealing.
+    pub path: String,
+    /// What it is, for messages (for example `ACS state` or `Claude Code user settings`).
+    pub label: String,
+    /// The path relative to the user's home directory, `/`-separated, with a trailing `/` for a
+    /// directory (`.claude/settings.json`, `.acs/`), when it lies there. A command whose effects
+    /// ACS cannot see (an interpreter, a script) is denied when one of its words mentions it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub home_relative: Option<String>,
+}
+
+impl OutsideSeal {
+    /// Whether the absolute path `path` is this location or lies below it.
+    #[must_use]
+    pub fn covers(&self, path: &str) -> bool {
+        let seal = fold_abs(&self.path);
+        let seal = seal.trim_end_matches('/');
+        let path = fold_abs(path);
+        !seal.is_empty()
+            && (path == seal
+                || path
+                    .strip_prefix(seal)
+                    .is_some_and(|rest| rest.starts_with('/')))
+    }
+
+    /// Whether `word` (a word of a shell command) mentions this location.
+    #[must_use]
+    pub fn mentioned_in(&self, word: &str) -> bool {
+        let word = fold_abs(word);
+        let path = fold_abs(&self.path);
+        if word.contains(path.trim_end_matches('/')) {
+            return true;
+        }
+        self.home_relative.as_deref().is_some_and(|rel| {
+            let rel = fold_abs(rel);
+            let bare = rel.trim_end_matches('/');
+            word.contains(rel.as_str()) || word.ends_with(&format!("/{bare}"))
+        })
+    }
+}
+
+/// An absolute path in a comparable form: `/`-separated, ASCII lowercase, without a Windows
+/// verbatim prefix.
+fn fold_abs(path: &str) -> String {
+    let path = path.replace('\\', "/").to_ascii_lowercase();
+    path.strip_prefix("//?/").map(str::to_owned).unwrap_or(path)
 }
 
 /// Everything the engine needs to decide a `pre_tool` event. Pure data: no I/O happens past this
@@ -418,6 +506,9 @@ pub struct GateInput<'a> {
     pub event: &'a ToolEvent,
     /// The requesting seat (pilot, branch, target branch).
     pub seat: &'a Seat,
+    /// Who acts. Territory (`owned` zones) binds agents only; a human claiming through the CLI
+    /// is not checked against it.
+    pub origin: ClaimOrigin,
     /// Every path the event acts on: the event's `paths` for file tools (a move becomes a delete
     /// of the source and a write of the destination), or the shell analysis targets for shell
     /// commands; resolved and, where needed, expanded.
@@ -428,6 +519,10 @@ pub struct GateInput<'a> {
     pub claims: &'a ClaimsSnapshot,
     /// Undelivered notices for this seat.
     pub notices: &'a [Notice],
+    /// The human overrides in force for this seat.
+    pub overrides: &'a dyn OverrideView,
+    /// Locations outside the repository agents may never write or delete.
+    pub outside_sealed: &'a [OutsideSeal],
     /// Gate-wide conditions.
     pub state: GateState,
     /// The current time.
@@ -455,6 +550,9 @@ pub struct GateOutput {
     pub snapshot_requests: Vec<SnapshotRequest>,
     /// Notices whose bodies were put in `decision.context`, to mark delivered.
     pub delivered_notices: Vec<NoticeId>,
+    /// Overrides the decision relied on. Empty when the outcome is `deny`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub overrides_applied: Vec<OverrideApplied>,
 }
 
 #[cfg(test)]

@@ -79,9 +79,15 @@ A zone gives some paths a different rule:
 | `shared` | A claim is needed. This is the default. |
 | `open` | No claim is needed. Agents can edit at the same time, so use it for files where that does no harm. |
 | `sealed` | No agent may change these paths. |
-| `owned` | **Not enforced yet.** It behaves like `shared`. |
+| `owned` | Only the agents of the owners may change these paths, and they still need a claim. Any other agent is denied, and the denial names the owners. |
 
-The comment in `territory.toml` says `owned` limits a path to the owners' agents. It does not do that today, so any agent can claim and edit an `owned` path. The `owners` key and the `[teams]` section have no effect yet either.
+`owners` lists git email addresses, or `team:<name>` for a team in the `[teams]` section. An agent counts as an owner's agent when its pilot (the git `user.email` of the person running it) is one of them; case does not matter. Owned zones bind agents only: you can still edit and `acs claim` those files yourself.
+
+To let another agent into an owned zone for a while, grant an override from your own terminal (see [Overrides](Working-with-ACS#letting-an-agent-into-owned-territory)):
+
+```bash
+acs override --path 'payments/**' --once
+```
 
 ### Zones `acs init` proposes
 
@@ -100,7 +106,7 @@ Everything else stays `shared`. `--min-share` and `--min-commits` change the two
 Proposed territory
     open   docs/      folder name
     owned  payments/  sara@example.com, 10 of 10 commits in the last 12 months
-  ACS does not enforce owned zones yet: until it does, they act like shared.
+  Only the owners' agents may change owned zones; `acs override` lets others in.
 
 Write these zones to .acs/policy/territory.toml? [y/N]
 ```
@@ -114,7 +120,7 @@ Territory (territory.toml)
   proposed from folder names and git history, not written:
     open   docs/      folder name
     owned  payments/  sara@example.com, 10 of 10 commits in the last 12 months
-  ACS does not enforce owned zones yet: until it does, they act like shared.
+  Only the owners' agents may change owned zones; `acs override` lets others in.
   To write it, run `acs init --yes`, then edit the file as you like.
 ```
 
