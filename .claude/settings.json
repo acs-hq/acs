@@ -1,5 +1,16 @@
 {
   "attribution": {
     "sessionUrl": false
+  },
+  "extraKnownMarketplaces": {
+    "acs-plugins": {
+      "source": {
+        "source": "github",
+        "repo": "acs-hq/acs"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "acs@acs-plugins": true
   }
 }

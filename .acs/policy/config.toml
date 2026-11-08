@@ -1,0 +1,16 @@
+# ACS repository policy, spec acs/0.1. Commit this file: it is the same for every clone.
+# Everything except `spec` is optional; the commented values are the defaults.
+spec = "acs/0.1"
+
+# The branch work is integrated into.
+# default_target_branch = "main"
+
+# Seconds a claim stays live without a heartbeat.
+# claim_ttl_secs = 900
+
+# Seconds between background syncs of claims with the git remote.
+# sync_interval_secs = 30
+
+# [ledger]
+# Store the text of user prompts in the session ledger.
+# store_prompts = false

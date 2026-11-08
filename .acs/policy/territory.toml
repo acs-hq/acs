@@ -1,0 +1,22 @@
+# ACS territory: who may change what. Without zones the whole repository is `shared`: any
+# agent may change a file after claiming it. When zones overlap, the most specific one wins.
+# kinds: owned (only the owners' agents), shared (any agent after a claim), open (no claim
+# needed), sealed (no agent).
+#
+# Proposed by `acs init` from folder names and the last 12 months of git history. It is
+# only a starting point: edit it freely. ACS does not enforce `owned` zones yet; until
+# it does they act like `shared`.
+
+# docs/: folder name
+[[zone]]
+paths = ["docs/**"]
+kind = "open"
+
+# spec/examples/: folder name
+[[zone]]
+paths = ["spec/examples/**"]
+kind = "open"
+
+# Teams are referenced from `owners` as "team:<name>".
+# [teams]
+# platform = ["omar@example.com", "lina@example.com"]

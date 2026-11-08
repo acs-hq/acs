@@ -1,0 +1,31 @@
+# ACS guards: paths and commands agents may never touch.
+# Without this file (or a key in it) the built-in defaults below apply. Setting a key REPLACES
+# its default, so copy the defaults you want to keep.
+
+# Globs of paths no agent may write.
+# sealed = [
+#   ".git/**",
+#   ".acs/**",
+#   ".github/workflows/**",
+#   "**/.env*",
+#   "**/.claude/settings*.json",
+#   "**/.claude/hooks/**",
+#   "**/.agents/**/hooks*.json",
+#   "**/.agent/**/hooks*.json",
+#   "**/.agents/plugins/**",
+#   "**/.agent/plugins/**",
+#   "**/.agents/plugins.json",
+#   "**/.agent/plugins.json",
+#   ".husky/**",
+# ]
+
+# Branches on which history rewrites and force pushes are denied.
+# protected_branches = ["main", "release/*"]
+
+# [destructive]
+# Files a command may delete outside the seat's claims (0 denies any such delete).
+# max_files_deleted_outside_claims = 0
+# Files one command may delete before the human is asked.
+# max_files_deleted_per_command = 50
+# Command patterns that are always denied (`*` matches any run of characters).
+# ban = ["git push --force*", "git reset --hard*", "git clean -f*"]
