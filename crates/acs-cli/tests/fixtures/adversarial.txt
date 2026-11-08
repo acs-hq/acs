@@ -10,6 +10,9 @@ deny: acs off
 deny: acs on
 deny: acs override --path 'src/**' --session
 deny: acs claim src/lib.rs
+deny: acs watch --idle 900
+deny: nohup acs watch &
+deny: xargs -I{} acs watch
 deny: acs release --all
 deny: acs init --yes
 deny: acs plugin install claude-code
