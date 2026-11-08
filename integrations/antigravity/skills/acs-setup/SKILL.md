@@ -144,6 +144,10 @@ Then say how to start it:
 - Otherwise, Claude Code: restart it, or run `/reload-plugins`. Antigravity: start a new session;
   it loads plugins at session start.
 
+Add one sentence on their own edits: ACS does not see them unless they run `acs watch` in a
+terminal, use the ACS extension for VS Code, or claim files with `acs claim`. Do not run
+`acs watch` yourself; ACS denies it to agents.
+
 Finally, ask your pilot whether to open a pull request for `acs/adopt`. Do not push or open one
 until they say yes. On a yes, push the branch and open the pull request with the tools you have.
 

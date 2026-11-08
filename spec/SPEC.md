@@ -297,6 +297,12 @@ An override no seat has used lapses after `claim_ttl_secs`. It can be revoked un
 
 Granting an override MUST require a person: the reference implementation's `acs override` needs an interactive terminal and a typed confirmation code, and agents are denied the command (section 11.1). Every use is recorded with the seat, and appears in the session's record (`overrides`, section 4.3).
 
+### 6.2 Human claims
+
+A person's own claims belong to a **human seat** (harness `human`, one per pilot and work tree) and have origin `human`. They are taken from the command line, by an editor integration or by a file watcher, and follow the rules of this section like any other claim; territory does not bind them, and sealed paths, which bind agents, need none.
+
+An editor integration or watcher MUST NOT claim a change an agent seat made. A change is an agent's when an agent seat holds a live claim on the file, or when that seat's post-tool step attributed a change of the file since just before the change was observed. While an agent's tool call with targets that could not all be predicted is still running, its changes are not yet attributed, so a watcher SHOULD wait for that call to finish before judging changes. Paths ignored by git are never claimed. A human claim SHOULD be released once its file is saved and has been idle for a while, and refreshed while the person keeps working on it.
+
 ## 7. Commit trailers
 
 Commits are linked to sessions with a git trailer `ACS-Session: <session_id>` (a `ses_` id), added by the `prepare-commit-msg` git hook.

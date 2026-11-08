@@ -84,6 +84,10 @@ What these rules do not stop, roughly from most to least likely to matter.
 12. **Writes elsewhere outside the repository.** Since decision 0027, ACS does not ask about them
     unless `protect_outside_repo = true`; the harness's own permission rules decide. The protected
     locations above are still denied, and paths that link back into the repository still ask.
+13. **`acs watch` and long agent commands.** The watcher holds back changes while an agent's shell
+    command runs, for at most 5 minutes per change (decision 0028). A script that runs longer and
+    writes files ACS could not predict can have those changes claimed for the person, which then
+    blocks other agents. Agents cannot start `acs watch` themselves.
 
 ## Bugs found while dogfooding this work
 
