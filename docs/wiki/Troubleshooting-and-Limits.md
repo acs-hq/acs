@@ -58,7 +58,7 @@ Run `acs off`, and `acs on` when you finish. See [Turning the gate off](Working-
 
 **ACS works with Claude Code today.** It has no effect on other tools.
 
-**ACS only coordinates people who run it.** A teammate without it is invisible to it, and it does not block them. It also does not see your own editor, unless you use `acs claim`.
+**ACS only coordinates people who run it.** A teammate without it is invisible to it, and it does not block them. It also does not see your own editor unless you use the VS Code extension, `acs watch` or `acs claim` (see [Claiming a file yourself](Working-with-ACS#claiming-a-file-yourself)).
 
 **ACS is not a security boundary.** It denies the ways of switching it off that it can see: an agent running `acs off`, `acs override` or `git commit --no-verify`, writing to ACS's state or a harness's settings, or starting another agent with its hooks off. It cannot see inside scripts and programs it does not know, so an agent that hides what it does there can still get past it. It guards against accidents and careless agents, not against an agent set on getting around it. The project's security notes list what is not covered.
 

@@ -15,7 +15,19 @@ A claim is one session's temporary hold on one file. While a session holds it, n
 
 ### Claiming a file yourself
 
-ACS does not see your editor. To keep agents off files you are working on, claim them:
+ACS sees your own edits only if you tell it. There are three ways:
+
+- **The ACS extension for VS Code** (and VS Code-based editors) claims a file shortly after you start editing it and releases it once the file is saved and untouched for two minutes, or closed. It also shows which files agents and teammates hold: a lock badge, a marker in the gutter, a hover saying who and since when, and a count in the status bar.
+- **`acs watch`** does the same for any editor. Run it in a terminal in the repository and leave it running:
+
+  ```bash
+  acs watch
+  ```
+
+  Files you save are claimed for you and released after 120 seconds without changes (`--idle` changes that). Changes your agents make are left to them, and gitignored files are never claimed. Stop it with Ctrl-C; its claims then lapse at the time limit.
+- **`acs claim`** by hand, as below.
+
+To keep agents off files you are working on, claim them:
 
 ```bash
 acs claim src/lib.rs src/util.rs
@@ -37,7 +49,9 @@ acs release src/lib.rs
 acs release --all
 ```
 
-Your claims are not refreshed automatically. They expire at the time limit, 15 minutes by default, so claim again if you need longer.
+Claims you make with `acs claim` are not refreshed automatically. They expire at the time limit, 15 minutes by default, so claim again if you need longer. The extension refreshes its own claims while you work.
+
+If you edit a file an agent holds, nothing stops you, but your edits may collide with the agent's: the extension warns you, and `acs watch` prints a note and leaves the file to the agent.
 
 ## When ACS blocks an agent
 

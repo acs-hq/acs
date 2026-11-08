@@ -1,4 +1,4 @@
-# Orchestrator handoff (after WP7.1 and WP7.2)
+# Orchestrator handoff (after WP7.4)
 
 Written 2026-10-30 at the end of the session that built Phase 2, and updated 2026-10-31 after
 Phase 3 (WP3.1), after WP5.2 and WP5.1, and after the M1 parts of WP10. It replaces the handoff
@@ -23,6 +23,12 @@ agents can no longer switch ACS off by the routes it can see. `docs/security/ove
 is not covered and the bugs dogfooding has turned up. Overrides are stored and shown in `acs status`;
 putting them in session records and `acs log` is WP4.1's job (section 3). Since decision 0027,
 writes outside the repository no longer ask by default (`protect_outside_repo` opts in).
+
+**WP7.3 and WP7.4 are built (2026-11-09, decision 0028).** `integrations/vscode/` is the VS Code
+extension: it claims the files a person edits and shows the files others hold. `acs watch` does the
+claiming for any other editor. Both release a claim once the file is saved and idle for two minutes.
+The extension is **not published**: the human tests it locally first (`docs/releases/wp7-humans.md`)
+and owns the Marketplace and Open VSX accounts. CI does not build it yet (section 5).
 
 ## 1. Where things stand
 
@@ -62,7 +68,7 @@ writes outside the repository no longer ask by default (`protect_outside_repo` o
   `acs-os` exception to `unsafe_code = forbid`. Phase 5: **0021** distribution and `acs plugin
   install`, **0022** skills, **0025** `acs init` proposals without CODEOWNERS (WP5.3). Phase 7:
   **0026** owned territory, overrides and self-protection (WP7.1, WP7.2); **0027** writes outside
-  the repository ask only on request.
+  the repository ask only on request; **0028** human claims from editors (WP7.3, WP7.4).
 - Shared rules handed to every Phase 2 subagent: `docs/phase2-rules.md` (reuse it for Phase 3+,
   updating the reading list and decision numbers).
 
@@ -72,18 +78,19 @@ writes outside the repository no longer ask by default (`protect_outside_repo` o
 | acs-git | 2.1, 2.4, 3.1 | `repo::discover`, `status::scan_changes`, `hooks::{install, uninstall, status}`, `trailers`, `refs::{SyncStorage, CustomRefs}`, `sync::run` |
 | acs-store | 2.1 adds | migration 0003: `SeatInfo` (session id, intent), last decision, flags (`gate_off`), attributions, `stale_live_seats` |
 | acs-mcp | 2.6 | `Backend` trait, `serve_stdio` (rmcp 3.8, the only async runtime in the binary) |
-| acs-cli | 2.1, 2.4–2.6, 3.1, 5.2, 5.3, 7.1, 7.2 | `runtime` (`RepoContext`, seats, `status`/`claim_paths`/`release_paths`/`set_intent`/`last_decision`, `sync::{lock, spawn_if_due, spawn_now}`, `protect::{StoreOverrides, outside_seals}`), `hook`, `cli`, `commands/{init,status,claim,release,off,override,doctor,git_hook,mcp,sync,plugin}`, `init::propose::{propose, propose_for, territory_toml}` |
+| acs-cli | 2.1, 2.4–2.6, 3.1, 5.2, 5.3, 7.1, 7.2, 7.4 | `runtime` (`RepoContext`, seats, `status`/`claim_paths`/`release_paths`/`set_intent`/`last_decision`, `sync::{lock, spawn_if_due, spawn_now}`, `protect::{StoreOverrides, outside_seals}`), `hook` (`markers::tool_markers` lists running calls for `acs watch`), `cli`, `commands/{init,status,claim,release,off,override,doctor,git_hook,mcp,sync,plugin,watch}`, `init::propose::{propose, propose_for, territory_toml}` |
 | acs-os | 3.1 | `keep_stdio_from_children`; the only crate allowed `unsafe`, one Windows call (decision 0020) |
 
 Commands: `acs hook --canonical <phase>`, `acs hook <claude-code|antigravity|canonical>`,
 `acs mcp [--harness]`, `acs git-hook <name>`, `acs init|status|claim|release|off|on|doctor|sync`
-`acs override --path <glob> --once|--session` / `--revoke <id>` and `acs plugin install <harness>`
-(each with `--json`). `acs init` also takes `--yes`, `--min-share` and `--min-commits` for its
+`acs override --path <glob> --once|--session` / `--revoke <id>`, `acs watch [--idle <secs>]` (JSON
+Lines with `--json`) and `acs plugin install <harness>` (each with `--json`). `acs init` also takes `--yes`, `--min-share` and `--min-commits` for its
 territory proposal.
 
 Integrations: `integrations/claude-code/` (plugin `acs`, marketplace `acs-plugins` in the root
-`.claude-plugin/marketplace.json`), `integrations/antigravity/` (plugin `acs`, always-on rule) and
-`integrations/scoop/` (the manifest template). The canonical skills are in `skills/`. The Claude
+`.claude-plugin/marketplace.json`), `integrations/antigravity/` (plugin `acs`, always-on rule),
+`integrations/scoop/` (the manifest template) and `integrations/vscode/` (the editor extension,
+TypeScript: `npm test`, `npm run package`). The canonical skills are in `skills/`. The Claude
 Code plugin holds exact copies (`crates/acs-cli/tests/packaging.rs` fails otherwise); Antigravity
 keeps its **interim** `acs-usage` copy until the gate.
 
@@ -226,6 +233,18 @@ New in WP7 (the first work done under dogfooding):
 7. **`target/release/acs.exe` can be stale.** `tests/e2e/real/owned_territory.sh` picks the newer of
    the release and debug builds; `three_sessions.sh` still takes release only.
 
+New in WP7.3 and WP7.4:
+
+1. **A timing rule needs a test that fails without it.** The watcher's hold-back for running agent
+   commands passed its test; switching the rule off made the test fail, which is what showed the
+   test meant something. Do that check for every "wait for X" rule.
+2. **`node --test out/test/` fails on Node 24** (it treats the directory as a module); pass a quoted
+   glob, `node --test "out/test/*.test.js"`.
+3. **`vsce package` asks a question when there is no `LICENSE`,** which hangs a tool call; the
+   extension ships `LICENSE` and `LICENSE-APACHE`.
+4. **A `cd` in the Bash tool moves the session's working directory** when it succeeds inside the
+   project; use absolute paths, or `cd` back in the same command.
+
 ## 3. Must-know items for the next phases
 
 **Any code that starts a detached process** — `Stdio::null()` is not enough on Windows, where a
@@ -270,6 +289,14 @@ of `docs/security/overrides.md`. A new harness adds its user-level config to
 `runtime::protect::outside_seals` and its hook-disabling flags to `protect::harness` in
 `acs-core`. `tests/e2e/real/owned_territory.sh` is the real-agent check (`docs/releases/wp7-territory.md`).
 
+**WP7.3 and WP7.4 (done, decision 0028)** — `acs watch` decides "agent or person" from agents'
+live claims, post-tool attributions and running tool markers (`pending/tool/`): a change to any of
+those (WP4.1 pruning attributions, WP8.3 queueing edits) must keep a running agent's changes
+attributable, or the watcher will claim them for the person; `crates/acs-cli/tests/watch.rs`
+catches it. The extension only uses `acs status|claim|release --json`, so a change to those JSON
+shapes breaks it: its `test/cli.test.ts` runs against `target/debug/acs` (or `ACS_BIN`) and is
+skipped when no binary exists. SPEC section 6.2 states the rule for editor integrations.
+
 **Known gaps and sharp edges**
 
 - Antigravity: no session end or prompt event; `SessionStart` fires in the CLI but ACS relies on
@@ -286,8 +313,8 @@ of `docs/security/overrides.md`. A new harness adds its user-level config to
   commit within 10 minutes look like an agent's.
 - `acs_release` without `paths` is an error; two real sessions tried it first. A blocked session can
   leave uncommitted work in a shared work tree (`docs/releases/v0.1.0.md`).
-- Human claims (`acs claim`) are never heartbeated; they expire after `claim_ttl_secs` until WP7.3
-  or WP7.4 refreshes them.
+- Claims made with `acs claim` are never heartbeated; they expire after `claim_ttl_secs`. The VS
+  Code extension refreshes its own; `acs watch` caps `--idle` at the TTL instead.
 - Team sync: `acs doctor` does not check sync yet. Claims taken on two machines inside one sync
   window are settled by the first claim keeping the file (SPEC section 6, decision 0020), but edits
   made before either machine has fetched are only caught at commit time.
@@ -324,6 +351,12 @@ of `docs/security/overrides.md`. A new harness adds its user-level config to
   older builds then report it unavailable. This repository's `.acs/policy/territory.toml` still has
   the comment "ACS does not enforce `owned` zones yet"; it is sealed, so the human must edit it.
   Agents here can no longer run `acs` against scratch repositories from their shell (decision 0026).
+- **The VS Code extension (WP7.3):** test it locally with `docs/releases/wp7-humans.md` (install
+  the `.vsix` from `npm run package`, or F5 in `integrations/vscode`). Before publishing: a
+  Marketplace publisher and an Open VSX namespace with tokens (`publisher` in `package.json` is the
+  placeholder `acs-hq`), an icon, and a CI job running `npm ci && npm test` in `integrations/vscode`
+  after building `acs` (`.github/workflows/` is sealed for agents). `acs watch` needs the reinstall
+  (`cargo install --path crates/acs-cli --locked`).
 - Release setup: `docs/releases/README.md` (name check, public repository, npm scope
   and token). The first tag is the first real run of `release.yml` and `installers.yml`.
 - Still open from Phase 1: branch protection on `main`; CODEOWNERS for `.acs/policy/` and `spec/`;

@@ -19,6 +19,7 @@ const READ_ONLY: &[&str] = &["status", "sync", "doctor", "help"];
 /// `grep -r acs src` is not mistaken for running ACS.
 const STATEFUL: &[&str] = &[
     "hook", "init", "claim", "release", "off", "on", "plugin", "mcp", "git-hook", "override",
+    "watch",
 ];
 
 /// Paths inside the repository that a command with unknown effects must not mention: ACS's

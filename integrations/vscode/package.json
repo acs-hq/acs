@@ -1,0 +1,102 @@
+{
+  "name": "acs-vscode",
+  "displayName": "ACS: Agent Control System",
+  "description": "Claims the files you edit so coding agents leave them alone, and shows which files agents and teammates hold.",
+  "version": "0.1.0",
+  "publisher": "acs-hq",
+  "license": "MIT OR Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/acs-hq/acs",
+    "directory": "integrations/vscode"
+  },
+  "homepage": "https://github.com/acs-hq/acs/tree/main/integrations/vscode",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Other",
+    "SCM Providers"
+  ],
+  "keywords": [
+    "agents",
+    "claude code",
+    "coordination",
+    "claims",
+    "acs"
+  ],
+  "activationEvents": [
+    "workspaceContains:.acs/policy/config.toml"
+  ],
+  "main": "./out/src/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "acs.showClaims",
+        "title": "Show Claims",
+        "category": "ACS"
+      },
+      {
+        "command": "acs.releaseMine",
+        "title": "Release My Claims",
+        "category": "ACS"
+      },
+      {
+        "command": "acs.refresh",
+        "title": "Refresh",
+        "category": "ACS"
+      }
+    ],
+    "configuration": {
+      "title": "ACS",
+      "properties": {
+        "acs.path": {
+          "type": "string",
+          "default": "acs",
+          "markdownDescription": "The `acs` program. A bare name is looked up on `PATH`.",
+          "scope": "machine-overridable"
+        },
+        "acs.claimOnEdit": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Claim a file for you when you edit it, so agents leave it alone until you are done."
+        },
+        "acs.releaseAfterIdleSeconds": {
+          "type": "number",
+          "default": 120,
+          "minimum": 5,
+          "markdownDescription": "Release your claim on a file once it is saved and has not been edited for this many seconds. Closing a saved file releases it at once."
+        },
+        "acs.refreshIntervalSeconds": {
+          "type": "number",
+          "default": 5,
+          "minimum": 1,
+          "markdownDescription": "How often to ask `acs status` which files others hold."
+        }
+      }
+    },
+    "colors": [
+      {
+        "id": "acs.claimedByOthers",
+        "description": "Color of files claimed by an agent or another person.",
+        "defaults": {
+          "dark": "#E8A33D",
+          "light": "#9A5B00",
+          "highContrast": "#FFB000"
+        }
+      }
+    ]
+  },
+  "scripts": {
+    "compile": "tsc -p .",
+    "watch": "tsc -p . --watch",
+    "test": "tsc -p . && node --test \"out/test/*.test.js\"",
+    "package": "tsc -p . && vsce package --out acs-vscode.vsix"
+  },
+  "devDependencies": {
+    "@types/node": "20.19.43",
+    "@types/vscode": "1.90.0",
+    "@vscode/vsce": "3.9.2",
+    "typescript": "5.9.3"
+  }
+}

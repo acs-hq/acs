@@ -49,6 +49,8 @@ pub enum Command {
     Doctor(commands::doctor::DoctorArgs),
     /// Share claims with other machines through the git remote.
     Sync(commands::sync::SyncArgs),
+    /// Claim the files you change in any editor, until stopped.
+    Watch(commands::watch::WatchArgs),
     /// Install the ACS plugin into an agent harness.
     Plugin(commands::plugin::PluginArgs),
     /// Run the MCP server on stdio: the tools `acs_status`, `acs_claim`, `acs_release`,
@@ -147,6 +149,7 @@ pub fn run(cli: Cli) -> ExitCode {
         Command::Override(args) => commands::r#override::run(&args),
         Command::Doctor(args) => commands::doctor::run(&args),
         Command::Sync(args) => commands::sync::run(&args),
+        Command::Watch(args) => commands::watch::run(&args),
         Command::Plugin(args) => commands::plugin::run(&args),
         Command::Mcp(args) => mcp::run(&args),
         Command::GitHook(args) => git_hook::run(&args),
