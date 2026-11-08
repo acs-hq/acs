@@ -154,8 +154,9 @@ New in Phase 3:
    blocked and `query-cache.bin` quarantined (`BV:Downloader-BTG`), while builds in `target/` were
    left alone. That also rules out building in a worktree with its own target directory, so the
    subagent workflow above needs thought before it is reused here. No Avast exception is set.
-3. **CI is out of reach from a session here.** `gh` is not installed and the repository is private,
-   so the public API answers 404. Ask the human for the result.
+3. ~~CI is out of reach from a session here.~~ Since 2026-11-09 `gh` is installed and logged in
+   (account `omardardir`): `gh issue`, `gh run list` and `gh run view` work against `acs-hq/acs`. The
+   human still pushes, and judges CI unless they ask otherwise.
 4. **Stopping a background script does not stop what it started on Windows.** Stopping the task left
    its bash loop running, and the loop moved on to the next build. Check with `Get-CimInstance
    Win32_Process`, then stop the script before its `cargo`.
@@ -197,6 +198,33 @@ New in WP10:
    a time in test fixtures.
 4. **A real run can pass without testing anything.** Run 1 blocked no `Edit` at all. Read the calls
    in the logs, not just the verdict.
+
+New in WP7 (the first work done under dogfooding):
+
+1. **The session that builds a rule is not gated by it.** The hooks run the installed `acs`, so new
+   engine rules reach agents here only after the human reinstalls
+   (`cargo install --path crates/acs-cli --locked`). A reinstall that migrates the state schema makes
+   older builds report the state unavailable.
+2. **ACS friction is a bug report.** Report it to the human at once and add it to the dogfooding table
+   in `docs/security/overrides.md`. Two came up in WP7: the `cd dir && a || b` directory bug in
+   `acs-shell`, and prompts for every scratch write outside the repository (decision 0027).
+3. **Edits made through `python` in the shell are invisible to ACS** (no claim, no conflict check).
+   That is a known limit, not a way to work: prefer the Edit and Write tools for repository files, so
+   other seats are protected from your edits.
+4. **Multi-spot edits: write the patch script with the Write tool into the scratchpad, then run it.**
+   Inline `python - <<'EOF'` in the Bash tool mangled `\` and line continuations in Rust strings
+   twice, and a long heredoc failed with "unexpected EOF". Check `git diff` after a scripted edit.
+5. **`cargo test --workspace` stops at the first failing test binary;** use `--no-fail-fast` for a full
+   count. A skill or `integrations/` change made while tests build leaves a stale embedded copy, and
+   `cli_plugin` then fails until the next build.
+6. **Small traps that cost a run each:** the shell corpus's `ACS_SHELL_BLESS=1` only fills cases with
+   no `>` lines, so delete a changed case's expectations before blessing it; doc comments on
+   `acs-core` types feed the JSON Schemas, so a doc change needs `ACS_UPDATE_SCHEMAS=1 cargo test -p
+   acs-core --test schemas`; `crates/acs-store/tests/state_store.rs` keeps its own `MIGRATIONS` list,
+   so a new migration goes there too; `git merge` cannot read its message from stdin (`-F -`), so use
+   `-m`; never put an interactive command (`git checkout -p`) in a tool call.
+7. **`target/release/acs.exe` can be stale.** `tests/e2e/real/owned_territory.sh` picks the newer of
+   the release and debug builds; `three_sessions.sh` still takes release only.
 
 ## 3. Must-know items for the next phases
 
