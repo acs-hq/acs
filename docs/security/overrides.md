@@ -80,7 +80,10 @@ What these rules do not stop, roughly from most to least likely to matter.
     hooks fail open and check nothing (Antigravity fails closed). `acs doctor` checks it.
 11. **Antigravity's `always-proceed`.** It approves ACS `ask` decisions without a prompt (issue #7).
     The rules on this page deny instead of asking, so they are not affected, but other asks
-    (writes elsewhere outside the repository, large deletes) are approved silently there.
+    (large deletes, unknown targets) are approved silently there.
+12. **Writes elsewhere outside the repository.** Since decision 0027, ACS does not ask about them
+    unless `protect_outside_repo = true`; the harness's own permission rules decide. The protected
+    locations above are still denied, and paths that link back into the repository still ask.
 
 ## Bugs found while dogfooding this work
 
@@ -88,4 +91,5 @@ What these rules do not stop, roughly from most to least likely to matter.
 | --- | --- | --- |
 | 2026-11-09 | Edits made through `python` in the agent's shell were invisible to ACS: no claims, no conflict check (risk 1 above). | Known limit; documented |
 | 2026-11-09 | `cd dir && cmd || fallback` was analyzed with `fallback` in the directory from before the `cd`, although bash runs it in `dir` whenever the `cd` succeeded. A `mv` was wrongly denied as "not claimed"; the same mistake could have let a delete in `dir` be checked against the wrong file. | Fixed in `acs-shell` (the fallback's directory is unknown when the left side changed it); corpus cases added |
+| 2026-11-09 | Every write an agent made outside the repository (its scratch files in the OS temp folder) stopped the session with an "accept once / deny" prompt: ACS answered `path_escapes_repo` ask. Noise that trains the pilot to click accept. | Fixed by decision 0027: off by default, `protect_outside_repo = true` to opt in |
 | 2026-11-09 | In this repository, an agent can no longer run `acs` against a scratch repository from its shell (`target/debug/acs hook --canonical ...`, `acs init` in a temp folder): the rule cannot tell which repository the command acts on. | Accepted friction; use tests or scripts |

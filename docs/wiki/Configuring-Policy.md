@@ -42,11 +42,14 @@ The file also has a commented `[ledger]` section. Leave it as it is.
 | --- | --- | --- |
 | `sealed` | The built-in list, shown in the comments of the file | Paths no agent may write, on top of the built-in list |
 | `protected_branches` | `["main", "release/*"]` | Branches where agents cannot rewrite history or force push |
+| `protect_outside_repo` | `false` | Ask you before an agent writes or deletes anything outside the repository |
 | `[destructive] max_files_deleted_outside_claims` | `0` | How many files outside its claims a command may delete |
 | `[destructive] max_files_deleted_per_command` | `50` | Above this, one command needs your approval |
 | `[destructive] ban` | `["git push --force*", "git reset --hard*", "git clean -f*"]` | Commands that are always denied |
 
 **`sealed` adds to the built-in list.** List only the paths you want to add. The built-in paths cannot be removed, even if you leave them out, so `.acs/**` always stays sealed. The comment at the top of `guards.toml` says setting a key replaces its default, but that is not true for `sealed`. `acs status --sealed` shows the full list.
+
+**ACS guards the repository, not the rest of your machine.** By default an agent writing outside the repository (a temp folder, another project) is not ACS's business, and your harness's own permission prompts still apply. ACS still asks when it cannot tell where a path leads, or when a path outside leads back into the repository through a link, and it always refuses writes to its own state and to your harness's settings. Set `protect_outside_repo = true` to be asked about every write outside the repository.
 
 **Copy the other defaults you want to keep.** Setting `protected_branches` or `ban` replaces its default, so anything you leave out is gone. If your `ban` list does not include `git push --force*`, that command is no longer banned.
 
