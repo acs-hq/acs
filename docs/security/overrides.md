@@ -1,0 +1,91 @@
+# Overrides and self-protection: what ACS stops, and what it does not
+
+Written 2026-11-09 with WP7.1 and WP7.2 (decision 0026). ACS guards a repository against accidents
+and careless agents. It is not a sandbox: an agent determined to get around it, with a shell, can.
+This page says honestly where the line is, so nobody relies on more than ACS gives.
+
+## What is enforced
+
+Whatever the policy says and whether or not `acs off` is active, the hook denies an agent:
+
+| Attempt | How it is caught | Reason code |
+| --- | --- | --- |
+| Running `acs off`, `acs on`, `acs override`, `acs claim`, `acs release`, `acs init`, `acs plugin`, `acs hook`, `acs mcp`, `acs doctor --fix`, or any future subcommand | Only `acs status`, `acs sync`, `acs doctor` and help are allowed | `banned_command` |
+| Skipping git hooks: `--no-verify`, `git commit -n`, `git -c core.hooksPath=...`, `git config core.hooksPath ...` | Words of the git command | `banned_command` |
+| Starting Claude Code or Antigravity with hooks or the ACS plugin off: `claude --bare`, `--settings`, `--setting-sources`, `agy --settings`, `plugin disable`/`uninstall` | Words of the harness command | `banned_command` |
+| Writing or deleting `ACS_HOME`, a git directory outside the work tree, or a harness's user-level hooks, plugins or settings (`~/.claude/settings*.json`, `~/.claude/plugins/`, `~/.gemini/config/{hooks.json,plugins/,config.json}`, `~/.gemini/antigravity-cli/settings.json`) | File tools and shell targets, with `~`, `$HOME`, `%USERPROFILE%`, `$env:USERPROFILE`, `$ACS_HOME` and `$CLAUDE_CONFIG_DIR` expanded | `sealed_path` |
+| A command ACS cannot see into (an interpreter, a script, an unknown program) that mentions one of those locations, or `.acs/`, `.git/hooks`, `.git/config`, `.claude/settings` or `.husky/` | Words of the command | `sealed_path` |
+| A command matching a `destructive.ban` pattern | `guards.toml` | `banned_command` |
+
+These rules see through wrappers (`sudo`, `env`, `nohup`, `timeout`, `command`, ...), subshells and
+command substitutions, `sh -c` / `bash -c` / `eval` / `cmd /c` / `pwsh -Command` / `iex`, alias and
+function bodies, `script -c`, `su -c`, here-strings and here-documents fed to a shell, `echo` or
+`printf` piped into a shell (also through `base64 -d`), PowerShell `-EncodedCommand`, `xargs`,
+`find -exec` and `cargo run -p acs-cli -- ...`.
+
+`crates/acs-cli/tests/fixtures/adversarial.txt` lists every case; `cargo test -p acs-cli --test
+adversarial` requires all `deny:` lines to be denied and the `allow:` controls to pass. Add every
+bypass you see to it.
+
+**Owned zones** (WP7.1) deny agents whose pilot is not an owner. Only a person can let one in, with
+`acs override`, which:
+
+- is denied to agents by the rules above;
+- refuses to run unless standard input and standard error are terminals, so `echo y | acs override`
+  and `acs override < answers` fail;
+- prints a random four-letter code that must be typed back, so an answer piped into a pseudo-terminal
+  in advance (`echo ABCD | script -qc 'acs override ...'`) is wrong;
+- lifts `owned_territory` only (claims, sealed paths and every other rule still hold), for one tool
+  call (`--once`) or one session (`--session`), and lapses unused after `claim_ttl_secs`;
+- is recorded per use with the seat (`override_uses`), listed by `acs status`, and goes into the
+  session record (`overrides`) once session records exist (WP4.1).
+
+## Residual risks
+
+What these rules do not stop, roughly from most to least likely to matter.
+
+1. **Code ACS cannot read.** A script file (`python tools/x.py`, `bash setup.sh`, `make`, `npm run`)
+   or an interpreter one-liner that does not spell out a protected path can do anything: edit
+   files without claiming them, run `acs off`, rewrite a settings file whose path it builds at run
+   time. The post-tool scan attributes changed files in the repository afterwards, and the git hooks
+   check staged files at commit time, but nothing stops the action itself. *Seen while dogfooding
+   (2026-11-09): files an agent edited through `python` in its shell were never claimed, so other
+   seats were not protected from that agent's edits.*
+2. **Programs named by a variable or by command output.** `A=acs; $A off`, `$(echo acs) off`,
+   `eval "$(printf 'acs off')"`, `` `which acs` off ``: the program word is not known, so the command
+   is unknown and allowed when it does not look destructive.
+3. **Environment variables.** The analysis drops leading `NAME=value` assignments, so it cannot see
+   `CLAUDE_CONFIG_DIR=/tmp/x claude -p ...` (a fresh Claude Code configuration without the ACS
+   plugin), `GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=/dev/null git
+   commit`, or `HUSKY=0 git commit` in repositories whose ACS hook runs through husky.
+4. **Other harnesses and other config.** Only Claude Code and Antigravity are known. Other agent
+   CLIs, Claude Code's managed settings, `~/.claude.json` (MCP servers) and settings files in other
+   repositories are not protected.
+5. **A real terminal.** A harness that gives agents an interactive pseudo-terminal they can read
+   and type into (tmux `send-keys`, an IDE terminal tool) satisfies the terminal check and can read
+   the code. The hook's denial of `acs override` is then the only barrier, and it does not apply if
+   the command runs somewhere ACS does not see (risk 1).
+6. **Reads.** Agents may read `ACS_HOME`, harness settings and anything else. Nothing secret is
+   stored there, but collision messages name people and files.
+7. **Who granted it.** `granted_by` is the machine's `git config user.email`, which anyone at the
+   machine can change. Overrides are a local, same-user trust decision.
+8. **A used-up override that did not help.** A `--once` override is used up before claims are
+   taken; if the claim then loses a race, the call is denied and the override is gone. Grant it
+   again.
+9. **False positives.** A command ACS cannot see into is denied when it merely mentions a protected
+   path, even to read it (`python -c "print(open('.acs/policy/guards.toml').read())"`). Use `cat`.
+   `grep acs off` and similar are allowed because `acs` only counts there when followed by a
+   stateful subcommand; `grep -r acs release` would be denied.
+10. **Hooks that never run.** If `acs` is not on the `PATH` the harness started with, Claude Code's
+    hooks fail open and check nothing (Antigravity fails closed). `acs doctor` checks it.
+11. **Antigravity's `always-proceed`.** It approves ACS `ask` decisions without a prompt (issue #7).
+    The rules on this page deny instead of asking, so they are not affected, but other asks
+    (writes elsewhere outside the repository, large deletes) are approved silently there.
+
+## Bugs found while dogfooding this work
+
+| Date | What happened | State |
+| --- | --- | --- |
+| 2026-11-09 | Edits made through `python` in the agent's shell were invisible to ACS: no claims, no conflict check (risk 1 above). | Known limit; documented |
+| 2026-11-09 | `cd dir && cmd || fallback` was analyzed with `fallback` in the directory from before the `cd`, although bash runs it in `dir` whenever the `cd` succeeded. A `mv` was wrongly denied as "not claimed"; the same mistake could have let a delete in `dir` be checked against the wrong file. | Fixed in `acs-shell` (the fallback's directory is unknown when the left side changed it); corpus cases added |
+| 2026-11-09 | In this repository, an agent can no longer run `acs` against a scratch repository from its shell (`target/debug/acs hook --canonical ...`, `acs init` in a temp folder): the rule cannot tell which repository the command acts on. | Accepted friction; use tests or scripts |

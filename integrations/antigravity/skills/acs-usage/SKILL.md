@@ -41,6 +41,9 @@ and what to do next. **Read it and follow it.** Typical outcomes:
 - The file is claimed by another agent: work on something else, or ask your pilot to arrange
   the handover. Do not retry the same edit in a loop.
 - The path is sealed: it is protected on purpose. Ask your pilot to change it.
+- The path is owned territory: only the agents of the owners the message names may change it.
+  Work on other files, or tell your pilot what you need there; they can coordinate with an owner
+  or let you in themselves.
 - Ask for confirmation: your pilot decides. Explain what you want to do and why.
 - `git commit` is rejected: the hook names the staged files that are off limits. Unstage them and
   commit the rest, or ask your pilot to commit them.
@@ -50,6 +53,7 @@ Call `acs_why` to get the explanation of the last decision again.
 ## Never work around ACS
 
 Do not try to bypass or switch off ACS or its checks. That includes editing hook or settings
-files, writing the same content through another tool or a shell command, running `acs off` or
-`git commit --no-verify`, starting another agent process to make the change, or splitting a change
-to slip past a rule. A denial is information about the repository, not an obstacle to defeat.
+files, writing the same content through another tool or a shell command, running `acs off`,
+`acs override` or `git commit --no-verify`, starting another agent process to make the change, or
+splitting a change to slip past a rule. Of the `acs` command line, run only `acs status`; use your
+ACS tools for your own claims. A denial is information about the repository, not an obstacle to defeat.
