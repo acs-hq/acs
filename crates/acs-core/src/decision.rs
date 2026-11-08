@@ -49,8 +49,9 @@ pub enum ReasonCode {
     BannedCommand,
     /// A history rewrite or force push targets a protected branch. Outcome `deny`.
     ProtectedBranch,
-    /// A write, delete or move target resolves outside the repository root, including via a
-    /// symlink or junction. Outcome `ask`.
+    /// A write, delete or move target cannot be resolved, or resolves outside the repository but
+    /// links back into it; with `protect_outside_repo`, any target outside the repository root.
+    /// Outcome `ask`.
     PathEscapesRepo,
     /// Deletes exceed `destructive.max_files_deleted_outside_claims`. Outcome `deny`.
     DeleteOutsideClaims,

@@ -60,7 +60,7 @@
         },
         {
           "const": "path_escapes_repo",
-          "description": "A write, delete or move target resolves outside the repository root, including via a\nsymlink or junction. Outcome `ask`.",
+          "description": "A write, delete or move target cannot be resolved, or resolves outside the repository but\nlinks back into it; with `protect_outside_repo`, any target outside the repository root.\nOutcome `ask`.",
           "type": "string"
         },
         {

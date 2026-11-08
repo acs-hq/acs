@@ -252,6 +252,10 @@ pub trait PolicyView {
     /// Whether `branch` matches a `protected_branches` glob.
     fn is_protected_branch(&self, branch: &str) -> bool;
 
+    /// `guards.toml`'s `protect_outside_repo`: whether every write or delete outside the
+    /// repository asks, not only unresolvable ones and ones that link back into it.
+    fn protect_outside_repo(&self) -> bool;
+
     /// The first `destructive.ban` pattern matching a simple command, given its words joined by
     /// single spaces.
     fn banned_match(&self, command: &str) -> Option<&str>;

@@ -130,6 +130,11 @@ fn guards_template() -> String {
 # Branches on which history rewrites and force pushes are denied.
 # protected_branches = [{branches}]
 
+# Ask before an agent writes or deletes outside the repository. Off by default: ACS guards the
+# repository. Paths it cannot resolve, and paths outside that link back into the repository, are
+# asked about either way; ACS's own state and harness settings are always denied.
+# protect_outside_repo = false
+
 # [destructive]
 # Files a command may delete outside the seat's claims (0 denies any such delete).
 # max_files_deleted_outside_claims = 0
@@ -206,6 +211,7 @@ mod tests {
             .filter(|l| {
                 l.starts_with("sealed")
                     || l.starts_with("protected")
+                    || l.starts_with("protect_outside")
                     || l.starts_with("[destructive]")
                     || l.starts_with("max_files")
                     || l.starts_with("ban")

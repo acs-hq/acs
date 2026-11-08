@@ -59,7 +59,7 @@ In three cases, ACS asks you instead of refusing. Approve or decline the prompt 
 | --- | --- |
 | `This command would delete 51 files, more than the limit of 50 per command.` | The command is allowed only if you approve it. |
 | `This command deletes, moves or rewrites files, but ACS cannot tell which ones` | ACS cannot work out the targets, for example because a variable hides them. The agent can avoid the question by naming the exact paths. |
-| `` `notes.txt` is outside the repository `` | The agent wants to change a file outside the repository, where ACS cannot protect anything. |
+| `` `notes.txt` is outside the repository `` | The agent wants to change a path ACS cannot place, or one outside the repository that links back into it. With `protect_outside_repo = true` in `guards.toml`, you are asked about every write outside the repository. |
 
 ## When a commit is rejected
 

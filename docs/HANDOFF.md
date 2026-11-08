@@ -21,7 +21,8 @@ skill has the pilot review them. Section 6's GitLab items change to match.
 `acs init` here on 2026-11-08).** Owned zones are enforced, `acs override` lets a person in, and
 agents can no longer switch ACS off by the routes it can see. `docs/security/overrides.md` lists what
 is not covered and the bugs dogfooding has turned up. Overrides are stored and shown in `acs status`;
-putting them in session records and `acs log` is WP4.1's job (section 3).
+putting them in session records and `acs log` is WP4.1's job (section 3). Since decision 0027,
+writes outside the repository no longer ask by default (`protect_outside_repo` opts in).
 
 ## 1. Where things stand
 
@@ -60,7 +61,8 @@ putting them in session records and `acs log` is WP4.1's job (section 3).
   `.husky/**`), **0018** CLI. Phase 3: **0020** team sync, including the GitHub push check and the
   `acs-os` exception to `unsafe_code = forbid`. Phase 5: **0021** distribution and `acs plugin
   install`, **0022** skills, **0025** `acs init` proposals without CODEOWNERS (WP5.3). Phase 7:
-  **0026** owned territory, overrides and self-protection (WP7.1, WP7.2).
+  **0026** owned territory, overrides and self-protection (WP7.1, WP7.2); **0027** writes outside
+  the repository ask only on request.
 - Shared rules handed to every Phase 2 subagent: `docs/phase2-rules.md` (reuse it for Phase 3+,
   updating the reading list and decision numbers).
 

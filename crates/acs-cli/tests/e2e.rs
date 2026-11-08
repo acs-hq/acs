@@ -522,10 +522,17 @@ fn a_move_checks_both_ends() {
 }
 
 #[test]
-fn an_edit_that_escapes_the_repository_asks() {
+fn an_edit_outside_the_repository_asks_only_when_the_policy_says_so() {
     let world = World::new();
     let agent = Agent::new(&world, "claude-code", "s1");
     agent.start();
+    let d = agent.pre_edit("../outside.txt");
+    assert_eq!(
+        (d.outcome, d.reason_code),
+        (Outcome::Allow, ReasonCode::Ok),
+        "off by default: ACS guards the repository"
+    );
+    world.write(".acs/policy/guards.toml", "protect_outside_repo = true\n");
     let d = agent.pre_edit("../outside.txt");
     assert_eq!(
         (d.outcome, d.reason_code),

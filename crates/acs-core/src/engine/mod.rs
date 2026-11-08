@@ -9,8 +9,10 @@
 //!
 //! For a `pre_tool` event the steps of spec section 9 run in this order, and all of them run:
 //!
-//! 1. **Paths.** A write or delete target outside the repository, or one that cannot be resolved,
-//!    asks (`path_escapes_repo`). Reads outside the repository are fine.
+//! 1. **Paths.** A write or delete target that cannot be resolved, or that lies outside the
+//!    repository but links back into it, asks (`path_escapes_repo`). Any other target outside the
+//!    repository asks only with `protect_outside_repo` (off by default: ACS guards the repository).
+//!    Reads outside the repository are fine.
 //! 2. **Guards.** Sealed paths, including the [`OutsideSeal`](crate::gate::OutsideSeal)s outside
 //!    the repository (`sealed_path`); ACS's self-protection rules (agents running state-changing
 //!    `acs` subcommands, skipping git hooks, starting a harness with hooks off: `banned_command`;
@@ -67,7 +69,7 @@ use crate::decision::{Decision, Outcome, ReasonCode};
 use crate::event::{Phase, ToolKind};
 use crate::gate::{
     ClaimRequest, GateInput, GateOutput, HeldClaim, OverrideApplied, PathLocation, PolicyView,
-    ShellAnalysis, blocking_claims,
+    ResolvedPath, ShellAnalysis, blocking_claims,
 };
 use crate::ids::NoticeId;
 use crate::policy_types::ZoneKind;
@@ -96,7 +98,7 @@ pub fn decide(input: &GateInput<'_>, policy: &dyn PolicyView) -> GateOutput {
     }
 
     if !off {
-        path_step(&plan, &mut verdict);
+        path_step(policy, &plan, &mut verdict);
     }
     guards(input, policy, &plan, off, unavailable, &mut verdict);
     let overrides_applied = if off {
@@ -177,11 +179,22 @@ impl Verdict {
     }
 }
 
-/// Step 1: targets outside the repository.
-fn path_step(plan: &Plan<'_, '_>, verdict: &mut Verdict) {
-    if !plan.escapes.is_empty() {
+/// Step 1: targets outside the repository. Unless `protect_outside_repo` is set, only the ones ACS
+/// cannot place (unresolvable) or that reach back into the repository through a link ask.
+fn path_step(policy: &dyn PolicyView, plan: &Plan<'_, '_>, verdict: &mut Verdict) {
+    let all = policy.protect_outside_repo();
+    let asking: Vec<&ResolvedPath> = plan
+        .escapes
+        .iter()
+        .copied()
+        .filter(|escape| {
+            all || matches!(escape.location, PathLocation::Unresolvable(_))
+                || !escape.linked_into_repo.is_empty()
+        })
+        .collect();
+    if !asking.is_empty() {
         verdict.ask(ReasonCode::PathEscapesRepo, || {
-            messages::path_escapes_repo(&plan.escapes)
+            messages::path_escapes_repo(&asking)
         });
     }
 }

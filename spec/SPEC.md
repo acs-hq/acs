@@ -111,7 +111,7 @@ The set is closed; adding a code is a spec change. The "outcome" column lists wh
 | `sealed_path` | deny | A target matches a sealed glob (`guards.toml`), lies in a `sealed` zone (`territory.toml`) or reaches a protected location outside the repository (section 11.1); or a command whose effects cannot be determined mentions one. |
 | `banned_command` | deny | A shell command matches a `destructive.ban` pattern, or breaks a self-protection rule (section 11.1). |
 | `protected_branch` | deny | A history rewrite or force push targets a protected branch. |
-| `path_escapes_repo` | ask | A write, delete or move target resolves outside the repository root, including through a symlink or junction. |
+| `path_escapes_repo` | ask | A write, delete or move target cannot be resolved, or resolves outside the repository root but links back into it; with `protect_outside_repo`, any target outside the repository root, including through a symlink or junction. |
 | `delete_outside_claims` | deny | Deletes exceed `destructive.max_files_deleted_outside_claims`. |
 | `destructive_budget` | ask | Deletes in one command exceed `destructive.max_files_deleted_per_command`. |
 | `destructive_unknown_targets` | ask | A destructive shell command whose targets cannot be determined. |
@@ -200,6 +200,7 @@ Every key defaults to empty (zero for the numeric limits noted); the built-in de
 | --- | --- |
 | `sealed` | Globs of paths agents may never write |
 | `protected_branches` | Branch globs on which history rewrites and force pushes are denied |
+| `protect_outside_repo` | Default `false`: only targets that cannot be resolved, or that lie outside the repository but link back into it, ask (`path_escapes_repo`). `true`: every write or delete outside the repository asks. Protected locations (section 11.1) are denied either way |
 | `[destructive] max_files_deleted_outside_claims` | Default `0`: any delete outside the seat's claims is denied (`delete_outside_claims`) |
 | `[destructive] max_files_deleted_per_command` | Default `50`: a command deleting more files asks the human (`destructive_budget`) |
 | `[destructive] ban` | Command patterns that are always denied; `*` matches any run of characters (`banned_command`) |
@@ -346,7 +347,7 @@ For every event the engine proceeds as follows. A step that denies ends evaluati
 
 1. The adapter parses the harness payload into a `ToolEvent` (failure: `unknown_payload`).
 2. Resolve the repository and the seat (created on the first event of a session).
-3. Normalize every path: absolute, canonical, symlinks and junctions resolved, case-folded where the filesystem is case-insensitive. Flag any path that escapes the repository root (`path_escapes_repo`).
+3. Normalize every path: absolute, canonical, symlinks and junctions resolved, case-folded where the filesystem is case-insensitive. Ask about a write or delete target that cannot be resolved or that links back into the repository from outside, and, with `protect_outside_repo`, about any target outside the repository root (`path_escapes_repo`).
 4. Guards: sealed paths including protected locations outside the repository, self-protection, banned commands, protected-branch rules, destructive budgets (`sealed_path`, `banned_command`, `protected_branch`, `delete_outside_claims`, `destructive_budget`).
 5. Territory and claims: deny non-owner agents in `owned` zones unless an override covers the file, then compute the required claims and acquire them atomically (`owned_territory`, `claim_conflict`).
 6. Snapshot the pre-images of files about to change. For a destructive shell command whose targets cannot be determined, ask (`destructive_unknown_targets`).

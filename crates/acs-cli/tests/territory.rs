@@ -219,7 +219,7 @@ fn file_tools_cannot_write_acs_state() {
     let d = agent.pre_tool("Write", "write", &[elsewhere.to_str().unwrap()]);
     assert_eq!(
         (d.outcome, d.reason_code),
-        (Outcome::Ask, ReasonCode::PathEscapesRepo),
-        "other paths outside the repository still ask"
+        (Outcome::Allow, ReasonCode::Ok),
+        "other paths outside the repository are not ACS's business by default"
     );
 }
