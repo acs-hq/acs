@@ -396,6 +396,7 @@ $ ruby -e 'puts 1'
 $ echo hi | sh
 > {"w":"echo hi","c":"read"}
 > {"w":"sh","c":"unknown","u":true}
+> {"w":"hi","c":"unknown","u":true}
 $ cat script.sh | bash
 > {"w":"cat script.sh","c":"read","t":["read script.sh"]}
 > {"w":"bash","c":"unknown","u":true}
@@ -427,6 +428,7 @@ $ export PATH="$HOME/bin:$PATH"
 > {"w":"export \"PATH=\\\"$HOME/bin:$PATH\\\"\"","c":"read"}
 $ alias ll='ls -l'
 > {"w":"alias \"ll=ls -l\"","c":"read"}
+> {"w":"ls -l","c":"read"}
 $ read -r line
 > {"w":"read -r line","c":"read"}
 $ kill -9 1234
@@ -1005,6 +1007,7 @@ $ps Invoke-Expression $cmd
 > {"w":"Invoke-Expression $cmd","c":"unknown","u":true}
 $ps iex "rm -rf /"
 > {"w":"iex \"rm -rf /\"","c":"unknown","u":true}
+> {"w":"rm -rf /","c":"delete","t":["delete /"]}
 $ps Start-Process notepad
 > {"w":"Start-Process notepad","c":"unknown","u":true}
 $ps Remove-Item -Recurse -Force -WhatIf build
@@ -1514,6 +1517,7 @@ $ bash <<EOF
 | rm -rf x
 | EOF
 > {"w":"bash","c":"unknown","u":true}
+> {"w":"rm -rf x","c":"delete","t":["delete+rec x"]}
 $ ssh host <<EOF
 | rm -rf x
 | EOF
@@ -2052,6 +2056,7 @@ $ readonly Z=3
 > {"w":"readonly Z=3","c":"read"}
 $ alias rm='rm -i'
 > {"w":"alias \"rm=rm -i\"","c":"read"}
+> {"w":"rm -i","c":"delete"}
 $ unalias ll
 > {"w":"unalias ll","c":"read"}
 $ umask 022
@@ -2574,6 +2579,7 @@ $ sudo -l
 > {"w":"sudo -l","c":"read"}
 $ su -c 'rm x'
 > {"w":"su -c \"rm x\"","c":"unknown","u":true}
+> {"w":"rm x","c":"delete","t":["delete x"]}
 $ passwd
 > {"w":"passwd","c":"unknown","u":true}
 $ yes | rm -i *
@@ -3174,3 +3180,81 @@ $ ls -la | grep '^d' | awk '{print $9}'
 > {"w":"awk \"{print $9}\"","c":"read"}
 $ xargs -I{} git clean -fd {}
 > {"w":"xargs -I{} git clean -fd {}","c":"delete,git_history_rewrite,unknown","u":true,"g":"clean +rewrite"}
+
+# ---- scripts hidden from a plain reading (WP7.2) -----------------------------------------
+$ alias x='acs off'; x
+> {"w":"alias \"x=acs off\"","c":"read"}
+> {"w":"acs off","c":"unknown","u":true}
+> {"w":"x","c":"unknown","u":true}
+$ alias cleanup='rm -rf build' other=ls
+> {"w":"alias \"cleanup=rm -rf build\" other=ls","c":"read"}
+> {"w":"rm -rf build","c":"delete","t":["delete+rec build"]}
+> {"w":"ls","c":"read"}
+$ script -qc 'acs override --path x --once' /dev/null
+> {"w":"script -qc \"acs override --path x --once\" /dev/null","c":"unknown","u":true}
+> {"w":"acs override --path x --once","c":"unknown","u":true}
+$ script --command='rm -rf x' log.txt
+> {"w":"script \"--command=rm -rf x\" log.txt","c":"unknown","u":true}
+> {"w":"rm -rf x","c":"delete","t":["delete+rec x"]}
+$ script
+> {"w":"script","c":"unknown","u":true}
+$ runuser -u bob -- --command='git reset --hard'
+> {"w":"runuser -u bob -- \"--command=git reset --hard\"","c":"unknown","u":true}
+> {"w":"git reset --hard","c":"write,git_history_rewrite","u":true,"g":"reset +rewrite"}
+$ echo 'acs off' | bash
+> {"w":"echo \"acs off\"","c":"read"}
+> {"w":"bash","c":"unknown","u":true}
+> {"w":"acs off","c":"unknown","u":true}
+$ echo YWNzIG9mZg== | base64 -d | sh
+> {"w":"echo YWNzIG9mZg==","c":"read"}
+> {"w":"base64 -d","c":"read"}
+> {"w":"sh","c":"unknown","u":true}
+> {"w":"acs off","c":"unknown","u":true}
+$ printf 'acs off\n' | sh -s
+> {"w":"printf \"acs off\\\\n\"","c":"read"}
+> {"w":"sh -s","c":"unknown","u":true}
+> {"w":"acs off","c":"unknown","u":true}
+$ bash <<< 'acs release --all'
+> {"w":"bash","c":"unknown","u":true}
+> {"w":"acs release --all","c":"unknown","u":true}
+$ sh <<EOF
+| acs off
+| EOF
+> {"w":"sh","c":"unknown","u":true}
+> {"w":"acs off","c":"unknown","u":true}
+$ cat <<EOF
+| acs off
+| EOF
+> {"w":"cat","c":"read"}
+$ echo 'acs off' | grep acs
+> {"w":"echo \"acs off\"","c":"read"}
+> {"w":"grep acs","c":"read"}
+$ powershell -EncodedCommand YQBjAHMAIABvAGYAZgA=
+> {"w":"powershell -EncodedCommand YQBjAHMAIABvAGYAZgA=","c":"unknown","u":true}
+> {"w":"acs off","c":"unknown","u":true}
+$ pwsh -e YQBjAHMAIABvAGYAZgA=
+> {"w":"pwsh -e YQBjAHMAIABvAGYAZgA=","c":"unknown","u":true}
+> {"w":"acs off","c":"unknown","u":true}
+$ powershell -EncodedCommand !!!notbase64
+> {"w":"powershell -EncodedCommand !!!notbase64","c":"unknown","u":true}
+$ f() { acs off; }; f
+> {"w":"acs off","c":"unknown","u":true}
+> {"w":"f","c":"unknown","u":true}
+
+# ---- `||` after a `cd` in its left side runs in an unknown directory (bug found dogfooding WP7) --
+$ cd sub && make || rm x
+> {"w":"cd sub","c":"read"}
+> {"w":"make","c":"unknown","u":true}
+> {"w":"rm x","c":"delete","t":["delete+partial x"]}
+$ cd sub || rm x
+> {"w":"cd sub","c":"read"}
+> {"w":"rm x","c":"delete","t":["delete x"]}
+$ make || rm x
+> {"w":"make","c":"unknown","u":true}
+> {"w":"rm x","c":"delete","t":["delete x"]}
+$ps iex 'acs off'
+> {"w":"iex \"acs off\"","c":"unknown","u":true}
+> {"w":"acs off","c":"unknown","u":true}
+$ps Invoke-Expression -Command 'Remove-Item -Recurse x'
+> {"w":"Invoke-Expression -Command \"Remove-Item -Recurse x\"","c":"unknown","u":true}
+> {"w":"Remove-Item -Recurse x","c":"delete","t":["delete+rec x"]}

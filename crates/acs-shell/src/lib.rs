@@ -22,10 +22,14 @@
 //! - `mv`, `cp`, `ln` and `install` mark their destination (and `mv` its sources) recursive,
 //!   because a directory may be involved and sources may land inside it.
 //! - A target that begins with `~` is `Partial`: the home directory is not known here.
+//! - Scripts hidden from a plain reading are analyzed as nested scripts too: alias definitions,
+//!   `script -c`, `su -c`, PowerShell `-EncodedCommand`, and text fed to a shell on standard
+//!   input (`echo ... | sh`, through `base64 -d`, here-strings and here-documents).
 
 mod args;
 mod bash;
 mod ctx;
+mod feed;
 mod git;
 mod table;
 mod tools;

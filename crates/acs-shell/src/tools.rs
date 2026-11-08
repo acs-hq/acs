@@ -1224,7 +1224,17 @@ pub(crate) fn powershell(args: &[Word], out: &mut Outcome) {
             }
             return;
         }
-        if !name.is_empty() && ("file".starts_with(name) || "encodedcommand".starts_with(name)) {
+        if !name.is_empty() && "encodedcommand".starts_with(name) {
+            if let Some(script) = args
+                .get(i)
+                .filter(|w| w.is_exact())
+                .and_then(|w| crate::feed::powershell_encoded(&w.text))
+            {
+                out.nested.push((Dialect::PowerShell, script));
+            }
+            return;
+        }
+        if !name.is_empty() && "file".starts_with(name) {
             return;
         }
         if matches!(
@@ -1252,6 +1262,63 @@ pub(crate) fn cmd_exe(args: &[Word], out: &mut Outcome) {
             if args[index + 1..].iter().all(Word::is_exact) && !script.is_empty() {
                 out.nested.push((Dialect::Cmd, script.join(" ")));
             }
+            return;
+        }
+    }
+}
+
+/// `alias name='script'`: the script runs when the alias is used, later in the same line or
+/// session, so it is analyzed now.
+pub(crate) fn alias(args: &[Word], out: &mut Outcome) {
+    out.class(CommandClass::Read);
+    for arg in args.iter().filter(|w| nestable(w)) {
+        if let Some((_, script)) = arg.text.split_once('=')
+            && !script.is_empty()
+        {
+            out.nested.push((Dialect::Bash, script.to_owned()));
+        }
+    }
+}
+
+/// `script -c 'cmd' [file]`: runs `cmd` in a pseudo-terminal (and writes a typescript file).
+/// Without `-c` it starts an interactive shell, which is unknown.
+pub(crate) fn script(args: &[Word], out: &mut Outcome) {
+    out.and_unknown();
+    nested_option(args, &["-c", "--command"], out);
+}
+
+/// `su [user] -c 'cmd'`, `runuser -c 'cmd'`.
+pub(crate) fn su(args: &[Word], out: &mut Outcome) {
+    out.and_unknown();
+    nested_option(args, &["-c", "--command"], out);
+}
+
+/// Pushes the value of the first of `names` (as `-c value`, `--command value` or
+/// `--command=value`) as a nested bash script.
+fn nested_option(args: &[Word], names: &[&str], out: &mut Outcome) {
+    for (index, arg) in args.iter().enumerate() {
+        if !arg.is_exact() {
+            continue;
+        }
+        // A cluster of short flags ending in the option's letter (`-qc`) takes the next word too.
+        let cluster = names.iter().any(|name| {
+            name.len() == 2
+                && arg.text.len() > 2
+                && !arg.text.starts_with("--")
+                && arg.text.starts_with('-')
+                && arg.text.ends_with(&name[1..])
+        });
+        let value = if cluster || names.contains(&arg.text.as_str()) {
+            args.get(index + 1).cloned()
+        } else {
+            names.iter().find_map(|name| {
+                arg.text
+                    .strip_prefix(&format!("{name}="))
+                    .map(|v| Word::exact(v.to_owned()))
+            })
+        };
+        if let Some(script) = value.filter(nestable) {
+            out.nested.push((Dialect::Bash, script.text));
             return;
         }
     }
