@@ -1,4 +1,4 @@
-# Orchestrator handoff (after the M1 parts of WP10.1 and WP10.2)
+# Orchestrator handoff (after WP7.1 and WP7.2)
 
 Written 2026-10-30 at the end of the session that built Phase 2, and updated 2026-10-31 after
 Phase 3 (WP3.1), after WP5.2 and WP5.1, and after the M1 parts of WP10. It replaces the handoff
@@ -16,6 +16,12 @@ gate is the human's: the desktop app checks and three decisions.
 **WP5.3 (`acs init` proposals) is built (2026-11-07, decision 0025).** The human dropped CODEOWNERS
 from the plan as future work: proposals come from git history and folder names, and the setup
 skill has the pilot review them. Section 6's GitLab items change to match.
+
+**WP7.1 and WP7.2 are built (2026-11-09, decision 0026), and dogfooding has started (the human ran
+`acs init` here on 2026-11-08).** Owned zones are enforced, `acs override` lets a person in, and
+agents can no longer switch ACS off by the routes it can see. `docs/security/overrides.md` lists what
+is not covered and the bugs dogfooding has turned up. Overrides are stored and shown in `acs status`;
+putting them in session records and `acs log` is WP4.1's job (section 3).
 
 ## 1. Where things stand
 
@@ -53,7 +59,8 @@ skill has the pilot review them. Section 6's GitLab items change to match.
   **0017** harness paths in the default sealed list (orchestrator, with an amendment for
   `.husky/**`), **0018** CLI. Phase 3: **0020** team sync, including the GitHub push check and the
   `acs-os` exception to `unsafe_code = forbid`. Phase 5: **0021** distribution and `acs plugin
-  install`, **0022** skills, **0025** `acs init` proposals without CODEOWNERS (WP5.3).
+  install`, **0022** skills, **0025** `acs init` proposals without CODEOWNERS (WP5.3). Phase 7:
+  **0026** owned territory, overrides and self-protection (WP7.1, WP7.2).
 - Shared rules handed to every Phase 2 subagent: `docs/phase2-rules.md` (reuse it for Phase 3+,
   updating the reading list and decision numbers).
 
@@ -63,13 +70,14 @@ skill has the pilot review them. Section 6's GitLab items change to match.
 | acs-git | 2.1, 2.4, 3.1 | `repo::discover`, `status::scan_changes`, `hooks::{install, uninstall, status}`, `trailers`, `refs::{SyncStorage, CustomRefs}`, `sync::run` |
 | acs-store | 2.1 adds | migration 0003: `SeatInfo` (session id, intent), last decision, flags (`gate_off`), attributions, `stale_live_seats` |
 | acs-mcp | 2.6 | `Backend` trait, `serve_stdio` (rmcp 3.8, the only async runtime in the binary) |
-| acs-cli | 2.1, 2.4–2.6, 3.1, 5.2, 5.3 | `runtime` (`RepoContext`, seats, `status`/`claim_paths`/`release_paths`/`set_intent`/`last_decision`, `sync::{lock, spawn_if_due, spawn_now}`), `hook`, `cli`, `commands/{init,status,claim,release,off,doctor,git_hook,mcp,sync,plugin}`, `init::propose::{propose, propose_for, territory_toml}` |
+| acs-cli | 2.1, 2.4–2.6, 3.1, 5.2, 5.3, 7.1, 7.2 | `runtime` (`RepoContext`, seats, `status`/`claim_paths`/`release_paths`/`set_intent`/`last_decision`, `sync::{lock, spawn_if_due, spawn_now}`, `protect::{StoreOverrides, outside_seals}`), `hook`, `cli`, `commands/{init,status,claim,release,off,override,doctor,git_hook,mcp,sync,plugin}`, `init::propose::{propose, propose_for, territory_toml}` |
 | acs-os | 3.1 | `keep_stdio_from_children`; the only crate allowed `unsafe`, one Windows call (decision 0020) |
 
 Commands: `acs hook --canonical <phase>`, `acs hook <claude-code|antigravity|canonical>`,
 `acs mcp [--harness]`, `acs git-hook <name>`, `acs init|status|claim|release|off|on|doctor|sync`
-and `acs plugin install <harness>` (each with `--json`). `acs init` also takes `--yes`,
-`--min-share` and `--min-commits` for its territory proposal.
+`acs override --path <glob> --once|--session` / `--revoke <id>` and `acs plugin install <harness>`
+(each with `--json`). `acs init` also takes `--yes`, `--min-share` and `--min-commits` for its
+territory proposal.
 
 Integrations: `integrations/claude-code/` (plugin `acs`, marketplace `acs-plugins` in the root
 `.claude-plugin/marketplace.json`), `integrations/antigravity/` (plugin `acs`, always-on rule) and
@@ -202,7 +210,11 @@ reading every pilot's ledger for `acs log` needs a method listing fetched pilots
 the trait. `stale_live_seats(before)` finds crashed sessions (human seats excluded); aggregate
 `files_changed` as the first `pre_hash` and last `post_hash` per path from `attributions`. A missing
 pre-image entry means "unknown", not "did not exist". Redact event `detail` again before it goes
-into a record. Intent text needs the redaction pass (plan §9.2).
+into a record. Intent text needs the redaction pass (plan §9.2). Fill `SessionRecord.overrides`
+from `StateDb::override_uses_for_seat`, and make `acs log` show them: that is the part of WP7.1's
+acceptance ("every override appears in `acs log` and in the session record") left to WP4.1
+(decision 0026). Add read-only subcommands (`log`, `blame`, `stats`, `verify`) to `READ_ONLY` in
+`crates/acs-core/src/engine/protect.rs`, or agents will be denied them.
 
 **WP4.4 (signing)** — `ledger.rs` signs with `commit-tree -S` when `commit.gpgsign` is true and
 falls back to unsigned. `signing.rs` still owns detecting and verifying; join commits (empty tree,
@@ -222,17 +234,11 @@ hook binary is missing (confirmed), so the `acs`-on-`PATH` check matters more th
 Code, which fails open; an optional strict mode (`onFailure: block`) is recorded in 0013. A change
 to `integrations/antigravity/` needs a rebuild to reach `acs plugin install antigravity`.
 
-**WP7.1 (territory)** — unblocked now that WP5.3 is built. `acs init` can write `owned` zones with
-single-pilot owners (decision 0025), and four places say ACS does not enforce them yet: the
-comment `propose::territory_toml` writes, `render_zones` in `commands/init/mod.rs`, the
-`acs-setup` skill (and its two plugin copies) and `docs/wiki/Configuring-Policy.md`. Change all
-four when enforcement lands. The setup skill already tells pilots what `owned` will mean.
-
-**WP7.2 (hardening)** — known bypasses: an agent starting a nested harness with hooks disabled
-(`claude --bare -p`, `claude --settings '{"disableAllHooks":true}'`); writes to harness config
-outside the repo (`~/.claude/settings.json`, `~/.gemini/config/hooks.json`), which repository globs
-cannot seal (file tools get `path_escapes_repo` ask; shell writes are uncovered); agents running
-`acs off`. Classify agent CLIs as unknown-target commands.
+**WP7.1 and WP7.2 (done, decision 0026)** — every new bypass goes into
+`crates/acs-cli/tests/fixtures/adversarial.txt` and, if it cannot be closed, into the residual risks
+of `docs/security/overrides.md`. A new harness adds its user-level config to
+`runtime::protect::outside_seals` and its hook-disabling flags to `protect::harness` in
+`acs-core`. `tests/e2e/real/owned_territory.sh` is the real-agent check (`docs/releases/wp7-territory.md`).
 
 **Known gaps and sharp edges**
 
@@ -260,7 +266,7 @@ cannot seal (file tools get `path_escapes_repo` ask; shell writes are uncovered)
 
 | Change | Needed by | Source |
 | --- | --- | --- |
-| `SimpleCommand.wrappers` so bans can match `sudo *`; agent-CLI classification | WP7.2 | WP1.4, WP2.2 |
+| `SimpleCommand.wrappers` so user bans can match `sudo *` (self-protection did not need it: `words` already drop wrappers, decision 0026) | before 1.0 | WP1.4, WP2.2 |
 | Optional `[lore]` config keys (inject cap 4,000 chars, stale threshold 30%) | WP6.1, WP6.2 | plan §7 |
 | `FileChange` cannot say "pre-hash unknown" vs "did not exist" | WP4.1 | WP2.1 |
 | Expose the engine's claim-message helpers (`age`, holder) from `acs-core` | any | WP2.4 duplicated them |
@@ -282,8 +288,12 @@ cannot seal (file tools get `path_escapes_repo` ask; shell writes are uncovered)
   Tell teammates to install `acs` before opening an adopted repository; `acs doctor` checks it. A
   strict mode that makes Claude Code fail closed too is noted in decision 0013, not enabled. The cloud environment's network setting for `antigravity.google` only
   matters if a cloud session ever needs the docs; this machine reads them.
-- After M1: run `acs init` in this repository to start dogfooding. Agents then cannot edit
-  `.acs/**`, `.github/workflows/**` or the Claude settings files, so those changes fall to the human.
+- Dogfooding (started 2026-11-08): agents cannot edit `.acs/**`, `.github/workflows/**` or the
+  Claude settings files, so those changes fall to the human. After WP7 merges: reinstall `acs`
+  (`cargo install --path crates/acs-cli --locked`). The new build migrates the state to schema 5, and
+  older builds then report it unavailable. This repository's `.acs/policy/territory.toml` still has
+  the comment "ACS does not enforce `owned` zones yet"; it is sealed, so the human must edit it.
+  Agents here can no longer run `acs` against scratch repositories from their shell (decision 0026).
 - Release setup: `docs/releases/README.md` (name check, public repository, npm scope
   and token). The first tag is the first real run of `release.yml` and `installers.yml`.
 - Still open from Phase 1: branch protection on `main`; CODEOWNERS for `.acs/policy/` and `spec/`;
