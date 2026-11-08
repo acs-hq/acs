@@ -19,6 +19,7 @@ getrandom = "0.4.3"
 globset = { version = "0.4.18", default-features = false }
 jiff = { version = "0.2.38", default-features = false, features = ["std", "serde"] }
 jsonschema = { version = "0.60.2", default-features = false }
+notify = "8.2.2"
 proptest = { version = "1.12.0", default-features = false, features = ["std"] }
 rmcp = { version = "3.8.0", default-features = false, features = ["server", "transport-io"] }
 rusqlite = { version = "0.41.1", features = ["bundled"] }

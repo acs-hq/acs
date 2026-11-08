@@ -306,9 +306,11 @@ fn changed_since(meta: &fs::Metadata, since: SystemTime) -> bool {
     false
 }
 
-/// The paths among `paths` that `.gitignore` rules ignore, via `git check-ignore`. Fails open:
-/// if git cannot answer, nothing is considered ignored.
-fn ignored_among(root: &Path, paths: &[String]) -> HashSet<String> {
+/// The paths among `paths` (relative to the work tree `root`, `/`-separated) that `.gitignore`
+/// rules ignore, via `git check-ignore`. Fails open: if git cannot answer, nothing is considered
+/// ignored. A tracked file that matches an ignore pattern (force-added) counts as ignored.
+#[must_use]
+pub fn ignored_among(root: &Path, paths: &[String]) -> HashSet<String> {
     if paths.is_empty() {
         return HashSet::new();
     }

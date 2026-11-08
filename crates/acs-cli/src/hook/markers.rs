@@ -101,6 +101,26 @@ pub fn take_tool_marker(ctx: &RepoContext, seat: &SeatId) -> Option<ToolMarker> 
     marker
 }
 
+/// Every tool marker still waiting for its post-tool step, with the seat it belongs to: the
+/// shell, delete and move calls that are running now (or whose session died mid-call).
+#[must_use]
+pub fn tool_markers(ctx: &RepoContext) -> Vec<(String, ToolMarker)> {
+    let Some(home) = ctx.repo_home.as_ref() else {
+        return Vec::new();
+    };
+    let Ok(entries) = fs::read_dir(home.pending_dir().join("tool")) else {
+        return Vec::new();
+    };
+    entries
+        .filter_map(Result::ok)
+        .filter_map(|entry| {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            let seat = name.strip_suffix(".json")?.to_owned();
+            Some((seat, read_json(&entry.path())?))
+        })
+        .collect()
+}
+
 /// Removes the tool marker of `seat` (session end).
 pub fn clear_tool_marker(ctx: &RepoContext, seat: &SeatId) {
     if let Some(path) = pending_file(ctx, "tool", &format!("{seat}.json")) {
