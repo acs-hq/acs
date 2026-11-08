@@ -349,11 +349,27 @@ fn cases() -> Vec<Case> {
         ),
         // path_escapes_repo
         case(
-            "write outside the repository",
+            "write outside the repository is not ACS's business by default",
             Fixture::new(ToolKind::Write).with(outside("/etc/hosts", TargetOp::Write)),
             plain(),
+            Allow,
+            R::Ok,
+        ),
+        case(
+            "write outside the repository with protect_outside_repo",
+            Fixture::new(ToolKind::Write).with(outside("/etc/hosts", TargetOp::Write)),
+            plain().guarding_outside(),
             Ask,
             R::PathEscapesRepo,
+        ),
+        case(
+            "outside seals deny whatever protect_outside_repo says",
+            Fixture::new(ToolKind::Write)
+                .with(outside("/home/me/.acs/repos/x", TargetOp::Write))
+                .sealing_outside("/home/me/.acs", "ACS state", Some(".acs/")),
+            plain(),
+            Deny,
+            R::SealedPath,
         ),
         case(
             "unresolvable write target",
@@ -790,7 +806,7 @@ fn cases() -> Vec<Case> {
             Fixture::new(ToolKind::Write)
                 .with(outside("/etc/hosts", TargetOp::Write))
                 .state_unavailable(),
-            plain(),
+            plain().guarding_outside(),
             Ask,
             R::PathEscapesRepo,
         ),
@@ -896,7 +912,7 @@ fn cases() -> Vec<Case> {
                 .with(delete("old").recursive(&["old/a", "old/b"]))
                 .claimed(own("old/a"))
                 .claimed(own("old/b")),
-            plain().budgets(0, 1),
+            plain().budgets(0, 1).guarding_outside(),
             Ask,
             R::PathEscapesRepo,
         ),
@@ -1129,7 +1145,7 @@ fn ask_keeps_requests_as_for_allow() {
     let f = Fixture::new(ToolKind::Write)
         .with(outside("/etc/hosts", TargetOp::Write))
         .with(write("src/a.rs"));
-    let out = run(&f, &FakePolicy::default());
+    let out = run(&f, &FakePolicy::default().guarding_outside());
     assert_eq!(out.decision.outcome, Outcome::Ask);
     assert_eq!(out.claim_requests, vec![file_request("src/a.rs")]);
     assert_eq!(out.snapshot_requests, vec![snapshot("src/a.rs", false)]);
@@ -1374,7 +1390,7 @@ fn guard_messages() {
 
     let escape = Fixture::new(ToolKind::Write).with(outside("/etc/hosts", TargetOp::Write));
     assert_eq!(
-        message(&escape, &FakePolicy::default()),
+        message(&escape, &FakePolicy::default().guarding_outside()),
         "`/etc/hosts` is outside the repository, where ACS cannot protect other people's work. \
          Your pilot is asked to approve it; keep changes inside the repository if you can."
     );

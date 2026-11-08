@@ -83,6 +83,7 @@ pub struct FakePolicy {
     pub sealed: Vec<String>,
     pub zones: Vec<FakeZone>,
     pub protected: Vec<String>,
+    pub outside: bool,
 }
 
 impl Default for FakePolicy {
@@ -93,6 +94,7 @@ impl Default for FakePolicy {
             sealed: DEFAULT_SEALED.iter().map(|s| (*s).to_owned()).collect(),
             zones: Vec::new(),
             protected: Vec::new(),
+            outside: false,
         }
     }
 }
@@ -116,6 +118,12 @@ impl FakePolicy {
             owners: vec![Owner::Pilot(pilot.into())],
             pilots: vec![pilot.into()],
         });
+        self
+    }
+
+    /// `protect_outside_repo = true`.
+    pub fn guarding_outside(mut self) -> Self {
+        self.outside = true;
         self
     }
 
@@ -168,6 +176,10 @@ impl PolicyView for FakePolicy {
 
     fn is_protected_branch(&self, branch: &str) -> bool {
         self.protected.iter().any(|p| glob(p, branch))
+    }
+
+    fn protect_outside_repo(&self) -> bool {
+        self.outside
     }
 
     fn banned_match(&self, command: &str) -> Option<&str> {

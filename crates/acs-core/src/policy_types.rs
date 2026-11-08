@@ -142,6 +142,12 @@ pub struct Guards {
     /// Branch name globs on which history rewrites and force pushes are denied.
     #[serde(default)]
     pub protected_branches: Vec<String>,
+    /// Ask before an agent writes or deletes outside the repository (`path_escapes_repo`).
+    /// Off by default: ACS guards the repository. Targets that cannot be resolved, and targets
+    /// outside that link back into the repository, are asked about either way; protected
+    /// locations such as `ACS_HOME` are always denied.
+    #[serde(default)]
+    pub protect_outside_repo: bool,
     /// Limits on destructive shell commands.
     #[serde(default)]
     pub destructive: Destructive,
@@ -151,8 +157,8 @@ pub struct Guards {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ZoneKind {
-    /// Only the owners' agents may change it; other agents are denied. Implementations that do
-    /// not yet enforce ownership MUST treat `owned` zones as `shared`.
+    /// Only the owners' agents may change it; other agents are denied (`owned_territory`)
+    /// unless a human override covers the file.
     Owned,
     /// Any agent may change it after taking a claim.
     Shared,

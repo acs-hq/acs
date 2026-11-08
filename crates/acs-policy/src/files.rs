@@ -46,6 +46,7 @@ pub fn builtin_guards() -> Guards {
         spec: None,
         sealed: strings(DEFAULT_SEALED),
         protected_branches: strings(DEFAULT_PROTECTED_BRANCHES),
+        protect_outside_repo: false,
         destructive: Destructive {
             ban: strings(DEFAULT_BAN),
             ..Destructive::default()
@@ -72,6 +73,7 @@ pub fn resolve_guards(file: Guards, has_protected_branches: bool, has_ban: bool)
         } else {
             defaults.protected_branches
         },
+        protect_outside_repo: file.protect_outside_repo,
         destructive: Destructive {
             ban: if has_ban {
                 file.destructive.ban

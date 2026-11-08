@@ -325,6 +325,10 @@ impl PolicyView for CompiledPolicy {
         })
     }
 
+    fn protect_outside_repo(&self) -> bool {
+        self.files.guards.protect_outside_repo
+    }
+
     fn banned_match(&self, command: &str) -> Option<&str> {
         let index = self.bans.iter().position(|ban| ban.is_match(command))?;
         Some(self.files.guards.destructive.ban[index].as_str())

@@ -44,7 +44,7 @@
       "oneOf": [
         {
           "const": "owned",
-          "description": "Only the owners' agents may change it; other agents are denied. Implementations that do\nnot yet enforce ownership MUST treat `owned` zones as `shared`.",
+          "description": "Only the owners' agents may change it; other agents are denied (`owned_territory`)\nunless a human override covers the file.",
           "type": "string"
         },
         {
