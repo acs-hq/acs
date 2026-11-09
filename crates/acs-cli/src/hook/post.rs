@@ -6,9 +6,13 @@
 //! at all (Antigravity). Changes are found by looking, not by trusting the tool's report.
 
 use std::collections::HashSet;
+use std::fs;
 use std::time::SystemTime;
 
-use acs_core::{Decision, Outcome, ReasonCode, RepoPath, Timestamp, ToolEvent, ToolKind};
+use acs_core::gate::HeldClaim;
+use acs_core::{
+    ClaimId, Decision, Outcome, ReasonCode, ReleaseReason, RepoPath, Timestamp, ToolEvent, ToolKind,
+};
 use acs_git::status::{ChangeKind, ScanInput, ScanMode, ScanOptions, scan_changes};
 use acs_store::{Attribution, AttributionSource, NewEvent, SeatInfo, StateDb};
 
@@ -118,6 +122,9 @@ fn shell_changes(
         Timestamp::from_microsecond(since_micros).map_or(SystemTime::UNIX_EPOCH, SystemTime::from);
 
     let live = db.live_claims(now).unwrap_or_default();
+    if let Some(marker) = &marker {
+        release_directory_claims(ctx, db, info, &live, &marker.paths, now);
+    }
     let mut known: Vec<String> = marker.as_ref().map(|m| m.paths.clone()).unwrap_or_default();
     let mut dirs: Vec<String> = marker
         .as_ref()
@@ -189,6 +196,34 @@ fn shell_changes(
 
     record_baselines(ctx, &info.session_id, &paths, since, now);
     observe(ctx, &info.session_id, &paths, now)
+}
+
+/// Releases the seat's claims on paths this command was predicted to write that are now
+/// directories. The pre-tool step claims a path that does not exist yet as a file, so `mkdir
+/// newdir` or `cp -r src newdir` would otherwise leave a file claim on a directory for the rest
+/// of the session. Best effort.
+fn release_directory_claims(
+    ctx: &RepoContext,
+    db: &StateDb,
+    info: &SeatInfo,
+    live: &[HeldClaim],
+    predicted: &[String],
+    now: Timestamp,
+) {
+    let ids: Vec<ClaimId> = live
+        .iter()
+        .filter(|held| held.claim.seat_id == info.seat.seat_id)
+        .filter(|held| {
+            let path = held.claim.scope.path().as_str();
+            predicted.iter().any(|p| p == path)
+                && fs::symlink_metadata(ctx.layout.work_tree.join(path))
+                    .is_ok_and(|meta| meta.is_dir())
+        })
+        .map(|held| held.claim.claim_id.clone())
+        .collect();
+    if !ids.is_empty() {
+        let _ = db.release_claims(&ids, ReleaseReason::Released, now);
+    }
 }
 
 fn empty_report() -> acs_git::status::ScanReport {

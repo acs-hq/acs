@@ -134,6 +134,30 @@ fn banned_commands_and_unknown_targets() {
 }
 
 #[test]
+fn a_shell_command_that_creates_a_directory_leaves_no_claim_on_it() {
+    let world = World::new();
+    let agent = Agent::new(&world, "claude-code", "s1");
+    agent.start();
+
+    // Before the command runs, the new directory looks like a file to claim.
+    let command = "mkdir -p tools/.vscode && touch notes.txt";
+    assert_eq!(agent.pre_shell(command).outcome, Outcome::Allow);
+    assert_eq!(agent.claimed(), ["notes.txt", "tools/.vscode"]);
+    fs::create_dir_all(world.repo.join("tools/.vscode")).unwrap();
+    world.write("notes.txt", "");
+    assert_eq!(agent.post_shell(command).outcome, Outcome::Allow);
+    assert_eq!(agent.claimed(), ["notes.txt"], "the file stays claimed");
+
+    // The same for a directory created as a side effect.
+    let command = "cp -r src backup";
+    assert_eq!(agent.pre_shell(command).outcome, Outcome::Allow);
+    assert!(agent.claimed().contains(&"backup".to_owned()));
+    world.write("backup/lib.rs", "pub fn lib() {}\n");
+    assert_eq!(agent.post_shell(command).outcome, Outcome::Allow);
+    assert!(!agent.claimed().contains(&"backup".to_owned()));
+}
+
+#[test]
 fn a_shell_command_that_edits_files_is_attributed_in_post_tool() {
     let world = World::new();
     let agent = Agent::new(&world, "claude-code", "s1");
