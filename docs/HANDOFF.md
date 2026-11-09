@@ -1,4 +1,4 @@
-# Orchestrator handoff (after WP7.4)
+# Orchestrator handoff (after Phase 7)
 
 Written 2026-10-30 at the end of the session that built Phase 2, and updated 2026-10-31 after
 Phase 3 (WP3.1), after WP5.2 and WP5.1, and after the M1 parts of WP10. It replaces the handoff
@@ -29,6 +29,15 @@ extension: it claims the files a person edits and shows the files others hold. `
 claiming for any other editor. Both release a claim once the file is saved and idle for two minutes.
 The extension is **not published**: the human tests it locally first (`docs/releases/wp7-humans.md`)
 and owns the Marketplace and Open VSX accounts. CI does not build it yet (section 5).
+
+**Phase 7 (WP7.1–WP7.4) is complete on `main` (2026-11-09).** M4's gate (plan section 8.3) is not
+fully met yet: overrides must appear in `acs log` and session records (WP4.1, section 3), and the
+in-editor run of `docs/releases/wp7-humans.md` must be recorded. Issue #17 is closed; #33 (plain
+`acs claim` claims are never refreshed) stays open, with a comment on what the extension and
+`acs watch` now refresh. Next in the plan's order (section 8.2): the rest of step 4a (WP4.1, WP4.4,
+WP6.1, WP8.1), then 4b (WP4.2, WP4.3, WP4.5, WP6.2, WP5.4, WP8.2), then 4c (WP8.3), then the
+Antigravity hard stop. Not built, offered to the human: a sidebar view for the extension (an
+Activity Bar "Claims" panel grouped by holder, with release buttons), and an extension icon.
 
 ## 1. Where things stand
 
@@ -244,6 +253,17 @@ New in WP7.3 and WP7.4:
    extension ships `LICENSE` and `LICENSE-APACHE`.
 4. **A `cd` in the Bash tool moves the session's working directory** when it succeeds inside the
    project; use absolute paths, or `cd` back in the same command.
+5. **Explain a feature with a worked example.** The human asked twice what `acs watch` does, and
+   whether the extension is built on it (it is not: both call the same claim code). A walk-through
+   (save `src/payments.rs`, the agent is denied naming you, two minutes later it is released)
+   landed where a list of rules did not. Lead user docs and replies with one.
+6. **Self-protection blocks `acs <stateful subcommand> --help`** from an agent's shell, and takes
+   the rest of the command line with it; use `acs help <subcommand>` (dogfooding table in
+   `docs/security/overrides.md`, still open).
+7. **Checking the extension without a VS Code window:** load `out/src/extension.js` in Node with
+   a stub `vscode` module (a `Proxy` that returns no-op disposables, with real values for
+   `workspace.workspaceFolders` and `window.visibleTextEditors`) and call `activate`. It catches
+   wiring errors, not behaviour; the in-editor checks stay the human's.
 
 ## 3. Must-know items for the next phases
 
