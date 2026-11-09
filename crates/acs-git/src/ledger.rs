@@ -18,7 +18,7 @@ use crate::repo::objects;
 const APPEND_ATTEMPTS: usize = 64;
 
 /// Whether the user's configuration asks for signed commits.
-fn signing_configured(work_tree: &Path) -> Result<bool, GitError> {
+pub(crate) fn signing_configured(work_tree: &Path) -> Result<bool, GitError> {
     let output = git_output(
         work_tree,
         &["config", "--type=bool", "--get", "commit.gpgsign"],

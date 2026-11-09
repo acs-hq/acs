@@ -203,12 +203,13 @@ fn a_locked_database_times_out_with_a_typed_error() {
 // Migrations
 // ---------------------------------------------------------------------------------------------
 
-const MIGRATIONS: [&str; 5] = [
+const MIGRATIONS: [&str; 6] = [
     include_str!("../src/migrations/0001_local_state.sql"),
     include_str!("../src/migrations/0002_remote_claims.sql"),
     include_str!("../src/migrations/0003_hook_pipeline.sql"),
     include_str!("../src/migrations/0004_collisions.sql"),
     include_str!("../src/migrations/0005_overrides.sql"),
+    include_str!("../src/migrations/0006_lore.sql"),
 ];
 
 fn schema_of(path: &std::path::Path) -> Vec<String> {
@@ -1138,6 +1139,56 @@ fn events_are_recorded_structurally_and_summarized() {
 
     assert_eq!(db.prune_events(at(3)).unwrap(), 2);
     assert_eq!(db.seat_events(&sara.seat_id).unwrap().len(), 1);
+}
+
+#[test]
+fn lore_is_marked_loaded_once_per_seat() {
+    let repo = TestRepo::new();
+    let db = repo.open();
+    let sara = seat(&db, "sara@example.com", "s1");
+    let omar = seat(&db, "omar@example.com", "s2");
+    let pay: acs_core::LoreId = "lore_pay".parse().unwrap();
+    let api: acs_core::LoreId = "lore_api".parse().unwrap();
+
+    let fresh = db
+        .mark_lore_loaded(&sara.seat_id, &[(pay.clone(), false)], at(1))
+        .unwrap();
+    assert_eq!(fresh, std::slice::from_ref(&pay));
+    let fresh = db
+        .mark_lore_loaded(
+            &sara.seat_id,
+            &[(pay.clone(), false), (api.clone(), true)],
+            at(2),
+        )
+        .unwrap();
+    assert_eq!(
+        fresh,
+        std::slice::from_ref(&api),
+        "lore_pay was already shown"
+    );
+    let fresh = db
+        .mark_lore_loaded(&omar.seat_id, &[(pay.clone(), false)], at(3))
+        .unwrap();
+    assert_eq!(
+        fresh,
+        std::slice::from_ref(&pay),
+        "another seat gets it too"
+    );
+
+    let ids = db.lore_loaded_ids(&sara.seat_id).unwrap();
+    assert_eq!(ids.len(), 2);
+    let loaded = db.lore_loaded_for_seat(&sara.seat_id).unwrap();
+    assert_eq!(loaded.len(), 2);
+    assert_eq!(loaded[0].lore_id, pay);
+    assert_eq!(loaded[0].loaded_at, at(1));
+    assert!(!loaded[0].stale);
+    assert_eq!(loaded[1].lore_id, api);
+    assert!(loaded[1].stale);
+    assert!(
+        db.mark_lore_loaded(&sara.seat_id, &[], at(4))
+            .unwrap()
+            .is_empty()
+    );
 }
 
 #[test]

@@ -452,7 +452,7 @@ pub(crate) fn commit(
 }
 
 /// The longest a commit may take, signing included.
-const SIGN_LIMIT: Duration = Duration::from_secs(30);
+pub(crate) const SIGN_LIMIT: Duration = Duration::from_secs(30);
 
 /// Reads `pipe` to the end on a thread of its own.
 fn drain(mut pipe: impl Read + Send + 'static) -> Receiver<Vec<u8>> {
@@ -467,7 +467,11 @@ fn drain(mut pipe: impl Read + Send + 'static) -> Receiver<Vec<u8>> {
 
 /// Runs `command` with no stdin, for at most `limit`, and returns its output, trimmed. A command
 /// that overruns is killed and reported as failed.
-fn run_limited(mut command: Command, limit: Duration, label: &str) -> Result<String, GitError> {
+pub(crate) fn run_limited(
+    mut command: Command,
+    limit: Duration,
+    label: &str,
+) -> Result<String, GitError> {
     let mut child = command
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
