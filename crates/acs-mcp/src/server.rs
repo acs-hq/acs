@@ -26,7 +26,8 @@ const ANTIGRAVITY_ALWAYS_LOAD: &str = "antigravity/alwaysLoad";
 /// What the server tells a model about itself at `initialize`. Short: it is spent context.
 const INSTRUCTIONS: &str = "ACS coordinates the coding agents working in this repository. \
 Claim files with acs_claim before you edit or delete them, say what you are doing with \
-acs_intent, release files when done, and call acs_why when something is denied.";
+acs_intent, release files when done, and call acs_why when something is denied. Follow the \
+lore ACS shows you, and propose what the next agent should know with acs_lore_propose.";
 
 /// How the server behaves.
 #[derive(Debug, Clone, Default)]

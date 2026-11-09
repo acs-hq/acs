@@ -51,10 +51,12 @@ pub enum Command {
     Sync(commands::sync::SyncArgs),
     /// Claim the files you change in any editor, until stopped.
     Watch(commands::watch::WatchArgs),
+    /// Read the repository's lore and review what agents propose.
+    Lore(commands::lore::LoreArgs),
     /// Install the ACS plugin into an agent harness.
     Plugin(commands::plugin::PluginArgs),
     /// Run the MCP server on stdio: the tools `acs_status`, `acs_claim`, `acs_release`,
-    /// `acs_intent` and `acs_why` for agents.
+    /// `acs_intent`, `acs_why` and `acs_lore_propose` for agents.
     Mcp(McpArgs),
     /// Run by the git hooks `acs init` installs (pre-commit, prepare-commit-msg, pre-push).
     #[command(name = "git-hook")]
@@ -150,6 +152,7 @@ pub fn run(cli: Cli) -> ExitCode {
         Command::Doctor(args) => commands::doctor::run(&args),
         Command::Sync(args) => commands::sync::run(&args),
         Command::Watch(args) => commands::watch::run(&args),
+        Command::Lore(args) => commands::lore::run(&args),
         Command::Plugin(args) => commands::plugin::run(&args),
         Command::Mcp(args) => mcp::run(&args),
         Command::GitHook(args) => git_hook::run(&args),

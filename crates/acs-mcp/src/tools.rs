@@ -1,4 +1,4 @@
-//! The five tools: their definitions (written for agents: short and concrete), argument
+//! The six tools: their definitions (written for agents: short and concrete), argument
 //! parsing, dispatch to a [`Backend`], and the text of the results.
 //!
 //! This module knows nothing about the MCP protocol library: [`definitions`] and [`call`] work on
@@ -13,7 +13,8 @@ use serde_json::{Map, Value};
 
 use crate::backend::{
     Backend, BackendError, Caller, ClaimInfo, ClaimReply, ClaimRequest, DecisionInfo, IntentReply,
-    IntentRequest, ReleaseReply, ReleaseRequest, StatusReply, WhyReply,
+    IntentRequest, LoreProposeReply, LoreProposeRequest, ReleaseReply, ReleaseRequest, StatusReply,
+    WhyReply,
 };
 
 /// `acs_status`.
@@ -26,6 +27,8 @@ pub const RELEASE: &str = "acs_release";
 pub const INTENT: &str = "acs_intent";
 /// `acs_why`.
 pub const WHY: &str = "acs_why";
+/// `acs_lore_propose`.
+pub const LORE_PROPOSE: &str = "acs_lore_propose";
 
 /// How many items of a long list a text result shows before "and N more".
 const LIST_LIMIT: usize = 12;
@@ -92,6 +95,25 @@ struct IntentArgs {
     text: String,
 }
 
+// Arguments of `acs_lore_propose`.
+#[derive(Debug, Deserialize, JsonSchema)]
+struct LoreProposeArgs {
+    /// Path globs relative to the repository root that the fact applies to, such as
+    /// ["payments/**"]. Leave it out when replacing an entry to keep that entry's scope.
+    #[serde(default, deserialize_with = "one_or_many")]
+    #[schemars(with = "Vec<String>")]
+    scope: Vec<String>,
+    /// The fact, in a few sentences of Markdown: what the next agent working there must know
+    /// that the code does not make obvious.
+    text: String,
+    /// The id of a lore entry you were shown (such as lore_7f3a) that this corrects.
+    #[serde(default)]
+    replaces: Option<String>,
+    /// One sentence for the reviewer: how you learned it.
+    #[serde(default)]
+    why: Option<String>,
+}
+
 // Arguments of `acs_status` and `acs_why`: none.
 #[derive(Debug, Deserialize, JsonSchema)]
 struct NoArgs {}
@@ -125,7 +147,7 @@ fn schema_of<T: JsonSchema>() -> Map<String, Value> {
     schema
 }
 
-/// The five tool definitions, in the order they are listed.
+/// The six tool definitions, in the order they are listed.
 #[must_use]
 pub fn definitions() -> Vec<ToolDef> {
     vec![
@@ -174,13 +196,25 @@ pub fn definitions() -> Vec<ToolDef> {
             read_only: true,
             idempotent: true,
         },
+        ToolDef {
+            name: LORE_PROPOSE,
+            description: "Propose lore: a short fact about part of this repository that the \
+                          next agent working there needs and the code does not make obvious (a \
+                          convention, a trap, a reason). The owner reviews it before anyone is \
+                          shown it. Call it at the end of a task in which you learned such a \
+                          fact, and to correct lore you were shown (pass its id as `replaces`). \
+                          Never write files under .acs/ yourself.",
+            input_schema: schema_of::<LoreProposeArgs>(),
+            read_only: false,
+            idempotent: false,
+        },
     ]
 }
 
 /// The names of the tools, for messages.
 #[must_use]
 pub fn names() -> Vec<&'static str> {
-    vec![STATUS, CLAIM, RELEASE, INTENT, WHY]
+    vec![STATUS, CLAIM, RELEASE, INTENT, WHY, LORE_PROPOSE]
 }
 
 /// Runs the tool `name` with `arguments` for `caller` against `backend`.
@@ -198,6 +232,18 @@ pub fn call(
         RELEASE => with_args::<PathsArgs>(name, args, |a| release(backend, caller, a.paths)),
         INTENT => with_args::<IntentArgs>(name, args, |a| intent(backend, caller, a.text)),
         WHY => why(backend, caller, &args),
+        LORE_PROPOSE => with_args::<LoreProposeArgs>(name, args, |a| {
+            lore_propose(
+                backend,
+                caller,
+                LoreProposeRequest {
+                    scope: a.scope,
+                    text: a.text,
+                    replaces: a.replaces,
+                    why: a.why,
+                },
+            )
+        }),
         other => ToolOutput::error(format!(
             "Unknown tool `{other}`. The ACS tools are: {}.",
             names().join(", ")
@@ -223,6 +269,10 @@ fn usage_of(name: &str) -> &'static str {
     match name {
         CLAIM | RELEASE => "Pass `paths`: a list of file or directory paths.",
         INTENT => "Pass `text`: one sentence saying what you are about to do.",
+        LORE_PROPOSE => {
+            "Pass `text` (the fact) and `scope` (path globs such as [\"payments/**\"]); \
+             optionally `replaces` (a lore id) and `why`."
+        }
         _ => "This tool takes no arguments.",
     }
 }
@@ -272,6 +322,19 @@ fn intent(backend: &dyn Backend, caller: &Caller, text: String) -> ToolOutput {
 fn why(backend: &dyn Backend, caller: &Caller, _args: &Value) -> ToolOutput {
     match backend.why(caller) {
         Ok(reply) => ToolOutput::ok(why_text(&reply), &reply),
+        Err(err) => failure(&err),
+    }
+}
+
+fn lore_propose(backend: &dyn Backend, caller: &Caller, request: LoreProposeRequest) -> ToolOutput {
+    if request.text.trim().is_empty() {
+        return ToolOutput::error(format!(
+            "The lore text is empty. {}",
+            usage_of(LORE_PROPOSE)
+        ));
+    }
+    match backend.lore_propose(caller, &request) {
+        Ok(reply) => ToolOutput::ok(lore_propose_text(&reply), &reply),
         Err(err) => failure(&err),
     }
 }
@@ -371,7 +434,11 @@ fn status_text(reply: &StatusReply) -> String {
 
 fn claim_text(reply: &ClaimReply) -> String {
     match reply {
-        ClaimReply::Granted { paths, warnings } => {
+        ClaimReply::Granted {
+            paths,
+            warnings,
+            lore,
+        } => {
             let mut text = if paths.is_empty() {
                 "Claimed nothing new.".to_owned()
             } else {
@@ -388,6 +455,10 @@ fn claim_text(reply: &ClaimReply) -> String {
             };
             for warning in warnings {
                 text.push_str(&format!("\nWarning: {warning}"));
+            }
+            for block in lore {
+                text.push_str("\n\n");
+                text.push_str(block);
             }
             text
         }
@@ -450,6 +521,23 @@ fn why_text(reply: &WhyReply) -> String {
         }
         _ => format!("Your last action was {outcome} ({reason_code}, {at}).\n{message}"),
     }
+}
+
+fn lore_propose_text(reply: &LoreProposeReply) -> String {
+    let what = match &reply.replaces {
+        Some(id) => format!("a correction of `{id}`"),
+        None => "new lore".to_owned(),
+    };
+    let reviewer = reply
+        .reviewer
+        .as_deref()
+        .map_or_else(|| "The owner".to_owned(), |r| format!("Its owner ({r})"));
+    format!(
+        "Proposed {what} for {} as {}. {reviewer} reviews it with `acs lore review`; it is not \
+         shown to anyone until accepted. Nothing else to do.",
+        ticked(&reply.scope, LIST_LIMIT),
+        reply.proposal_id
+    )
 }
 
 fn plural(n: usize) -> &'static str {
@@ -550,6 +638,11 @@ mod tests {
                 ClaimReply::Granted {
                     paths: request.paths.clone(),
                     warnings: vec!["the remote view is stale".into()],
+                    lore: vec![
+                        "ACS lore for `src/**` (lore_a, owner sara@example.com):
+Use X."
+                            .into(),
+                    ],
                 }
             })
         }
@@ -591,6 +684,24 @@ mod tests {
                 }),
             })
         }
+
+        fn lore_propose(
+            &self,
+            _caller: &Caller,
+            request: &LoreProposeRequest,
+        ) -> Result<LoreProposeReply, BackendError> {
+            self.gate()?;
+            self.note(format!(
+                "lore {:?} {} {:?} {:?}",
+                request.scope, request.text, request.replaces, request.why
+            ));
+            Ok(LoreProposeReply {
+                proposal_id: "prop_1".into(),
+                scope: request.scope.clone(),
+                replaces: request.replaces.clone(),
+                reviewer: Some("sara@example.com".into()),
+            })
+        }
     }
 
     fn args(value: Value) -> Option<Map<String, Value>> {
@@ -602,7 +713,7 @@ mod tests {
     }
 
     #[test]
-    fn five_tools_are_defined_with_schemas() {
+    fn six_tools_are_defined_with_schemas() {
         let defs = definitions();
         let listed: Vec<&str> = defs.iter().map(|d| d.name).collect();
         assert_eq!(
@@ -612,7 +723,8 @@ mod tests {
                 "acs_claim",
                 "acs_release",
                 "acs_intent",
-                "acs_why"
+                "acs_why",
+                "acs_lore_propose"
             ]
         );
         for def in &defs {
@@ -631,6 +743,66 @@ mod tests {
             json!("array")
         );
         assert_eq!(claim.input_schema["required"], json!(["paths"]));
+    }
+
+    #[test]
+    fn lore_propose_passes_everything_and_says_it_waits_for_review() {
+        let fake = Fake::default();
+        let out = run(
+            &fake,
+            LORE_PROPOSE,
+            json!({"scope": "src/**", "text": "Use X.", "why": "saw it"}),
+        );
+        assert!(!out.is_error, "{}", out.text);
+        assert!(
+            out.text
+                .contains("Proposed new lore for `src/**` as prop_1"),
+            "{}",
+            out.text
+        );
+        assert!(out.text.contains("sara@example.com"), "{}", out.text);
+        assert!(
+            out.text.contains("not shown to anyone until accepted"),
+            "{}",
+            out.text
+        );
+        let calls = fake.calls.lock().unwrap().clone();
+        assert_eq!(calls, [r#"lore ["src/**"] Use X. None Some("saw it")"#]);
+
+        let out = run(
+            &fake,
+            LORE_PROPOSE,
+            json!({"scope": ["a/**"], "text": "  "}),
+        );
+        assert!(out.is_error);
+        assert!(out.text.contains("empty"), "{}", out.text);
+        let out = run(&fake, LORE_PROPOSE, json!({"scope": ["a/**"]}));
+        assert!(out.is_error);
+        assert!(out.text.contains("Pass `text`"), "{}", out.text);
+        let out = run(
+            &fake,
+            LORE_PROPOSE,
+            json!({"text": "Dollars.", "replaces": "lore_7f3a"}),
+        );
+        assert!(
+            out.text.contains("a correction of `lore_7f3a`"),
+            "{}",
+            out.text
+        );
+    }
+
+    #[test]
+    fn claim_shows_the_lore_that_came_with_it() {
+        let out = run(&Fake::default(), CLAIM, json!({"paths": ["src/a.rs"]}));
+        assert!(
+            out.text.contains(
+                "
+
+ACS lore for `src/**`"
+            ),
+            "{}",
+            out.text
+        );
     }
 
     #[test]

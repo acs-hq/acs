@@ -123,6 +123,9 @@ pub enum ClaimReply {
         paths: Vec<String>,
         /// Warnings that did not change the outcome.
         warnings: Vec<String>,
+        /// Lore for these files that the caller had not been shown yet in this session.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        lore: Vec<String>,
     },
     /// Nothing was claimed.
     Refused {
@@ -186,7 +189,37 @@ pub struct WhyReply {
     pub decision: Option<DecisionInfo>,
 }
 
-/// What the five tools need from ACS.
+/// The request of [`Backend::lore_propose`].
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct LoreProposeRequest {
+    /// Path globs the entry applies to. May be empty when `replaces` is set.
+    pub scope: Vec<String>,
+    /// The entry's text.
+    pub text: String,
+    /// The id of an existing entry this corrects.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub replaces: Option<String>,
+    /// Why the agent proposes it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub why: Option<String>,
+}
+
+/// The reply to [`Backend::lore_propose`].
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct LoreProposeReply {
+    /// The proposal's id (`prop_...`).
+    pub proposal_id: String,
+    /// The scope as stored.
+    pub scope: Vec<String>,
+    /// The entry it would replace.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub replaces: Option<String>,
+    /// Who is expected to review it (the entry's or the zone's owner), when known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reviewer: Option<String>,
+}
+
+/// What the six tools need from ACS.
 ///
 /// A [`BackendError::NoSession`] from any method means the caller has no seat yet; `status`
 /// instead answers with `seat: None` and a note, since the repository view is still useful.
@@ -232,4 +265,17 @@ pub trait Backend: Send + Sync + 'static {
     ///
     /// [`BackendError::NoSession`] without a seat; [`BackendError::Unavailable`].
     fn why(&self, caller: &Caller) -> Result<WhyReply, BackendError>;
+
+    /// `acs_lore_propose`: hold a lore proposal for the owner's review. Nothing is written to
+    /// the repository.
+    ///
+    /// # Errors
+    ///
+    /// [`BackendError::NoSession`] without a seat; [`BackendError::Invalid`] for a proposal that
+    /// does not pass the checks (the message says what to fix); [`BackendError::Unavailable`].
+    fn lore_propose(
+        &self,
+        caller: &Caller,
+        request: &LoreProposeRequest,
+    ) -> Result<LoreProposeReply, BackendError>;
 }

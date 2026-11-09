@@ -163,7 +163,8 @@ fn initialize_and_list_tools() {
             "acs_claim",
             "acs_release",
             "acs_intent",
-            "acs_why"
+            "acs_why",
+            "acs_lore_propose"
         ]
     );
     for tool in &tools {
@@ -373,6 +374,99 @@ fn claude_code_session_tools_end_to_end() {
 }
 
 #[test]
+fn claims_bring_lore_and_agents_propose_lore_for_review() {
+    let world = World::new();
+    world.write(
+        ".acs/policy/lore/src/errors.md",
+        "+++\nid = \"lore_err\"\nscope = [\"src/**\"]\nowner = \"lina@example.com\"\n\
+         written_against = \"HEAD\"\n+++\nErrors use thiserror.\n",
+    );
+    world.write(
+        ".acs/policy/territory.toml",
+        "[[zone]]\npaths = [\"src/**\"]\nkind = \"shared\"\nowners = [\"lina@example.com\"]\n",
+    );
+    let sara = Agent::new(&world, "claude-code", "cc-sara");
+    sara.start();
+    let mut server = Server::start(
+        &world,
+        &["--harness", "claude-code"],
+        &[("CLAUDE_CODE_SESSION_ID", "cc-sara")],
+    );
+    server.initialize("claude-code");
+
+    // The claim's reply carries the lore, once.
+    let claimed = server.call("acs_claim", json!({"paths": ["src/lib.rs"]}));
+    assert!(!is_error(&claimed), "{}", text(&claimed));
+    assert!(
+        text(&claimed).contains("ACS lore for `src/**` (lore_err"),
+        "{}",
+        text(&claimed)
+    );
+    assert!(text(&claimed).contains("Errors use thiserror."));
+    let again = server.call("acs_claim", json!({"paths": ["src/util.rs"]}));
+    assert!(!text(&again).contains("ACS lore"), "{}", text(&again));
+    // ... and the hook does not repeat it either.
+    let edit = sara.pre_edit("src/util.rs");
+    assert!(edit.context.iter().all(|c| !c.contains("lore_err")));
+
+    // A proposal is stored for review, never written to the repository.
+    let proposed = server.call(
+        "acs_lore_propose",
+        json!({"scope": ["./src/**"], "text": "Use anyhow only in main.", "why": "seen in main.rs"}),
+    );
+    assert!(!is_error(&proposed), "{}", text(&proposed));
+    let reply = text(&proposed);
+    assert!(
+        reply.contains("Proposed new lore for `src/**` as prop_"),
+        "{reply}"
+    );
+    assert!(reply.contains("Its owner (lina@example.com)"), "{reply}");
+    assert!(
+        !world
+            .repo
+            .join(".acs/policy/lore/src")
+            .read_dir()
+            .unwrap()
+            .any(|e| { e.unwrap().file_name() != "errors.md" })
+    );
+    let store = acs_lore::ProposalStore::new(world.repo_home().pending_dir().join("lore"));
+    let (pending, _) = store.list();
+    assert_eq!(pending.len(), 1);
+    assert_eq!(pending[0].scope, ["src/**"]);
+    assert_eq!(pending[0].proposed_by.harness, "claude-code");
+    assert_eq!(pending[0].why.as_deref(), Some("seen in main.rs"));
+
+    // A correction names the entry; a bad one says what to fix.
+    let fix = server.call(
+        "acs_lore_propose",
+        json!({"text": "Errors use thiserror 2.", "replaces": "lore_err"}),
+    );
+    assert!(
+        text(&fix).contains("a correction of `lore_err` for `src/**`"),
+        "{}",
+        text(&fix)
+    );
+    let bad = server.call("acs_lore_propose", json!({"text": "Something."}));
+    assert!(is_error(&bad));
+    assert!(
+        text(&bad).contains("Say where the lore applies"),
+        "{}",
+        text(&bad)
+    );
+    let bad = server.call(
+        "acs_lore_propose",
+        json!({"text": "x", "replaces": "lore_nope", "scope": "src/**"}),
+    );
+    assert!(
+        text(&bad).contains("no lore entry `lore_nope`"),
+        "{}",
+        text(&bad)
+    );
+    assert_eq!(store.list().0.len(), 2);
+    server.finish();
+}
+
+#[test]
 fn a_stale_environment_id_falls_back_to_the_live_seat_of_the_harness() {
     let world = World::new();
     let only = Agent::new(&world, "claude-code", "cc-real");
@@ -507,7 +601,7 @@ fn replays_the_requests_captured_from_claude_code() {
     );
     assert_eq!(discover["capabilities"]["tools"], json!({}));
     let tools = &responses["0"]["result"]["tools"];
-    assert_eq!(tools.as_array().map(Vec::len), Some(5), "{tools}");
+    assert_eq!(tools.as_array().map(Vec::len), Some(6), "{tools}");
     let intent = &responses["1"]["result"];
     assert!(
         text(intent).contains("Intent recorded: \"capture check\""),

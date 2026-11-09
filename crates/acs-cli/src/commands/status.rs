@@ -137,6 +137,14 @@ pub fn render(view: &StatusView, now: Timestamp, all_sealed: bool) -> String {
 
     out.push_str(&collision_lines(view, now));
     out.push_str(&override_lines(view, now));
+    if view.lore_proposals > 0 {
+        let n = view.lore_proposals;
+        let _ = writeln!(
+            out,
+            "\nLore proposals from agents: {n} wait{} for review (acs lore review).",
+            if n == 1 { "s" } else { "" }
+        );
+    }
 
     let _ = writeln!(
         out,
@@ -353,6 +361,7 @@ mod tests {
                 last_error: Some("fetch failed: ".repeat(12)),
             },
             policy_warnings: vec!["warning ".repeat(30)],
+            lore_proposals: 12,
         }
     }
 
