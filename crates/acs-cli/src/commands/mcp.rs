@@ -26,8 +26,8 @@ use std::process::ExitCode;
 use acs_core::{Outcome, Phase, Timestamp};
 use acs_mcp::{
     Backend, BackendError, BindingSettings, Caller, ClaimInfo, ClaimReply, ClaimRequest,
-    DecisionInfo, IntentReply, IntentRequest, ReleaseReply, ReleaseRequest, SeatInfo,
-    ServerOptions, StatusReply, WhyReply,
+    DecisionInfo, IntentReply, IntentRequest, LoreProposeReply, LoreProposeRequest, ReleaseReply,
+    ReleaseRequest, SeatInfo, ServerOptions, StatusReply, WhyReply,
 };
 use acs_store::{AcsHome, SeatInfo as StoredSeat, StateDb};
 use clap::Args;
@@ -35,7 +35,7 @@ use clap::Args;
 use crate::runtime::seats::HUMAN_HARNESS;
 use crate::runtime::{
     ClaimOutcome, ClaimView, MAX_INTENT_CHARS, OpError, RepoContext, StatusView, claim_paths,
-    last_decision, release_paths, set_intent, status,
+    last_decision, lore, release_paths, set_intent, status,
 };
 
 /// Arguments of `acs mcp`.
@@ -318,12 +318,13 @@ impl Backend for RuntimeBackend {
 
     fn claim(&self, caller: &Caller, request: &ClaimRequest) -> Result<ClaimReply, BackendError> {
         let (ctx, bound) = self.start_bound(caller)?;
+        let now = Timestamp::now();
         let outcome = claim_paths(
             &ctx,
             &bound.info,
             &request.paths,
             &ctx.layout.work_tree,
-            Timestamp::now(),
+            now,
         )
         .map_err(|err| op_error(&err))?;
         Ok(match outcome {
@@ -333,9 +334,13 @@ impl Backend for RuntimeBackend {
                 ..
             } => {
                 warnings.extend(bound.ambiguity);
+                let paths: Vec<String> = paths.iter().map(|p| p.as_str().to_owned()).collect();
+                let refs: Vec<&str> = paths.iter().map(String::as_str).collect();
+                let lore = lore::inject(&ctx, &bound.info.seat.seat_id, &refs, now);
                 ClaimReply::Granted {
-                    paths: paths.iter().map(|p| p.as_str().to_owned()).collect(),
+                    paths,
                     warnings,
+                    lore,
                 }
             }
             ClaimOutcome::Refused {
@@ -406,6 +411,28 @@ impl Backend for RuntimeBackend {
                 message: d.message,
                 at: whole_seconds(d.at),
             }),
+        })
+    }
+
+    fn lore_propose(
+        &self,
+        caller: &Caller,
+        request: &LoreProposeRequest,
+    ) -> Result<LoreProposeReply, BackendError> {
+        let (ctx, bound) = self.start_bound(caller)?;
+        let draft = acs_lore::propose::Draft {
+            scope: request.scope.clone(),
+            body: request.text.clone(),
+            replaces: request.replaces.clone(),
+            why: request.why.clone(),
+        };
+        let proposed = lore::propose(&ctx, &bound.info, &draft, Timestamp::now())
+            .map_err(|err| op_error(&err))?;
+        Ok(LoreProposeReply {
+            proposal_id: proposed.proposal.proposal_id,
+            scope: proposed.proposal.scope,
+            replaces: proposed.proposal.replaces.map(|id| id.to_string()),
+            reviewer: proposed.reviewer,
         })
     }
 }

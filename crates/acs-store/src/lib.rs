@@ -21,6 +21,7 @@ pub mod events;
 pub mod flags;
 pub mod fsutil;
 pub mod home;
+pub mod lore;
 pub mod notices;
 pub mod overrides;
 pub mod repo_id;
@@ -34,6 +35,7 @@ pub use decisions::LastDecision;
 pub use events::{Collision, NewEvent, StoredEvent};
 pub use flags::FLAG_GATE_OFF;
 pub use home::{AcsHome, HomeError, Migration, RepoHome};
+pub use lore::LoreLoaded;
 pub use overrides::{NewOverride, StoredOverride};
 pub use repo_id::{
     GitCli, IdKind, IdSource, InvalidRepoId, RepoId, RepoIdError, RepoIdentity, RootFinder,

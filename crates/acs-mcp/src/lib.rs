@@ -1,7 +1,7 @@
 //! ACS MCP: the MCP server over stdio.
 //!
-//! The server is backend-agnostic. It defines the five tools (`acs_status`, `acs_claim`,
-//! `acs_release`, `acs_intent`, `acs_why`) and speaks the protocol; what they do is behind the
+//! The server is backend-agnostic. It defines the six tools (`acs_status`, `acs_claim`,
+//! `acs_release`, `acs_intent`, `acs_why`, `acs_lore_propose`) and speaks the protocol; what they do is behind the
 //! [`Backend`] trait, which `acs-cli` implements with the shared runtime operations (decision
 //! 0011 section 1) and the tests implement with a fake.
 //!
@@ -24,7 +24,8 @@ use rmcp::ServiceExt;
 
 pub use backend::{
     Backend, BackendError, Caller, ClaimInfo, ClaimReply, ClaimRequest, DecisionInfo, IntentReply,
-    IntentRequest, ReleaseReply, ReleaseRequest, SeatInfo, StatusReply, WhyReply,
+    IntentRequest, LoreProposeReply, LoreProposeRequest, ReleaseReply, ReleaseRequest, SeatInfo,
+    StatusReply, WhyReply,
 };
 pub use bind::BindingSettings;
 pub use server::{AcsServer, ServerOptions};

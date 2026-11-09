@@ -221,6 +221,8 @@ pub struct StatusView {
     pub remote: RemoteView,
     /// Warnings from loading the policy (a fallback was used, an empty team, ...).
     pub policy_warnings: Vec<String>,
+    /// Lore proposals from agents waiting for a person's review (`acs lore review`).
+    pub lore_proposals: usize,
 }
 
 impl StatusView {
@@ -331,6 +333,7 @@ pub fn status(ctx: &RepoContext, seat: Option<&SeatInfo>, now: Timestamp) -> Sta
             last_error: None,
         },
         policy_warnings: ctx.policy.warnings.clone(),
+        lore_proposals: super::lore::proposals(ctx).map_or(0, |store| store.list().0.len()),
     };
     let db = match ctx.db() {
         Ok(db) => db,

@@ -191,6 +191,8 @@ Only `spec` is required, so a file containing just `spec = "acs/0.1"` is valid.
 | `claim_ttl_secs` | `900` | Seconds a claim lives without a heartbeat; at least 1 |
 | `sync_interval_secs` | `30` | Seconds between background syncs; at least 1 |
 | `[ledger] store_prompts` | `false` | Whether prompts may be stored in the ledger |
+| `[lore] max_inject_chars` | `4000` | Most characters of lore one tool call may add to an agent's context (section 5.4); at least 1 |
+| `[lore] stale_percent` | `30` | Share of changed lines, 1 to 100, at which an entry is stale (section 5.4) |
 
 ### 5.2 `guards.toml`
 
@@ -268,6 +270,14 @@ Amounts are integer cents. Never call Stripe directly; go through `PaymentGatewa
 | `written_against` | Git revision the entry was written against; staleness is measured from it |
 
 The text must start with a `+++` line (an optional byte-order mark is tolerated); the front matter ends at the next `+++` line; trailing whitespace on a fence line is ignored; the body is everything after the closing fence line, verbatim. Agents never write lore directly: `.acs/**` is sealed.
+
+**Loading.** Every `*.md` file under `.acs/policy/lore/` is an entry, except files whose name starts with `README` (case-insensitive). A file that cannot be read or parsed, whose `scope` is empty or holds an invalid glob, whose body is blank, or whose `id` an earlier file (in path order) already uses, is left out and reported; the other entries still apply.
+
+**Injection.** An entry applies to a path its `scope` matches. When a pre-tool event that is not denied names repository paths (written, deleted or read, including a shell command's literal read targets), or an agent claims files through the `acs_claim` tool, the entries that apply and that the seat has not been shown yet are added to the decision's `context` in front of the notices, most specific first (the zone specificity of section 5.3; ties in file path order). One call adds at most `[lore] max_inject_chars` characters: an entry that does not fit waits for the seat's next call in its scope, and when not even the first fits, its body is cut and the text names the file. An entry is shown at most once per seat (one harness session); implementations record which entries each seat was shown, which is what `SessionRecord.lore_loaded` lists. Each block names the scope, the id and the owner, so an agent can propose a correction.
+
+**Staleness.** An entry is stale when the lines added plus deleted in the text files its scope matches, between `written_against` and the commit `HEAD` points to, reach `[lore] stale_percent` percent of the lines those files had at `written_against` (a scope with no lines then is 100% changed once it has any). Uncommitted changes do not count. An entry whose `written_against` names no commit in the clone is stale. A stale entry is still shown, with a line asking the agent to verify it before relying on it.
+
+**Proposals.** Agents propose new entries, or corrections of an entry by id, with the `acs_lore_propose` MCP tool. A proposal is held in the local state (section 10, `pending/lore/`) and changes nothing in the repository until a person accepts it. The reference implementation's `acs lore review` commits an accepted proposal as a lore file on a branch `acs/lore-<id>` on top of `HEAD`, without touching the work tree, the index or the checked-out branch, so it reaches the default branch through ordinary review. `written_against` is set to `HEAD`, and the owner to the replaced entry's owner, else the owner of the zone the scope falls in, else the reviewer.
 
 ## 6. Claim rules
 
@@ -357,7 +367,7 @@ For every event the engine proceeds as follows. A step that denies ends evaluati
 4. Guards: sealed paths including protected locations outside the repository, self-protection, banned commands, protected-branch rules, destructive budgets (`sealed_path`, `banned_command`, `protected_branch`, `delete_outside_claims`, `destructive_budget`).
 5. Territory and claims: deny non-owner agents in `owned` zones unless an override covers the file, then compute the required claims and acquire them atomically (`owned_territory`, `claim_conflict`).
 6. Snapshot the pre-images of files about to change. For a destructive shell command whose targets cannot be determined, ask (`destructive_unknown_targets`).
-7. Collect context to inject: lore for scopes entered for the first time in the session, and pending notices.
+7. Collect context to inject: lore the seat has not been shown yet for the paths of the event (section 5.4), then pending notices. Nothing is injected on `deny`.
 8. Render the `Decision` back through the adapter.
 
 **Post-tool.** Determine what actually changed (the event's paths, or a working-tree diff for shell commands), attribute it to the session, store post-images, update heartbeats, and spawn a detached sync when the interval has elapsed.
@@ -402,7 +412,7 @@ ACS_HOME/
 Agents must not be able to switch ACS off. Whatever the policy and the gate state, an implementation denies an agent:
 
 - writing or deleting a protected location outside the repository (`sealed_path`): its own state directory (`ACS_HOME`), git directories outside the work tree, and the user-level hook, plugin and settings files of every supported harness. A command whose effects cannot be determined (an interpreter, a script) is denied when one of its words mentions such a location or the repository's `.acs/`, `.git/hooks`, `.git/config`, harness settings or `.husky/`;
-- running a command of the ACS command line that changes state (`banned_command`). The reference implementation allows agents only `acs status`, `acs sync`, `acs doctor` without `--fix` and help; agents claim and release through the MCP tools, which act on their own seat;
+- running a command of the ACS command line that changes state (`banned_command`). The reference implementation allows agents only `acs status`, `acs sync`, `acs doctor` without `--fix`, `acs lore list`, `acs lore show`, `acs lore stale` and help; agents claim, release and propose lore through the MCP tools, which act on their own seat;
 - skipping or redirecting git hooks (`banned_command`): `--no-verify`, `git commit -n`, setting `core.hooksPath` for one command or in the configuration;
 - starting an agent harness with its hooks or the ACS plugin turned off (`banned_command`), such as Claude Code's `--bare`, `--settings` and `--setting-sources`, Antigravity's `--settings`, and either harness's `plugin disable` or `plugin uninstall`.
 

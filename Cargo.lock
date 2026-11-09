@@ -17,6 +17,7 @@ dependencies = [
  "acs-adapters",
  "acs-core",
  "acs-git",
+ "acs-lore",
  "acs-mcp",
  "acs-os",
  "acs-paths",
@@ -64,6 +65,15 @@ dependencies = [
 [[package]]
 name = "acs-lore"
 version = "0.1.0"
+dependencies = [
+ "acs-core",
+ "acs-git",
+ "acs-policy",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "toml",
+]
 
 [[package]]
 name = "acs-mcp"

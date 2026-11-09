@@ -12,9 +12,11 @@
 //! - [`sync`] starts detached syncs and holds the lock that keeps one running at a time.
 //! - [`protect`] supplies the overrides in force for a seat and the locations outside the
 //!   repository that agents may never write.
+//! - [`lore`] picks the lore a seat has not been shown yet for the paths of a tool call.
 
 mod context;
 pub mod gate;
+pub mod lore;
 mod ops;
 pub mod paths;
 pub mod protect;

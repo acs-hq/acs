@@ -10,7 +10,7 @@ use super::redact::redact_command;
 use super::snapshots::capture_pre;
 use crate::runtime::gate::{GateParams, run_gate};
 use crate::runtime::paths::{NormalizeOptions, normalize};
-use crate::runtime::{RepoContext, seats};
+use crate::runtime::{RepoContext, lore, seats};
 
 /// The most paths stored in an event row.
 const MAX_EVENT_PATHS: usize = 20;
@@ -57,6 +57,9 @@ pub fn run(ctx: &RepoContext, event: &ToolEvent, now: Timestamp) -> Decision {
             &norm,
             now,
         ));
+        // Lore goes before the notices (SPEC section 9, step 7).
+        let lore = lore::inject_for_event(ctx, &info.seat.seat_id, event, &norm, now);
+        decision.context.splice(0..0, lore);
     }
 
     if let (Ok(db), Some(info)) = (ctx.db(), &seat_info) {

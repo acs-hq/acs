@@ -19,3 +19,6 @@ when you edit it, and blocks edits to files another agent holds.
    first. Deletes of files you have not claimed are blocked.
 4. When you finish, call `acs_release` for claims you no longer need.
 5. If you are unsure why something was blocked, call `acs_why`.
+6. Follow the ACS lore you are shown (blocks that start with "ACS lore for"). At the end of a
+   task, propose what the next agent should know with `acs_lore_propose`; never write `.acs/`
+   yourself.

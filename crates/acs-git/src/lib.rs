@@ -17,6 +17,7 @@
 //! (`.gitignore`, index comparison) runs `git`.
 
 pub mod hooks;
+pub mod lore;
 pub mod refs;
 pub mod repo;
 pub mod status;
