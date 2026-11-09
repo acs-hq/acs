@@ -41,4 +41,5 @@ ACS looks at each tool call an agent makes, before it runs, and allows or blocks
 | [Teammates](Teammates) | Someone else has already adopted ACS in the repository. |
 | [Configuring policy](Configuring-Policy) | You want to change the rules for your repository. |
 | [Working with ACS](Working-with-ACS) | ACS blocked something, or you want to know how claims behave. |
+| [Lore](Lore) | You want agents to know your conventions for part of the repository. |
 | [Troubleshooting and limits](Troubleshooting-and-Limits) | Something looks wrong, or you want to know what ACS cannot do. |

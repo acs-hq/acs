@@ -8,6 +8,8 @@ Policy is the set of rules for a repository. It lives in three files in `.acs/po
 | `guards.toml` | Sealed paths, protected branches and dangerous commands |
 | `territory.toml` | Zones: different rules for different folders |
 
+The folder `.acs/policy/lore/` holds lore, the facts agents are told about parts of the repository. It has a page of its own: [Lore](Lore).
+
 The policy is committed, so it is the same for every clone. Agents cannot change it: `.acs/**` is sealed, which means no agent may change it. Edit these files yourself and commit them from your own terminal. After each edit, check that the file loads:
 
 ```bash
@@ -24,6 +26,8 @@ Look for `loads without warnings` on the `Policy` line. If a file is invalid, AC
 | `default_target_branch` | `"main"` | The branch your work ends up in |
 | `claim_ttl_secs` | `900` | Seconds of silence before a session loses its claims. See [Claims](Working-with-ACS#claims). |
 | `sync_interval_secs` | `30` | Seconds between syncs of claims with the git remote |
+| `[lore] max_inject_chars` | `4000` | The most characters of lore one tool call adds to an agent's context. See [Lore](Lore). |
+| `[lore] stale_percent` | `30` | The share of changed lines at which a lore entry counts as out of date. See [Lore](Lore#when-lore-is-out-of-date). |
 
 For example, for a team that integrates into `develop` and wants claims to last 30 minutes:
 
