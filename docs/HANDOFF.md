@@ -39,6 +39,17 @@ WP6.1, WP8.1), then 4b (WP4.2, WP4.3, WP4.5, WP6.2, WP5.4, WP8.2), then 4c (WP8.
 Antigravity hard stop. Not built, offered to the human: a sidebar view for the extension (an
 Activity Bar "Claims" panel grouped by holder, with release buttons), and an extension icon.
 
+**Phase 6 (WP6.1, WP6.2, lore) is built (2026-11-09, decision 0029).** Lore entries under
+`.acs/policy/lore/` reach an agent with its first tool call in their scope (reads included) and
+its `acs_claim` replies, once per session, most specific first, within `[lore] max_inject_chars`;
+stale ones carry a request to verify them. Agents propose with the MCP tool `acs_lore_propose`
+(stored under `ACS_HOME`); `acs lore review` commits an accepted entry on `acs/lore-<id>` without
+touching the work tree. `acs lore list|show|stale` are allowed to agents, `review` is not. User
+guide: `docs/lore.md`. Real-agent check: `tests/e2e/real/lore.sh` (passed,
+`docs/releases/phase6-lore.md`). The
+state schema is now 6: **reinstall `acs` after merging**. M3 still needs WP5.4 (instruction-file
+import), which builds on `acs_lore::format` and `propose::file_for`.
+
 ## 1. Where things stand
 
 - `main` has Phase 0, Phase 1, **Phase 2 (WP2.1–WP2.6)**, **Phase 3 (WP3.1)**, including the rule
@@ -89,9 +100,11 @@ Activity Bar "Claims" panel grouped by holder, with release buttons), and an ext
 | acs-mcp | 2.6 | `Backend` trait, `serve_stdio` (rmcp 3.8, the only async runtime in the binary) |
 | acs-cli | 2.1, 2.4–2.6, 3.1, 5.2, 5.3, 7.1, 7.2, 7.4 | `runtime` (`RepoContext`, seats, `status`/`claim_paths`/`release_paths`/`set_intent`/`last_decision`, `sync::{lock, spawn_if_due, spawn_now}`, `protect::{StoreOverrides, outside_seals}`), `hook` (`markers::tool_markers` lists running calls for `acs watch`), `cli`, `commands/{init,status,claim,release,off,override,doctor,git_hook,mcp,sync,plugin,watch}`, `init::propose::{propose, propose_for, territory_toml}` |
 | acs-os | 3.1 | `keep_stdio_from_children`; the only crate allowed `unsafe`, one Windows call (decision 0020) |
+| acs-lore | 6.1, 6.2 | `LoreSet::load`, `LoreEntry::parse`, `format::render_file`, `resolve`, `resolve::render`, `stale::{measure, StaleCache}`, `propose::{check, ProposalStore, file_for, accepted_file}`; `acs-git` adds `lore::{scope_change, commit_file_on_branch}`; `acs-cli` adds `runtime::lore::{inject, inject_for_event, propose}` and `commands/lore` |
 
 Commands: `acs hook --canonical <phase>`, `acs hook <claude-code|antigravity|canonical>`,
 `acs mcp [--harness]`, `acs git-hook <name>`, `acs init|status|claim|release|off|on|doctor|sync`
+`acs lore list|show <path>...|stale [--all]|review [--list|--accept <id> [--body-file F] [--owner O]|--reject <id>]`,
 `acs override --path <glob> --once|--session` / `--revoke <id>`, `acs watch [--idle <secs>]` (JSON
 Lines with `--json`) and `acs plugin install <harness>` (each with `--json`). `acs init` also takes `--yes`, `--min-share` and `--min-commits` for its
 territory proposal.
@@ -265,7 +278,36 @@ New in WP7.3 and WP7.4:
    `workspace.workspaceFolders` and `window.visibleTextEditors`) and call `activate`. It catches
    wiring errors, not behaviour; the in-editor checks stay the human's.
 
+New in Phase 6:
+
+1. **Claude Code's `--output-format stream-json` does not contain hook context.** To see what a
+   hook injected, read the session transcript, `~/.claude/projects/<mangled cwd>/<session-id>.jsonl`:
+   each hook call is an `attachment` of type `hook_success` whose `stdout` holds the decision.
+   `tests/e2e/real/lore.sh` copies it to its logs. The first version of that script grepped the
+   stream and reported a miss although the lore had arrived.
+2. **Integration tests must touch files the way the rule says.** Two lore tests failed for test
+   reasons: a second agent's edit was denied by the first agent's claim (so it got no lore), and a
+   "cap" test used a cap both entries fitted in. Read the denial before suspecting the feature.
+3. **`Normalized` holds writes only.** Anything that needs the paths an event reads (lore) must
+   resolve them itself; `runtime::lore::inject_for_event` does, and only when lore exists.
+4. **Both plugins ship exact skill copies now** (`packaging.rs`), Antigravity included, since the
+   gate merged; copy `skills/acs-usage/SKILL.md` to both after editing it.
+
 ## 3. Must-know items for the next phases
+
+**WP5.4 (import)** — parse with `acs_lore::LoreEntry::parse`, write with `format::render_file`,
+place files with `propose::file_for`; entries must have `written_against` (use `HEAD`). Imported
+text is injected into every agent's context, so keep the import's output reviewable (a branch, as
+`acs lore review` does with `acs_git::lore::commit_file_on_branch`).
+
+**WP4.1 / WP4.5 (records, stats)** — `SessionRecord.lore_loaded` comes from
+`StateDb::lore_loaded_for_seat`; "lore entries served" is a count of `lore_loaded` rows (the
+`stale` column says how many came with a verify request).
+
+**WP10.1 / WP10.3** — no benchmark covers the first touch of a scope with lore yet (two `git diff`
+runs per entry on a new `HEAD`, cached in `cache/lore-stale.json`). Poisoned lore is a
+prompt-injection path: the threat model must list it, with CODEOWNERS on `.acs/policy/` as the
+mitigation.
 
 **Any code that starts a detached process** — `Stdio::null()` is not enough on Windows, where a
 child inherits every inheritable handle, the hook's stdout pipe included. Call

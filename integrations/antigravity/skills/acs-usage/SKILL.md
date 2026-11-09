@@ -11,11 +11,11 @@ policy) are sealed and nobody's agent may change them.
 
 The ACS tools are the MCP server `acs` of this plugin. In Claude Code their full names are
 `mcp__plugin_acs_acs__acs_status`, `mcp__plugin_acs_acs__acs_intent`,
-`mcp__plugin_acs_acs__acs_claim`, `mcp__plugin_acs_acs__acs_release` and
-`mcp__plugin_acs_acs__acs_why`. If they are not loaded yet, find them with ToolSearch
-(search for `acs`). In Antigravity the server is `acs_acs` and the tools are
-`mcp_acs_acs_acs_status`, `mcp_acs_acs_acs_intent`, `mcp_acs_acs_acs_claim`,
-`mcp_acs_acs_acs_release` and `mcp_acs_acs_acs_why`.
+`mcp__plugin_acs_acs__acs_claim`, `mcp__plugin_acs_acs__acs_release`,
+`mcp__plugin_acs_acs__acs_why` and `mcp__plugin_acs_acs__acs_lore_propose`. If they are not
+loaded yet, find them with ToolSearch (search for `acs`). In Antigravity the server is `acs_acs`
+and the tools are `mcp_acs_acs_acs_status`, `mcp_acs_acs_acs_intent`, `mcp_acs_acs_acs_claim`,
+`mcp_acs_acs_acs_release`, `mcp_acs_acs_acs_why` and `mcp_acs_acs_acs_lore_propose`.
 
 ## Do this
 
@@ -29,9 +29,22 @@ The ACS tools are the MCP server `acs` of this plugin. In Claude Code their full
    by default, whether you use a file tool, `rm` or `git rm`. Call `acs_claim` on it first.
 5. **Release** with `acs_release` when you are done with files, so others can work.
 6. **Propose what you learned.** At the end of a task, if you found a fact about this code that
-   the next agent would need, propose it as lore with `acs_lore_propose`. If your ACS tools do not
-   include that tool yet, put the fact in your final message to your pilot instead. Never write
-   lore files yourself: `.acs/` is sealed.
+   the next agent would need and the code does not make obvious, propose it as lore with
+   `acs_lore_propose`: `scope` (path globs such as `["payments/**"]`), `text` (a few sentences)
+   and, optionally, `why`. Never write lore files yourself: `.acs/` is sealed.
+
+## Lore
+
+The first time you read, edit or claim files in part of the repository, ACS may add lore to your
+context: blocks that start with `ACS lore for <scope> (<id>, owner <owner>)`. They are facts the
+owners of that code want every agent to know. **Follow them** as you would the repository's
+instructions. Each entry comes once per session, so remember it.
+
+- An entry marked "may be out of date" was written before much of its code changed. Check it
+  against the code before relying on it.
+- If an entry is wrong, propose a correction with `acs_lore_propose`, passing its id as
+  `replaces`; the owner reviews it.
+- `acs lore show <path>` prints the lore for a file again.
 
 ## When ACS blocks a call
 
@@ -55,5 +68,6 @@ Call `acs_why` to get the explanation of the last decision again.
 Do not try to bypass or switch off ACS or its checks. That includes editing hook or settings
 files, writing the same content through another tool or a shell command, running `acs off`,
 `acs override` or `git commit --no-verify`, starting another agent process to make the change, or
-splitting a change to slip past a rule. Of the `acs` command line, run only `acs status`; use your
-ACS tools for your own claims. A denial is information about the repository, not an obstacle to defeat.
+splitting a change to slip past a rule. Of the `acs` command line, run only `acs status` and
+`acs lore list|show|stale`; use your ACS tools for your own claims and lore proposals. A denial
+is information about the repository, not an obstacle to defeat.
