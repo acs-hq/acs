@@ -204,6 +204,38 @@ fn release_gives_claims_back_and_is_forgiving() {
 }
 
 #[test]
+fn releasing_a_directory_releases_the_claims_under_it() {
+    let world = World::new();
+    assert_success(&acs(&world, &["claim", "a.txt", "src"]));
+
+    let out = acs(&world, &["release", "--json", "src"]);
+    assert_success(&out);
+    let doc = json(&out);
+    assert_eq!(
+        doc["released"],
+        serde_json::json!(["src/lib.rs", "src/util.rs"])
+    );
+    assert!(doc["not_held"].as_array().unwrap().is_empty());
+    let view = json(&acs(&world, &["status", "--json"]));
+    assert_eq!(paths(&view, "my_claims"), vec!["a.txt"]);
+
+    // The repository root covers every claim; a directory with none is reported as not held.
+    assert_success(&acs(&world, &["claim", "src/lib.rs"]));
+    let out = acs(&world, &["release", "."]);
+    assert_success(&out);
+    let text = stdout(&out);
+    assert!(text.contains("Released 2 files:"), "{text}");
+    assert!(
+        text.contains("a.txt") && text.contains("src/lib.rs"),
+        "{text}"
+    );
+    let view = json(&acs(&world, &["status", "--json"]));
+    assert!(view["my_claims"].as_array().unwrap().is_empty());
+    let out = acs(&world, &["release", "--json", "src"]);
+    assert_eq!(json(&out)["not_held"], serde_json::json!(["src"]));
+}
+
+#[test]
 fn releasing_a_path_outside_the_repository_fails() {
     let world = World::new();
     let outside = world.tmp.path().join("elsewhere.txt");

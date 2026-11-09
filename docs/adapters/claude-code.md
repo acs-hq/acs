@@ -402,6 +402,10 @@ integrations/claude-code/            # the plugin root (WP2.2 stage 2)
   `skills`, ...; each path starts with `./` and stays inside the plugin root). Unknown top-level
   keys are stripped with a validation warning. Components in default locations need no manifest
   entry. `hooks/hooks.json` and a manifest `hooks` key both load and merge **[docs]**.
+- A manifest that pins `version` keeps every user on the cached copy until the string changes.
+  Without one, a plugin from a git marketplace is versioned by its commit, so every pushed change
+  is an update; `claude plugin validate` warns but loads it **[docs]**. The ACS manifest and
+  marketplace entry pin no version while ACS is pre-release (issue 58).
 - `claude plugin validate ./integrations/claude-code` checks the manifest, hooks and MCP entries
   (**[captured]**: passed with README/LICENSE/icon warnings only; `--strict` turns warnings into
   failures).

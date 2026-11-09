@@ -112,12 +112,27 @@ fn the_setup_skill_stays_clear_of_user_scope_and_commits_before_the_gate() {
 
 #[test]
 fn the_plugin_version_is_the_release_version() {
+    let path = "integrations/antigravity/plugin.json";
+    let manifest: serde_json::Value = serde_json::from_str(&read(path)).unwrap();
+    assert_eq!(manifest["version"], env!("CARGO_PKG_VERSION"), "{path}");
+}
+
+/// Claude Code keeps a plugin whose manifest pins a version at that cached copy until the string
+/// changes. Without one it uses the commit, so every pushed change to the plugin is an update
+/// (issue 58).
+#[test]
+fn the_claude_code_plugin_pins_no_version() {
     for path in [
         "integrations/claude-code/.claude-plugin/plugin.json",
-        "integrations/antigravity/plugin.json",
+        ".claude-plugin/marketplace.json",
     ] {
         let manifest: serde_json::Value = serde_json::from_str(&read(path)).unwrap();
-        assert_eq!(manifest["version"], env!("CARGO_PKG_VERSION"), "{path}");
+        assert!(manifest.get("version").is_none(), "{path}");
+        if let Some(plugins) = manifest["plugins"].as_array() {
+            for plugin in plugins {
+                assert!(plugin.get("version").is_none(), "{path}: {plugin}");
+            }
+        }
     }
 }
 

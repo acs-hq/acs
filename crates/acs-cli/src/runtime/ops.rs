@@ -555,14 +555,27 @@ pub fn claim_paths(
 pub struct ReleaseReport {
     /// Files whose claims the seat released.
     pub released: Vec<RepoPath>,
-    /// Files the seat held no claim on.
+    /// Paths the seat held no claim on, or under for a directory.
     pub not_held: Vec<RepoPath>,
     /// Raw paths that are outside the repository.
     pub outside: Vec<String>,
 }
 
-/// Releases `seat`'s claims on `paths` (relative to `cwd` or absolute). Only the seat's own
-/// claims are touched.
+/// Whether releasing `target` releases a claim on `claimed`: the same path, or a path under it
+/// when `target` is a directory (`.`, the repository root, covers every path).
+fn covers(target: &RepoPath, claimed: &RepoPath) -> bool {
+    let target = target.as_str().trim_end_matches('/');
+    let claimed = claimed.as_str();
+    target == "."
+        || claimed == target
+        || claimed
+            .strip_prefix(target)
+            .is_some_and(|rest| rest.starts_with('/'))
+}
+
+/// Releases `seat`'s claims on `paths` (relative to `cwd` or absolute). A directory, the
+/// repository root included, covers every claim under it; `released` lists the claimed files
+/// that were released. Only the seat's own claims are touched.
 ///
 /// # Errors
 ///
@@ -591,15 +604,22 @@ pub fn release_paths(
     for path in inside {
         let held: Vec<&HeldClaim> = mine
             .iter()
-            .filter(|h| h.claim.scope.path() == &path)
+            .filter(|h| covers(&path, h.claim.scope.path()))
             .collect();
         if held.is_empty() {
             report.not_held.push(path);
-        } else {
-            ids.extend(held.iter().map(|h| h.claim.claim_id.clone()));
-            report.released.push(path);
+            continue;
+        }
+        for h in held {
+            if !ids.contains(&h.claim.claim_id) {
+                ids.push(h.claim.claim_id.clone());
+            }
+            if !report.released.contains(h.claim.scope.path()) {
+                report.released.push(h.claim.scope.path().clone());
+            }
         }
     }
+    report.released.sort();
     if !ids.is_empty() {
         db.release_claims(&ids, ReleaseReason::Released, now)?;
     }

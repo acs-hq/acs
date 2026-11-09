@@ -19,7 +19,8 @@ Run `dist generate` after changing `dist-workspace.toml`. Without it the `releas
 ## Cut a release
 
 1. Make sure CI is green on `main`, and that the version in `Cargo.toml` and in
-   `integrations/claude-code/.claude-plugin/plugin.json` is the one you are releasing.
+   `integrations/antigravity/plugin.json` is the one you are releasing. The Claude Code plugin
+   pins no version, so Claude Code follows the commit (issue 58).
 2. Run the manual check of plan section 9.1 and record it here as `docs/releases/v<version>.md`.
 3. Tag and push:
 

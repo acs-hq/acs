@@ -374,6 +374,45 @@ fn claude_code_session_tools_end_to_end() {
 }
 
 #[test]
+fn releasing_a_directory_releases_the_claims_under_it() {
+    let world = World::new();
+    let sara = Agent::new(&world, "claude-code", "cc-sara");
+    sara.start();
+    let mut server = Server::start(
+        &world,
+        &["--harness", "claude-code"],
+        &[("CLAUDE_CODE_SESSION_ID", "cc-sara")],
+    );
+    server.initialize("claude-code");
+
+    let granted = server.call("acs_claim", json!({"paths": ["src", "a.txt"]}));
+    assert!(!is_error(&granted), "{}", text(&granted));
+    assert_eq!(sara.claimed(), ["a.txt", "src/lib.rs", "src/util.rs"]);
+
+    // A directory releases every claim under it, and the reply names the files.
+    let released = server.call("acs_release", json!({"paths": ["src/"]}));
+    assert!(!is_error(&released), "{}", text(&released));
+    assert!(
+        text(&released).contains("Released: `src/lib.rs`, `src/util.rs`"),
+        "{}",
+        text(&released)
+    );
+    assert_eq!(sara.claimed(), ["a.txt"]);
+
+    // The repository root covers everything the seat holds.
+    server.call("acs_claim", json!({"paths": ["src"]}));
+    let released = server.call("acs_release", json!({"paths": ["."]}));
+    assert!(!is_error(&released), "{}", text(&released));
+    assert!(
+        text(&released).contains("Released: `a.txt`, `src/lib.rs`, `src/util.rs`"),
+        "{}",
+        text(&released)
+    );
+    assert!(sara.claimed().is_empty());
+    server.finish();
+}
+
+#[test]
 fn claims_bring_lore_and_agents_propose_lore_for_review() {
     let world = World::new();
     world.write(
