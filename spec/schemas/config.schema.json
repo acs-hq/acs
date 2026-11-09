@@ -12,6 +12,31 @@
       },
       "type": "object"
     },
+    "LoreConfig": {
+      "additionalProperties": false,
+      "description": "Settings for lore (`.acs/policy/lore/`).",
+      "properties": {
+        "max_inject_chars": {
+          "default": 4000,
+          "description": "The most characters of lore one tool call may add to an agent's context. Entries that do\nnot fit wait for the agent's next call; a single entry longer than this is cut, with a\npointer to its file. Defaults to 4000.",
+          "format": "uint32",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "stale_percent": {
+          "$ref": "#/$defs/Percent",
+          "default": 30,
+          "description": "An entry is stale, and is served with a request to verify it, once at least this\npercentage of the lines in its scope changed since the revision it was written against.\nDefaults to 30."
+        }
+      },
+      "type": "object"
+    },
+    "Percent": {
+      "description": "A whole percentage from 1 to 100.",
+      "maximum": 100,
+      "minimum": 1,
+      "type": "integer"
+    },
     "SpecVersion": {
       "const": "acs/0.1",
       "description": "The `spec` field of a document: the version of the ACS spec it was written against.\n\nThe only supported value is `\"acs/0.1\"`. Readers MUST reject any other value.",
@@ -40,6 +65,14 @@
         "store_prompts": false
       },
       "description": "Ledger settings."
+    },
+    "lore": {
+      "$ref": "#/$defs/LoreConfig",
+      "default": {
+        "max_inject_chars": 4000,
+        "stale_percent": 30
+      },
+      "description": "Lore settings."
     },
     "spec": {
       "$ref": "#/$defs/SpecVersion",

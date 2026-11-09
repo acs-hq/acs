@@ -82,6 +82,19 @@ impl Glob {
         })
     }
 
+    /// How specifically the pattern matches `path`: the [`Specificity`] of the most specific
+    /// `{}` alternative that matches, or `None` when the pattern does not match at all.
+    #[must_use]
+    pub fn match_specificity(&self, path: &str) -> Option<Specificity> {
+        with_segments(path, self.case_insensitive, |segs| {
+            self.alts
+                .iter()
+                .filter(|alt| alt.is_match(segs))
+                .map(Alt::specificity)
+                .max()
+        })
+    }
+
     /// The compiled alternatives, one per `{}` expansion.
     pub(crate) fn alts(&self) -> &[Alt] {
         &self.alts
@@ -124,8 +137,9 @@ pub(crate) fn fold(text: &str) -> Cow<'_, str> {
 
 /// How specific an alternative is; larger is more specific. Compared field by field:
 /// leading literal segments, fewer `**` segments, more literal characters, fewer wildcards.
+/// The same ranking picks the winning zone (see [`crate::CompiledPolicy`]) and orders lore.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub(crate) struct Specificity {
+pub struct Specificity {
     leading_literal_segments: usize,
     fewer_globstars: Reverse<usize>,
     literal_chars: usize,

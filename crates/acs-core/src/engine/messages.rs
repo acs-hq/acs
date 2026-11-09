@@ -128,6 +128,12 @@ pub(super) fn sealed_mention(command: &str, what: &str) -> String {
 /// A command that breaks one of ACS's self-protection rules.
 pub(super) fn self_protection(breach: &Breach) -> String {
     match breach {
+        Breach::AcsCli(shown) if shown.starts_with("acs lore ") => format!(
+            "Agents may not run {}: accepting or rejecting lore is the owner's decision. Propose \
+             lore with the `acs_lore_propose` tool instead; `acs lore list`, `acs lore show` and \
+             `acs lore stale` are fine to run.",
+            tick(shown)
+        ),
         Breach::AcsCli(shown) => format!(
             "Agents may not run {}: it changes ACS state as your pilot, not as you. To claim or \
              release your own files use the ACS tools (`acs_claim`, `acs_release`); for \

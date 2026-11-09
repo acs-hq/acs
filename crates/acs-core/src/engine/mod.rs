@@ -33,8 +33,9 @@
 //!    such a request as a heartbeat.
 //! 4. **Snapshots.** A [`SnapshotRequest`] for every written or deleted repository path. The engine
 //!    cannot know which of them exist: the pipeline skips the ones that do not.
-//! 5. **Context.** Pending notices go to `decision.context`. Lore injection (Phase 6) will be added
-//!    at the marked seam in `collect_context`.
+//! 5. **Context.** Pending notices go to `decision.context`. Lore is not the engine's: it needs
+//!    file and git reads, so the pipeline puts it in front of the notices after the engine has
+//!    decided, for any outcome but `deny` (decision 0029).
 //!
 //! The results combine as deny, then ask, then allow. The reason code and message come from the
 //! first denying step (or, if nothing denies, the first asking step) in the order above; within
@@ -509,8 +510,7 @@ fn claims_step(
 
 /// Step 5: the context to inject. Returns the ids of the notices delivered.
 fn collect_context(input: &GateInput<'_>, context: &mut Vec<String>) -> Vec<NoticeId> {
-    // Lore seam (Phase 6): lore entries whose scope the seat enters for the first time in this
-    // session are pushed to `context` here, before the notices, once the input carries them.
+    // Lore is added by the pipeline in front of these notices (decision 0029).
     let mut delivered = Vec::new();
     for notice in input.notices {
         if notice.delivered_at.is_none() && notice.target_seat == input.seat.seat_id {

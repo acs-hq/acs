@@ -11,7 +11,8 @@
 use crate::gate::{CommandClass, OutsideSeal, SimpleCommand};
 
 /// `acs` subcommands an agent may run from its shell: they only read, or only share claims with
-/// the remote. `doctor` is listed, but `doctor --fix` is not allowed.
+/// the remote. `doctor` is listed, but `doctor --fix` is not allowed. `lore` is decided per
+/// action in [`denied_sub`]: `list`, `show` and `stale` are allowed, `review` is not.
 const READ_ONLY: &[&str] = &["status", "sync", "doctor", "help"];
 
 /// The `acs` subcommands that change state. When `acs` appears as an argument of another
@@ -98,22 +99,35 @@ fn acs_cli(words: &[&str]) -> Option<String> {
     let first = words.first()?;
     if program(first) == "acs" {
         let sub = next_operand(words, 1)?;
-        return denied_sub(sub, &words[1..], true).then(|| format!("acs {sub}"));
+        return denied_sub(sub, &words[1..], true).then(|| shown(sub, &words[1..]));
     }
     if program(first) == "cargo" && words.contains(&"run") && runs_acs_package(words) {
         let at = words.iter().position(|w| *w == "--")?;
         let sub = next_operand(words, at + 1)?;
-        return denied_sub(sub, &words[at + 1..], true).then(|| format!("acs {sub}"));
+        return denied_sub(sub, &words[at + 1..], true).then(|| shown(sub, &words[at + 1..]));
     }
     for (index, word) in words.iter().enumerate().skip(1) {
         if program(word) == "acs"
             && let Some(sub) = next_operand(words, index + 1)
             && denied_sub(sub, &words[index + 1..], false)
         {
-            return Some(format!("acs {sub}"));
+            return Some(shown(sub, &words[index + 1..]));
         }
     }
     None
+}
+
+/// The denied invocation as shown to the agent: `acs <sub>`, plus the action for `acs lore`.
+fn shown(sub: &str, rest: &[&str]) -> String {
+    if sub.eq_ignore_ascii_case("lore")
+        && let Some(action) = rest
+            .iter()
+            .position(|w| w.eq_ignore_ascii_case("lore"))
+            .and_then(|at| next_operand(rest, at + 1))
+    {
+        return format!("acs lore {action}");
+    }
+    format!("acs {sub}")
 }
 
 /// Whether running `acs <sub> <rest>` is denied. As the program itself (`direct`), anything but a
@@ -122,6 +136,19 @@ fn denied_sub(sub: &str, rest: &[&str], direct: bool) -> bool {
     let sub = sub.to_ascii_lowercase();
     if sub == "doctor" {
         return rest.contains(&"--fix");
+    }
+    if sub == "lore" {
+        // `acs lore list|show|stale` only read; `acs lore review` turns proposals into commits,
+        // which is the owner's call (decision 0029). A bare `acs lore` prints help.
+        let action = rest
+            .iter()
+            .position(|w| w.eq_ignore_ascii_case("lore"))
+            .and_then(|at| next_operand(rest, at + 1))
+            .map(str::to_ascii_lowercase);
+        return !matches!(
+            action.as_deref(),
+            None | Some("list" | "show" | "stale" | "help")
+        );
     }
     if direct {
         !READ_ONLY.contains(&sub.as_str())
@@ -295,6 +322,11 @@ mod tests {
             "acs sync",
             "acs doctor",
             "acs help override",
+            "acs lore",
+            "acs lore list --json",
+            "acs lore show src/a.rs",
+            "acs lore stale --all",
+            "acs lore help review",
             "grep -rn acs src",
             "rg acs off.rs",
             "cargo run -p acs-cli -- status",
@@ -313,6 +345,12 @@ mod tests {
             ("acs hook --canonical pre_tool", "acs hook"),
             ("acs mcp", "acs mcp"),
             ("acs doctor --fix", "acs doctor"),
+            ("acs lore review", "acs lore review"),
+            ("acs lore review --accept prop_1", "acs lore review"),
+            ("acs lore --json review --list", "acs lore review"),
+            ("acs lore future", "acs lore future"),
+            ("xargs acs lore review --reject", "acs lore review"),
+            ("cargo run -p acs-cli -- lore review", "acs lore review"),
             ("acs future-command", "acs future-command"),
             ("/usr/local/bin/acs off", "acs off"),
             ("C:\\tools\\ACS.EXE off", "acs off"),

@@ -6,7 +6,7 @@
 
 use std::collections::BTreeMap;
 use std::fmt;
-use std::num::NonZeroU64;
+use std::num::{NonZeroU32, NonZeroU64};
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -36,6 +36,11 @@ pub const DEFAULT_SEALED: &[&str] = &[
 
 const DEFAULT_CLAIM_TTL_SECS: NonZeroU64 = non_zero(900);
 const DEFAULT_SYNC_INTERVAL_SECS: NonZeroU64 = non_zero(30);
+const DEFAULT_LORE_MAX_INJECT_CHARS: NonZeroU32 = match NonZeroU32::new(4_000) {
+    Some(value) => value,
+    None => panic!("constant must be non-zero"),
+};
+const DEFAULT_LORE_STALE_PERCENT: Percent = Percent(30);
 
 const fn non_zero(value: u64) -> NonZeroU64 {
     match NonZeroU64::new(value) {
@@ -70,6 +75,87 @@ pub struct LedgerConfig {
     pub store_prompts: bool,
 }
 
+/// A whole percentage from 1 to 100.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(try_from = "u8", into = "u8")]
+pub struct Percent(u8);
+
+impl Percent {
+    /// The percentage, from 1 to 100.
+    #[must_use]
+    pub const fn get(self) -> u8 {
+        self.0
+    }
+}
+
+impl TryFrom<u8> for Percent {
+    type Error = ParseError;
+
+    fn try_from(value: u8) -> Result<Self, ParseError> {
+        if (1..=100).contains(&value) {
+            Ok(Self(value))
+        } else {
+            Err(ParseError::new(format!(
+                "invalid percentage {value}: expected a whole number from 1 to 100"
+            )))
+        }
+    }
+}
+
+impl From<Percent> for u8 {
+    fn from(value: Percent) -> u8 {
+        value.0
+    }
+}
+
+impl JsonSchema for Percent {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "Percent".into()
+    }
+
+    fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        schemars::json_schema!({
+            "description": "A whole percentage from 1 to 100.",
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+        })
+    }
+}
+
+fn default_lore_max_inject_chars() -> NonZeroU32 {
+    DEFAULT_LORE_MAX_INJECT_CHARS
+}
+
+fn default_lore_stale_percent() -> Percent {
+    DEFAULT_LORE_STALE_PERCENT
+}
+
+/// Settings for lore (`.acs/policy/lore/`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct LoreConfig {
+    /// The most characters of lore one tool call may add to an agent's context. Entries that do
+    /// not fit wait for the agent's next call; a single entry longer than this is cut, with a
+    /// pointer to its file. Defaults to 4000.
+    #[serde(default = "default_lore_max_inject_chars")]
+    pub max_inject_chars: NonZeroU32,
+    /// An entry is stale, and is served with a request to verify it, once at least this
+    /// percentage of the lines in its scope changed since the revision it was written against.
+    /// Defaults to 30.
+    #[serde(default = "default_lore_stale_percent")]
+    pub stale_percent: Percent,
+}
+
+impl Default for LoreConfig {
+    fn default() -> Self {
+        Self {
+            max_inject_chars: DEFAULT_LORE_MAX_INJECT_CHARS,
+            stale_percent: DEFAULT_LORE_STALE_PERCENT,
+        }
+    }
+}
+
 /// `.acs/policy/config.toml`: repository-wide settings. Only `spec` is required.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -88,6 +174,9 @@ pub struct Config {
     /// Ledger settings.
     #[serde(default)]
     pub ledger: LedgerConfig,
+    /// Lore settings.
+    #[serde(default)]
+    pub lore: LoreConfig,
 }
 
 impl Default for Config {
@@ -98,6 +187,7 @@ impl Default for Config {
             claim_ttl_secs: DEFAULT_CLAIM_TTL_SECS,
             sync_interval_secs: DEFAULT_SYNC_INTERVAL_SECS,
             ledger: LedgerConfig::default(),
+            lore: LoreConfig::default(),
         }
     }
 }
