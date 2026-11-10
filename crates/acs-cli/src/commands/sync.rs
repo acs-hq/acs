@@ -61,7 +61,12 @@ fn execute(args: &SyncArgs) -> Result<ExitCode, CliError> {
         return Ok(ExitCode::SUCCESS);
     }
     // First thing under the lock, remote or not: sessions that ended or crashed get their records.
-    let records = records::finalize(&ctx, Timestamp::now())?;
+    // A record that cannot be written now is retried next time; it must not stop claims from
+    // reaching other machines.
+    let records = records::finalize(&ctx, Timestamp::now()).unwrap_or_else(|err| FinalizeReport {
+        warnings: vec![format!("could not write session records: {err}")],
+        ..FinalizeReport::default()
+    });
     let Some(remote) = remote else {
         say(
             json,
