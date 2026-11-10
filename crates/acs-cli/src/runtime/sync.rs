@@ -89,6 +89,16 @@ pub fn spawn_now(ctx: &RepoContext) {
     }
 }
 
+/// Starts a detached `acs sync --wait` when a session ended, so its record is written to the
+/// ledger without waiting for the next command. Unlike [`spawn_now`] this needs no remote (the
+/// record lands in the local ledger), only that the repository adopted ACS (`.acs/policy/`): a
+/// plugin runs its hooks in every repository its user opens.
+pub fn spawn_for_records(ctx: &RepoContext) {
+    if ctx.layout.work_tree.join(".acs").join("policy").is_dir() {
+        spawn(ctx, true);
+    }
+}
+
 fn spawn(ctx: &RepoContext, wait: bool) {
     let Ok(exe) = std::env::current_exe() else {
         return;
