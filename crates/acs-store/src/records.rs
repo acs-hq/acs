@@ -101,7 +101,99 @@ fn cut(text: &str, max: usize) -> String {
     out
 }
 
+/// How long one pilot's seats on this machine waited on other seats' claims.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClaimWait {
+    /// The pilot of the seats that were refused.
+    pub pilot: String,
+    /// How many claim-conflict denials their seats got.
+    pub conflicts: u64,
+    /// Seconds from a seat's first refusal until it next changed or claimed the path (or its
+    /// session ended); overlapping waits of one seat count once.
+    pub waited_secs: i64,
+}
+
 impl StateDb {
+    /// Time spent waiting on claims, per pilot, from the events on this machine since `since`.
+    ///
+    /// For each claim-conflict denial the wait lasts until the same seat next changed one of the
+    /// denial's paths (a post-tool event) or was allowed to claim one (an allowed pre-tool event
+    /// of a tool that is not a read), or until the seat ended, or, for a seat that did neither,
+    /// until it was last seen. Retries inside one wait count once. Ordered by pilot.
+    ///
+    /// # Errors
+    ///
+    /// Any [`StoreError`].
+    pub fn claim_waits(&self, since: Timestamp) -> Result<Vec<ClaimWait>, StoreError> {
+        use acs_core::{Phase, ReasonCode, ToolKind};
+        let mut stmt = self.conn.prepare_cached(
+            "SELECT DISTINCT e.seat_id FROM events e              WHERE e.reason_code = 'claim_conflict' AND e.at >= ?1",
+        )?;
+        let seat_ids: Vec<String> = stmt
+            .query_map(params![to_db(since)], |row| row.get(0))?
+            .collect::<Result<_, _>>()?;
+        let mut by_pilot: std::collections::BTreeMap<String, ClaimWait> =
+            std::collections::BTreeMap::new();
+        for seat_id in seat_ids {
+            let seat_id: SeatId = id_from_db(seat_id)?;
+            let Some(info) = self.seat_info(&seat_id)? else {
+                continue;
+            };
+            let bound = info.ended_at.unwrap_or(info.seat.last_seen_at);
+            let events = self.seat_events(&seat_id)?;
+            let mut intervals: Vec<(Timestamp, Timestamp)> = Vec::new();
+            let mut conflicts = 0u64;
+            for (index, conflict) in events.iter().enumerate() {
+                if conflict.reason_code != Some(ReasonCode::ClaimConflict) || conflict.at < since {
+                    continue;
+                }
+                conflicts += 1;
+                let resolved = events[index + 1..]
+                    .iter()
+                    .find(|later| {
+                        let shares = later.paths.iter().any(|p| conflict.paths.contains(p));
+                        shares
+                            && match later.phase {
+                                Phase::PostTool => true,
+                                Phase::PreTool => {
+                                    later.outcome == Some(Outcome::Allow)
+                                        && later.tool_kind.is_some_and(|k| k != ToolKind::Read)
+                                }
+                                _ => false,
+                            }
+                    })
+                    .map_or(bound, |later| later.at.min(bound));
+                intervals.push((conflict.at, resolved.max(conflict.at)));
+            }
+            intervals.sort();
+            let mut waited = 0i64;
+            let mut current: Option<(Timestamp, Timestamp)> = None;
+            for (start, end) in intervals {
+                current = match current {
+                    Some((from, to)) if start <= to => Some((from, to.max(end))),
+                    Some((from, to)) => {
+                        waited += to.as_microsecond() - from.as_microsecond();
+                        Some((start, end))
+                    }
+                    None => Some((start, end)),
+                };
+            }
+            if let Some((from, to)) = current {
+                waited += to.as_microsecond() - from.as_microsecond();
+            }
+            let entry = by_pilot
+                .entry(info.seat.pilot.clone())
+                .or_insert_with(|| ClaimWait {
+                    pilot: info.seat.pilot.clone(),
+                    conflicts: 0,
+                    waited_secs: 0,
+                });
+            entry.conflicts += conflicts;
+            entry.waited_secs += waited / 1_000_000;
+        }
+        Ok(by_pilot.into_values().collect())
+    }
+
     /// Assembles the session record of `info`'s seat from the database.
     ///
     /// - `seat.worktree` holds the folder name only (absolute paths carry user names);

@@ -183,7 +183,11 @@ fn a_record_gathers_the_seats_history() {
     assert_eq!(
         notable,
         vec![
-            (ReasonCode::BannedCommand, Outcome::Deny, "curl --token *** x"),
+            (
+                ReasonCode::BannedCommand,
+                Outcome::Deny,
+                "curl --token *** x"
+            ),
             // A conflict lists the path: its stored message names the holder.
             (ReasonCode::ClaimConflict, Outcome::Deny, "src/c.rs"),
             (ReasonCode::DestructiveBudget, Outcome::Ask, "Bash"),
@@ -349,4 +353,71 @@ fn due_records_follow_ends_crashes_and_comebacks() {
         "same session id"
     );
     assert!(db.recorded_seat(&busy.seat.seat_id).unwrap().is_none());
+}
+
+#[test]
+fn waits_count_from_the_first_refusal_to_the_next_claim_change_or_end() {
+    let repo = TestRepo::new();
+    let db = repo.open();
+    let waiter = info(&db, "waiter");
+    let stuck = info(&db, "stuck");
+    let post = |db: &StateDb, who: &SeatInfo, secs: i64, paths: &[&str]| {
+        let paths: Vec<String> = paths.iter().map(|p| (*p).to_owned()).collect();
+        db.record_event(&NewEvent {
+            seat_id: &who.seat.seat_id,
+            at: at(secs),
+            phase: Phase::PostTool,
+            tool_name: Some("Edit"),
+            tool_kind: Some(ToolKind::Edit),
+            paths: &paths,
+            reason_code: None,
+            outcome: None,
+            detail: None,
+        })
+        .unwrap();
+    };
+    // Refused at 10 and again at 12 (a retry inside the same wait), then it changed x at 30.
+    event(
+        &db,
+        &waiter,
+        10,
+        ReasonCode::ClaimConflict,
+        Outcome::Deny,
+        &["x"],
+        Some("held"),
+    );
+    event(
+        &db,
+        &waiter,
+        12,
+        ReasonCode::ClaimConflict,
+        Outcome::Deny,
+        &["x"],
+        Some("held"),
+    );
+    post(&db, &waiter, 20, &["unrelated"]);
+    post(&db, &waiter, 30, &["x"]);
+    db.touch_seat(&waiter.seat.seat_id, at(30)).unwrap();
+    // Refused at 50 and never got in: the wait ends with the session at 80.
+    event(
+        &db,
+        &stuck,
+        50,
+        ReasonCode::ClaimConflict,
+        Outcome::Deny,
+        &["y"],
+        Some("held"),
+    );
+    db.end_seat(&stuck.seat.seat_id, at(80)).unwrap();
+
+    let waits = db.claim_waits(at(0)).unwrap();
+    assert_eq!(waits.len(), 1, "both seats are one pilot");
+    assert_eq!(waits[0].conflicts, 3);
+    assert_eq!(waits[0].waited_secs, 20 + 30);
+    assert!(
+        db.claim_waits(at(40))
+            .unwrap()
+            .iter()
+            .all(|w| w.conflicts == 1)
+    );
 }

@@ -204,10 +204,7 @@ pub fn commits_with_sessions(
         args.push(since);
     }
     args.push("--format=%x1e%H%x1f%B");
-    let text = crate::refs::checked(
-        &args,
-        crate::refs::git_output(work_tree, &args, None, &[])?,
-    )?;
+    let text = crate::refs::checked(&args, crate::refs::git_output(work_tree, &args, None, &[])?)?;
     let mut found = Vec::new();
     for chunk in text.split('\u{1e}').filter(|c| !c.trim().is_empty()) {
         let Some((commit, message)) = chunk.split_once('\u{1f}') else {
