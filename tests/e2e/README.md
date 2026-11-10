@@ -15,8 +15,8 @@ cargo test -p acs-cli --test e2e_scenarios
 | An offline team | `offline_team.rs` | M1 |
 | Husky coexistence | `husky.rs` | M1 |
 | Junction deletion: the gate stops it | `junction.rs` | M1 |
-| Junction deletion: recovery with `acs undo` | to do | M2 |
-| Interleaved undo | to do | M2 |
+| Junction deletion: recovery with `acs undo` (gate off, delete goes through, every file back byte-exact) | `junction_undo.rs` | M2 |
+| Interleaved undo: session B's later edits survive undoing session A | `undo_interleaved.rs` | M2 |
 | Interface notices | to do | M5 |
 | Queued edits | to do | M5 |
 

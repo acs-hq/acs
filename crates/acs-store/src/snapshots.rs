@@ -538,6 +538,17 @@ impl SnapshotStore {
         }
     }
 
+    /// Writes `bytes` with `mode` to `dest` the way [`restore`](Self::restore) does (temporary
+    /// sibling file, then rename; parent directories are created). Used by `acs undo` to write
+    /// merged content.
+    ///
+    /// # Errors
+    ///
+    /// I/O errors writing `dest`.
+    pub fn write_file(dest: &Path, bytes: &[u8], mode: u32) -> Result<(), SnapshotError> {
+        write_restored(dest, bytes, mode)
+    }
+
     /// Enforces the size budget.
     ///
     /// Removes blobs no entry refers to, then evicts least-recently-used blobs (by compressed
@@ -749,7 +760,7 @@ impl RawEntry {
 }
 
 /// Reads a file and its mode; `None` if it does not exist.
-fn read_file(path: &Path) -> Result<Option<(Vec<u8>, u32)>, SnapshotError> {
+pub(crate) fn read_file(path: &Path) -> Result<Option<(Vec<u8>, u32)>, SnapshotError> {
     let meta = match fs::metadata(path) {
         Ok(meta) => meta,
         Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(None),
