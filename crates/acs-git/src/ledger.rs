@@ -13,20 +13,10 @@ use crate::refs::{
     git_text, ledger_ref, resolve_ref,
 };
 use crate::repo::objects;
+pub(crate) use crate::signing::signing_configured;
 
 /// How many times [`append`] retries when another process appended first.
 const APPEND_ATTEMPTS: usize = 64;
-
-/// Whether the user's configuration asks for signed commits.
-pub(crate) fn signing_configured(work_tree: &Path) -> Result<bool, GitError> {
-    let output = git_output(
-        work_tree,
-        &["config", "--type=bool", "--get", "commit.gpgsign"],
-        None,
-        &[],
-    )?;
-    Ok(String::from_utf8_lossy(&output.stdout).trim() == "true")
-}
 
 /// A commit, signed when `sign` is set and signing works. Returns the id and whether it is
 /// signed.
