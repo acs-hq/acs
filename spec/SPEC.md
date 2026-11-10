@@ -135,7 +135,7 @@ Every reason code has a fixture in the conformance suite (planned for spec 1.0).
 
 ### 4.1 `Seat`
 
-One agent session or human editing session in a repository; exactly one per harness session. Fields: `seat_id`, `pilot`, `harness`, `harness_session_id`, `worktree` (absolute path), `branch` (absent when HEAD is detached), `target_branch`, `started_at`, `last_seen_at`. A seat is created on the first event of a session.
+One agent session or human editing session in a repository; exactly one per harness session. Fields: `seat_id`, `pilot`, `harness`, `harness_session_id`, `worktree` (absolute path; in a session record only the folder's name, section 4.3), `branch` (absent when HEAD is detached), `target_branch`, `started_at`, `last_seen_at`. A seat is created on the first event of a session.
 
 ### 4.2 `Claim`
 
@@ -154,7 +154,11 @@ A claim is **expired** at time `now` when `now - heartbeat_at >= ttl_secs`. Expi
 
 The ledger entry for one session. `session_id` is the value of the `ACS-Session` trailer on the session's commits. Fields: `spec`, `session_id`, `seat` (the full `Seat`), `intent` (optional text the agent declared through the `acs_intent` MCP tool), `claims` (history: `claim_id`, `scope`, `acquired_at`, optional `released_at` and `release_reason` of `released`, `expired` or `session_end`), `files_changed` (`path`, `pre_hash`, `post_hash`; `null` means the file did not exist before or no longer exists), `guard_decisions` (`counts` per reason code and a list of `notable` decisions with `at`, `reason_code`, `outcome`, `path_or_command`), `commits` (full commit hashes carrying the trailer), `lore_loaded` (lore ids), `overrides` (optional, omitted when empty: each human override the session used, with `override_id`, `pattern`, `mode`, `granted_by`, `granted_at` and the `paths` it let through, section 6.1), `started_at`, `ended_at`, `ended_reason` (`clean` or `crashed`), `acs_version`.
 
-A record for a session that ended without an end event is assembled on a later run with `ended_reason: crashed` and `ended_at` set to the seat's `last_seen_at`.
+A record for a session that ended without an end event is assembled on a later run with `ended_reason: crashed` and `ended_at` set to the seat's `last_seen_at`. The reference implementation treats an agent seat as crashed once it has been silent for one hour without ending; the seat is not ended by this, and its claims lapse by TTL.
+
+**One session, several records.** A seat that produces events after its record was written (a resumed session, or one first recorded as crashed) gets a new record with the same `session_id`, appended to the same ledger. Readers MUST take the record appended last for a `session_id` and ignore earlier ones; the ledger is never rewritten.
+
+**What goes in.** In a record, `seat.worktree` holds only the name of the worktree's folder, never its absolute path: paths carry user names and records are pushed. `intent` is redacted of secrets and capped (500 characters in the reference implementation). `files_changed` has one entry per path: the first `pre_hash` and the last `post_hash` the session saw, in order of first change. `notable` lists deny and ask decisions oldest first (at most 50; `counts` are complete), each `path_or_command` redacted and cut to 200 characters; a claim conflict lists the paths, not the message, which names the holder. `commits` are the commits on any ref whose messages carry the session's trailer. Human seats (the `human` pseudo-harness) get no records, and a session with nothing to record (no intent, claims, changed files, deny or ask decisions, overrides, lore or commits) is skipped.
 
 Records are pushed to the git remote. They MUST contain only structural data (paths, hashes, counts, ids, the agent's own intent text); never prompts unless `ledger.store_prompts` is true, never file contents. `path_or_command` holds a path or a command line and therefore MUST be redacted of secrets and SHOULD be truncated.
 
@@ -345,6 +349,7 @@ Claims and the ledger are shared through the repository's own git remote; no oth
 
 **Sync.** `acs sync` runs against one remote (`origin`, else the first remote by name), in this order:
 
+0. Append the session records that are due (section 4.3) to this machine's ledgers. This step runs with no remote too, so records exist in local-only mode; a record that cannot be written now is a warning and is retried next time.
 1. Fetch all of `refs/acs/*`.
 2. Rebuild the remote-claims view from the fetched documents. Claims of seats on this machine are left out: the local state is their truth. A document that does not parse, or names a pilot other than the owner of its ref, is ignored with a warning and that pilot's last good claims stay until they expire. A pilot whose claims ref is gone from the remote leaves the view.
 3. Build each local pilot's document: their live claims on this machine, plus the unexpired claims in their fetched document from seats not on this machine, because one pilot on two machines shares one ref. Publish it only if something others need to know has changed: the set of claims, a scope, a target branch, a TTL, or a heartbeat that has moved by at least a quarter of the claim's TTL.
@@ -353,7 +358,18 @@ Claims and the ledger are shared through the repository's own git remote; no oth
 
 The view is **stale** when the last successful fetch is strictly older than `3 x sync_interval_secs`, or there never was one. A failure after step 1, such as a push the remote rejects, is reported but does not make the view stale. A hash chain comes from git commit parents; signing uses the user's git signing configuration, and a record that cannot be signed is written unsigned rather than lost.
 
-Sync runs detached and never blocks an agent. Hooks start it only in a repository with a remote and a `.acs/policy/` directory, because it publishes paths and the pilot's email: when the interval has elapsed since the last attempt, on session start and after a tool call; and on session end, whatever the interval, because the claims just released would otherwise block other machines until they expire. At most one sync runs per repository on a machine. Sync never prompts for credentials and never runs the user's pre-push hooks. With no remote, ACS works in local-only mode.
+Sync runs detached and never blocks an agent. Hooks start it only in a repository with a remote and a `.acs/policy/` directory, because it publishes paths and the pilot's email: when the interval has elapsed since the last attempt, on session start and after a tool call; and on session end, whatever the interval, because the claims just released would otherwise block other machines until they expire. On session end a repository with `.acs/policy/` but no remote also gets a sync, which only writes the session's record (step 0). At most one sync runs per repository on a machine.
+
+### 8.1 Verifying ledgers
+
+`acs verify` checks every ledger on the machine, written there or fetched, from its tip:
+
+- **Structure.** A record commit's tree holds exactly `record.json` (mode `100644`) and the commit has at most one parent; a join commit has an empty tree and exactly two parents. A ledger may have several roots (two machines can start one before their chains are joined).
+- **Authorship.** The author email's pilot id equals the ref's pilot id, the record parses as a `SessionRecord`, and the pilot id of its `seat.pilot` is the same.
+- **Signatures.** Checked by git against the user's configuration (`gpg.ssh.allowedSignersFile` for SSH, the keyring for GPG). A bad, expired or revoked signature is a failure. A signature git cannot check (unknown key, no allowed-signers file) and an unsigned commit are reported, and are failures only when signatures are required (`--require-signed`).
+- **Rewrites.** A chain rewritten consistently is structurally valid, so the implementation remembers the last tip it verified for each ledger (`cache/verified-ledgers.json`, section 10) and reports a rewrite when that tip is no longer an ancestor of the current one. It also compares this machine's ledger with its fetched copy: one must contain the other, or they may fork from a common commit as long as no `session_id` appears on both sides of the fork (a session runs on one machine, so the same session on both sides means a rewrite). A tip is remembered only when its chain had no problems.
+
+Verification reads what is on the machine; run `acs sync` first to check the remote's current state. A fresh clone has nothing remembered, so there an unsigned rewrite cannot be told apart; signing closes that gap. Sync never prompts for credentials and never runs the user's pre-push hooks. With no remote, ACS works in local-only mode.
 
 ## 9. Evaluation order
 
@@ -384,7 +400,7 @@ ACS_HOME/
   repos/<repo-id>/
     state.db        SQLite: seats, claims, events, notices, stats, remote-claims view
     snapshots/      content-addressed blobs
-    cache/          compiled policy, keyed by the hash of .acs/policy/
+    cache/          compiled policy, keyed by the hash of .acs/policy/; verified ledger tips
     pending/        pending-commit markers and proposed lore
 ```
 
@@ -412,7 +428,7 @@ ACS_HOME/
 Agents must not be able to switch ACS off. Whatever the policy and the gate state, an implementation denies an agent:
 
 - writing or deleting a protected location outside the repository (`sealed_path`): its own state directory (`ACS_HOME`), git directories outside the work tree, and the user-level hook, plugin and settings files of every supported harness. A command whose effects cannot be determined (an interpreter, a script) is denied when one of its words mentions such a location or the repository's `.acs/`, `.git/hooks`, `.git/config`, harness settings or `.husky/`;
-- running a command of the ACS command line that changes state (`banned_command`). The reference implementation allows agents only `acs status`, `acs sync`, `acs doctor` without `--fix`, `acs lore list`, `acs lore show`, `acs lore stale` and help; agents claim, release and propose lore through the MCP tools, which act on their own seat;
+- running a command of the ACS command line that changes state (`banned_command`). The reference implementation allows agents only `acs status`, `acs sync`, `acs doctor` without `--fix`, `acs log`, `acs blame`, `acs stats`, `acs verify`, `acs undo` without `--apply`, `acs lore list`, `acs lore show`, `acs lore stale` and help; agents claim, release and propose lore through the MCP tools, which act on their own seat;
 - skipping or redirecting git hooks (`banned_command`): `--no-verify`, `git commit -n`, setting `core.hooksPath` for one command or in the configuration;
 - starting an agent harness with its hooks or the ACS plugin turned off (`banned_command`), such as Claude Code's `--bare`, `--settings` and `--setting-sources`, Antigravity's `--settings`, and either harness's `plugin disable` or `plugin uninstall`.
 
