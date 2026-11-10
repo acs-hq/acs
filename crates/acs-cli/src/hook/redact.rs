@@ -61,6 +61,14 @@ fn mask_url_password(token: &str) -> Option<String> {
 /// Redacts and truncates a command line for storage.
 #[must_use]
 pub fn redact_command(command: &str) -> String {
+    redact_text(command, MAX_COMMAND_CHARS)
+}
+
+/// Masks secrets in `text` (see the module documentation), normalizes its whitespace and cuts it
+/// to `max_chars`. [`redact_command`] with a chosen limit: session records use it for the intent
+/// an agent declared.
+#[must_use]
+pub fn redact_text(command: &str, max_chars: usize) -> String {
     let mut out: Vec<String> = Vec::new();
     let mut mask_next = 0usize;
     for token in command.split_whitespace() {
@@ -97,8 +105,8 @@ pub fn redact_command(command: &str) -> String {
         out.push(masked);
     }
     let joined = out.join(" ");
-    if joined.chars().count() > MAX_COMMAND_CHARS {
-        let mut cut: String = joined.chars().take(MAX_COMMAND_CHARS).collect();
+    if joined.chars().count() > max_chars {
+        let mut cut: String = joined.chars().take(max_chars).collect();
         cut.push('…');
         cut
     } else {

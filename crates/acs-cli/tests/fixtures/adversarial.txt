@@ -19,6 +19,7 @@ deny: acs plugin install claude-code
 deny: acs hook --canonical session_end
 deny: acs mcp
 deny: acs doctor --fix
+deny: acs undo ses_abc --apply
 deny: acs lore review
 deny: acs lore review --accept prop_abc
 deny: acs lore review --reject prop_abc --json
@@ -111,6 +112,11 @@ allow: acs doctor
 allow: acs lore list
 allow: acs lore show src/lib.rs
 allow: acs lore stale --json
+allow: acs log --json
+allow: acs blame src/lib.rs
+allow: acs stats
+allow: acs verify
+allow: acs undo ses_abc
 allow: acs --version
 allow: grep -rn "acs off" docs
 allow: rg acs src

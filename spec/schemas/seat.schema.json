@@ -47,7 +47,7 @@
       "type": "string"
     },
     "worktree": {
-      "description": "Absolute path of the worktree the seat works in.",
+      "description": "Absolute path of the worktree the seat works in. In a session record, only the name of\nthe worktree's folder: records are pushed, and absolute paths carry user names.",
       "type": "string"
     }
   },

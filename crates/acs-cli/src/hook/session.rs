@@ -103,7 +103,8 @@ pub fn end(ctx: &RepoContext, event: &ToolEvent, now: Timestamp) -> Decision {
     let _ = db.end_seat(&info.seat.seat_id, now);
     markers::clear_tool_marker(ctx, &info.seat.seat_id);
     // The claims just released would otherwise block other machines until their TTL: there may
-    // be no further event here to carry the news.
-    sync::spawn_now(ctx);
+    // be no further event here to carry the news. The same detached `acs sync` writes the
+    // session's record to the ledger, with or without a remote.
+    sync::spawn_for_records(ctx);
     decision
 }

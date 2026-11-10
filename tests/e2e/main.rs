@@ -10,5 +10,7 @@ mod common;
 mod acceptance;
 mod husky;
 mod junction;
+mod junction_undo;
 mod offline_team;
 mod sealed;
+mod undo_interleaved;

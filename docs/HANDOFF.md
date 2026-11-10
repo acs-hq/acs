@@ -1,4 +1,4 @@
-# Orchestrator handoff (after Phase 7)
+# Orchestrator handoff (after Phase 4)
 
 Written 2026-10-30 at the end of the session that built Phase 2, and updated 2026-10-31 after
 Phase 3 (WP3.1), after WP5.2 and WP5.1, and after the M1 parts of WP10. It replaces the handoff
@@ -31,12 +31,11 @@ The extension is **not published**: the human tests it locally first (`docs/rele
 and owns the Marketplace and Open VSX accounts. CI does not build it yet (section 5).
 
 **Phase 7 (WP7.1–WP7.4) is complete on `main` (2026-11-09).** M4's gate (plan section 8.3) is not
-fully met yet: overrides must appear in `acs log` and session records (WP4.1, section 3), and the
-in-editor run of `docs/releases/wp7-humans.md` must be recorded. Issue #17 is closed; #33 (plain
+fully met yet: the in-editor run of `docs/releases/wp7-humans.md` must be recorded (overrides in
+`acs log` and session records arrived with Phase 4). Issue #17 is closed; #33 (plain
 `acs claim` claims are never refreshed) stays open, with a comment on what the extension and
-`acs watch` now refresh. Next in the plan's order (section 8.2): the rest of step 4a (WP4.1, WP4.4,
-WP6.1, WP8.1), then 4b (WP4.2, WP4.3, WP4.5, WP6.2, WP5.4, WP8.2), then 4c (WP8.3), then the
-Antigravity hard stop. Not built, offered to the human: a sidebar view for the extension (an
+`acs watch` now refresh. Next in the plan's order (section 8.2), with Phases 4, 6 and 7 done: WP8.1,
+then WP5.4 and WP8.2, then 4c (WP8.3), then the Antigravity hard stop. Not built, offered to the human: a sidebar view for the extension (an
 Activity Bar "Claims" panel grouped by holder, with release buttons), and an extension icon.
 
 **Phase 6 (WP6.1, WP6.2, lore) is built (2026-11-09, decision 0029).** Lore entries under
@@ -49,6 +48,19 @@ guide: `docs/lore.md`. Real-agent check: `tests/e2e/real/lore.sh` (passed,
 `docs/releases/phase6-lore.md`). The
 state schema is now 6: **reinstall `acs` after merging**. M3 still needs WP5.4 (instruction-file
 import), which builds on `acs_lore::format` and `propose::file_for`.
+
+**Phase 4 (WP4.1–WP4.5) is built (2026-11-10, decision 0030).** Every session that did something
+gets a record in its pilot's ledger, written by `acs sync` (the session-end hook only starts a
+detached sync, now also without a remote); a session silent for an hour is recorded as crashed.
+`acs log` lists them, overrides included, which completes WP7.1's acceptance. `acs blame` gives each
+line its sessions, `acs undo <session>` restores one session's files (dry run unless `--apply`,
+merging around later edits, a new commit for committed changes), `acs verify` checks ledger
+structure, authors, signatures and rewrites, `acs stats` counts what ACS prevented. User guide:
+`docs/wiki/History-and-Undo.md`. The state schema is 7: **reinstall `acs` after merging**; the first
+sync then writes records for past sessions and the next one with a remote pushes them. M2's gate
+items are covered by tests (interleaved undo and junction recovery in `tests/e2e/`, mixed blame,
+tampered ledgers); no real-agent run was made for Phase 4. Dogfooding found that commits from a
+subagent's worktree are rejected for the agent's own claims (section 2, "New in Phase 4").
 
 ## 1. Where things stand
 
@@ -100,11 +112,15 @@ import), which builds on `acs_lore::format` and `propose::file_for`.
 | acs-mcp | 2.6 | `Backend` trait, `serve_stdio` (rmcp 3.8, the only async runtime in the binary) |
 | acs-cli | 2.1, 2.4–2.6, 3.1, 5.2, 5.3, 7.1, 7.2, 7.4 | `runtime` (`RepoContext`, seats, `status`/`claim_paths`/`release_paths`/`set_intent`/`last_decision`, `sync::{lock, spawn_if_due, spawn_now}`, `protect::{StoreOverrides, outside_seals}`), `hook` (`markers::tool_markers` lists running calls for `acs watch`), `cli`, `commands/{init,status,claim,release,off,override,doctor,git_hook,mcp,sync,plugin,watch}`, `init::propose::{propose, propose_for, territory_toml}` |
 | acs-os | 3.1 | `keep_stdio_from_children`; the only crate allowed `unsafe`, one Windows call (decision 0020) |
+| Phase 4 | 4.1–4.5 | `acs-store`: `records::{assemble_record, records_due, mark_recorded, is_worth_recording, claim_waits}` (migration 0007), `undo::{plan, apply}`, `seats_by_session_prefix`, `seat_by_session_id`; `acs-git`: `refs::SyncStorage::ledger_pilots`, `trailers::commits_with_sessions`, `signing::{verify_pilot, verify_chain, VerifiedTips}`, `blame::blame_file`, `merge::{merge_file, commit_only, session_commit_paths}`; `acs-cli`: `runtime::records::{ledger_records, finalize, finalize_if_free}`, `runtime::sync::spawn_for_records`, `hook::redact::redact_text`, `commands/{log,blame,undo,verify,stats}` |
 | acs-lore | 6.1, 6.2 | `LoreSet::load`, `LoreEntry::parse`, `format::render_file`, `resolve`, `resolve::render`, `stale::{measure, StaleCache}`, `propose::{check, ProposalStore, file_for, accepted_file}`; `acs-git` adds `lore::{scope_change, commit_file_on_branch}`; `acs-cli` adds `runtime::lore::{inject, inject_for_event, propose}` and `commands/lore` |
 
 Commands: `acs hook --canonical <phase>`, `acs hook <claude-code|antigravity|canonical>`,
 `acs mcp [--harness]`, `acs git-hook <name>`, `acs init|status|claim|release|off|on|doctor|sync`
 `acs lore list|show <path>...|stale [--all]|review [--list|--accept <id> [--body-file F] [--owner O]|--reject <id>]`,
+`acs log [--pilot] [--harness] [--since] [--path] [--limit]`, `acs blame <path>`,
+`acs undo <session> [--apply]`, `acs verify [--pilot] [--require-signed] [--accept-history]`,
+`acs stats [--pilot] [--since]`,
 `acs override --path <glob> --once|--session` / `--revoke <id>`, `acs watch [--idle <secs>]` (JSON
 Lines with `--json`) and `acs plugin install <harness>` (each with `--json`). `acs init` also takes `--yes`, `--min-share` and `--min-commits` for its
 territory proposal.
@@ -293,16 +309,41 @@ New in Phase 6:
 4. **Both plugins ship exact skill copies now** (`packaging.rs`), Antigravity included, since the
    gate merged; copy `skills/acs-usage/SKILL.md` to both after editing it.
 
+New in Phase 4:
+
+1. **Subagent worktrees can build in their own `target/` now.** The human excluded the repository
+   folder from Avast on 2026-11-10, so three Sonnet subagents each built and tested in
+   `.claude/worktrees/<wp>/target` without a block. A first build there is a full build, and three
+   full workspace test runs at once took about 15 minutes each; expect sync and offline-team tests
+   to flake under that load (they passed alone and in the final run).
+2. **Freeze the shared surface first, then fan out.** The contracts commit registered all five
+   commands with stub files, the `pub mod` lines and `ledger_records`, so the three branches merged
+   with no conflict at all.
+3. **Subagents share the parent's Claude Code seat**, so their claims never conflict with each
+   other, across worktrees too. But their `cd <worktree> && git commit` is rejected by the
+   pre-commit hook as "made by a person" for the seat's own claims: the pending-commit marker is
+   keyed by the event's `cwd` (the main checkout). Workaround used: `acs_release` the committed
+   files, then commit. Never `--no-verify`. Open bug, `docs/security/overrides.md`.
+4. **Subagents still script edits with inline `python`** although the brief says not to; those
+   edits skip the gate. Repeat the rule in the prompt itself, not only in a rules file.
+5. **Do not kill processes by broad name** (`cargo|rustc` and every test binary): the auto-mode
+   classifier blocks it, rightly, since other sessions build on this machine. List first, stop only
+   what you started.
+6. **A `cat > file` with no input waits forever** in the Bash tool; it cost a 2-minute timeout.
+
 ## 3. Must-know items for the next phases
+
+**WP8.3 (deferred edits)** — build on undo's pieces: `acs_git::merge::merge_file` for the 3-way
+merge, `acs_store::undo` for "what was the base", and count queued edits in `acs stats` (the
+bucket is left out until then). **WP9.2 (`acs verify --base --head`)** extends
+`commands/verify.rs`; resolve trailers with `ledger_records`, and note that `signing::ledger_tips`
+builds fetched ref names itself (section 4). **WP10.1** — no benchmark covers `acs sync` with
+records due, or `acs log` on a long ledger (it reads every record each time).
 
 **WP5.4 (import)** — parse with `acs_lore::LoreEntry::parse`, write with `format::render_file`,
 place files with `propose::file_for`; entries must have `written_against` (use `HEAD`). Imported
 text is injected into every agent's context, so keep the import's output reviewable (a branch, as
 `acs lore review` does with `acs_git::lore::commit_file_on_branch`).
-
-**WP4.1 / WP4.5 (records, stats)** — `SessionRecord.lore_loaded` comes from
-`StateDb::lore_loaded_for_seat`; "lore entries served" is a count of `lore_loaded` rows (the
-`stale` column says how many came with a verify request).
 
 **WP10.1 / WP10.3** — no benchmark covers the first touch of a scope with lore yet (two `git diff`
 runs per entry on a new `HEAD`, cached in `cache/lore-stale.json`). Poisoned lore is a
@@ -314,29 +355,12 @@ child inherits every inheritable handle, the hook's stdout pipe included. Call
 `acs_os::keep_stdio_from_children` first, as `runtime::sync` does. Only a test run on Windows shows
 the difference (decision 0020).
 
-**WP4.1 (records)** — write records with `SyncStorage::append_ledger(pilot, session_id, bytes)` on
-a `refs::CustomRefs`; the next sync reconciles and pushes them. It is safe from concurrent hooks and
-never fails on signing (`LedgerAppend.signed` says what happened). `ledger_entries` reads a chain;
-reading every pilot's ledger for `acs log` needs a method listing fetched pilots, which belongs on
-the trait. `stale_live_seats(before)` finds crashed sessions (human seats excluded); aggregate
-`files_changed` as the first `pre_hash` and last `post_hash` per path from `attributions`. A missing
-pre-image entry means "unknown", not "did not exist". Redact event `detail` again before it goes
-into a record. Intent text needs the redaction pass (plan §9.2). Fill `SessionRecord.overrides`
-from `StateDb::override_uses_for_seat`, and make `acs log` show them: that is the part of WP7.1's
-acceptance ("every override appears in `acs log` and in the session record") left to WP4.1
-(decision 0026). Add read-only subcommands (`log`, `blame`, `stats`, `verify`) to `READ_ONLY` in
-`crates/acs-core/src/engine/protect.rs`, or agents will be denied them.
-
-**WP4.4 (signing)** — `ledger.rs` signs with `commit-tree -S` when `commit.gpgsign` is true and
-falls back to unsigned. `signing.rs` still owns detecting and verifying; join commits (empty tree,
-two parents) are part of a valid chain and carry no record.
-
-**WP4.2 (blame)** — `acs_git::trailers::session_ids(message, comment_char)`; uncommitted lines come
-from `path_attributions`.
-
-**WP4.3 (undo)** — unpredicted shell changes record the *staged* content as pre-image (committed
-content above 20k entries); wrong only if the file already had unstaged edits. Snapshots of ended
-sessions are kept (no `drop_session` at session end) and evicted by budget only.
+**Session records (done, decision 0030)** — anything new that goes into a `SessionRecord` is
+pushed to the remote: keep it structural and pass text through `hook::redact::redact_text`. Read
+records only through `runtime::records::ledger_records` (latest record per session wins). A new
+`acs` subcommand an agent may run goes in `READ_ONLY` in `crates/acs-core/src/engine/protect.rs`.
+Undo depends on snapshots of ended sessions being kept (no `drop_session` at session end; they are
+evicted by budget only) and on `acs watch` not pruning attributions.
 
 **Antigravity** — done on `antigravity-gate`: skills synced (both plugins ship exact copies),
 `acs plugin install antigravity` (writes the built-in plugin to `.agents/plugins/acs/`), a setup
@@ -387,12 +411,18 @@ skipped when no binary exists. SPEC section 6.2 states the rule for editor integ
 | --- | --- | --- |
 | `SimpleCommand.wrappers` so user bans can match `sudo *` (self-protection did not need it: `words` already drop wrappers, decision 0026) | before 1.0 | WP1.4, WP2.2 |
 | Optional `[lore]` config keys (inject cap 4,000 chars, stale threshold 30%) | WP6.1, WP6.2 | plan §7 |
-| `FileChange` cannot say "pre-hash unknown" vs "did not exist" | WP4.1 | WP2.1 |
+| `FileChange` cannot say "pre-hash unknown" vs "did not exist" (WP4.1 shipped without it; undo reads snapshots instead) | before 1.0 | WP2.1, decision 0030 |
+| A tip accessor on `SyncStorage`, so `signing::ledger_tips` stops building fetched ref names itself | before a second storage | decision 0030 |
 | Expose the engine's claim-message helpers (`age`, holder) from `acs-core` | any | WP2.4 duplicated them |
 | `ResolvedPath.linked_truncated` | optional | WP1.3 |
 
 ## 5. For the human
 
+- **After merging Phase 4:** reinstall `acs` (`cargo install --path crates/acs-cli --locked`); the
+  state moves to schema 7. The first sync then writes records for this repository's past sessions
+  (since dogfooding started on 2026-11-08) and pushes them to `refs/acs/ledger/<pilot-id>` on
+  GitHub. Records hold paths, hashes, counts, intent text and your git email, never prompts or
+  file contents.
 - **Antigravity (section 7):** the desktop app checks, the decisions of 0024, and whether to
   merge `antigravity-gate`.
 - **Reminder: a missing `acs` breaks the two harnesses in opposite ways.** Both plugins' hooks run

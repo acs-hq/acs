@@ -24,7 +24,8 @@ pub struct Seat {
     pub harness: String,
     /// The harness's own session identifier.
     pub harness_session_id: String,
-    /// Absolute path of the worktree the seat works in.
+    /// Absolute path of the worktree the seat works in. In a session record, only the name of
+    /// the worktree's folder: records are pushed, and absolute paths carry user names.
     pub worktree: String,
     /// The checked-out branch. Absent when HEAD is detached.
     #[serde(default, skip_serializing_if = "Option::is_none")]

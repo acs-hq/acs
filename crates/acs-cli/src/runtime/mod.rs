@@ -20,6 +20,7 @@ pub mod lore;
 mod ops;
 pub mod paths;
 pub mod protect;
+pub mod records;
 pub mod seats;
 pub mod sync;
 
