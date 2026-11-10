@@ -177,6 +177,53 @@ pub fn session_ids(message: &str, comment: char) -> Vec<String> {
         .collect()
 }
 
+/// A commit that carries `ACS-Session` trailers.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SessionCommit {
+    /// The full commit hash.
+    pub commit: String,
+    /// The session ids in its trailer block, in order.
+    pub sessions: Vec<String>,
+}
+
+/// The commits of every ref (`git log --all`) that carry an `ACS-Session` trailer, made at or
+/// after `since_secs` (Unix seconds; `None` for all of history). One `git` process whatever the
+/// number of sessions. Each hit is confirmed with [`session_ids`], so a message that merely
+/// mentions the token does not count. Newest first.
+///
+/// # Errors
+///
+/// [`GitError`] when `git` cannot run or fails.
+pub fn commits_with_sessions(
+    work_tree: &Path,
+    since_secs: Option<i64>,
+) -> Result<Vec<SessionCommit>, crate::GitError> {
+    let since = since_secs.map(|secs| format!("--since=@{}", secs.max(0)));
+    let mut args = vec!["log", "--all", "--no-color", "--grep=^ACS-Session:"];
+    if let Some(since) = &since {
+        args.push(since);
+    }
+    args.push("--format=%x1e%H%x1f%B");
+    let text = crate::refs::checked(
+        &args,
+        crate::refs::git_output(work_tree, &args, None, &[])?,
+    )?;
+    let mut found = Vec::new();
+    for chunk in text.split('\u{1e}').filter(|c| !c.trim().is_empty()) {
+        let Some((commit, message)) = chunk.split_once('\u{1f}') else {
+            continue;
+        };
+        let sessions = session_ids(message, DEFAULT_COMMENT_CHAR);
+        if !sessions.is_empty() {
+            found.push(SessionCommit {
+                commit: commit.trim().to_owned(),
+                sessions,
+            });
+        }
+    }
+    Ok(found)
+}
+
 /// Adds `trailers` to `message` and returns the new text, or `None` when every one of them is
 /// already there (nothing to write). Trailers given twice are added once.
 #[must_use]
