@@ -455,6 +455,29 @@ fn the_ledger_is_a_chain_of_one_commit_per_record() {
 }
 
 #[test]
+fn ledger_pilots_lists_own_and_fetched_ledgers_once() {
+    let team = Team::new();
+    let sara = team.machine("sara", SARA);
+    let bob = team.machine("bob", "bob@example.com");
+    assert!(sara.storage().ledger_pilots().unwrap().is_empty());
+    sara.storage()
+        .append_ledger(&sara.pilot(), "ses_1", b"1")
+        .unwrap();
+    bob.storage()
+        .append_ledger(&bob.pilot(), "ses_2", b"2")
+        .unwrap();
+    bob.sync(1).unwrap();
+    sara.sync(2).unwrap();
+    // Sara's own ledger is both local and fetched back; Bob's is fetched only.
+    let mut expected = vec![sara.pilot().id, bob.pilot().id];
+    expected.sort();
+    assert_eq!(sara.storage().ledger_pilots().unwrap(), expected);
+    let bobs = sara.storage().ledger_entries(&bob.pilot().id).unwrap();
+    assert_eq!(bobs.len(), 1);
+    assert_eq!(bobs[0].record, b"2");
+}
+
+#[test]
 fn concurrent_appends_lose_nothing() {
     let team = Team::new();
     let sara = team.machine("sara", SARA);
@@ -619,6 +642,9 @@ impl SyncStorage for InMemory {
         unreachable!("a sync appends nothing")
     }
     fn ledger_entries(&self, _pilot_id: &str) -> Result<Vec<LedgerEntry>, GitError> {
+        Ok(Vec::new())
+    }
+    fn ledger_pilots(&self) -> Result<Vec<String>, GitError> {
         Ok(Vec::new())
     }
     fn reconcile_ledger(&self, _pilot: &Pilot) -> Result<(), GitError> {

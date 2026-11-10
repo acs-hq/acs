@@ -11,16 +11,19 @@
 use crate::gate::{CommandClass, OutsideSeal, SimpleCommand};
 
 /// `acs` subcommands an agent may run from its shell: they only read, or only share claims with
-/// the remote. `doctor` is listed, but `doctor --fix` is not allowed. `lore` is decided per
-/// action in [`denied_sub`]: `list`, `show` and `stale` are allowed, `review` is not.
-const READ_ONLY: &[&str] = &["status", "sync", "doctor", "help"];
+/// the remote. `doctor` is listed, but `doctor --fix` is not allowed; `undo` is listed, but
+/// `undo --apply` is not (a dry run only reads). `lore` is decided per action in [`denied_sub`]:
+/// `list`, `show` and `stale` are allowed, `review` is not.
+const READ_ONLY: &[&str] = &[
+    "status", "sync", "doctor", "help", "log", "blame", "stats", "verify", "undo",
+];
 
 /// The `acs` subcommands that change state. When `acs` appears as an argument of another
 /// program (`xargs acs off`, `cargo run --bin acs -- off`), only these count, so that
 /// `grep -r acs src` is not mistaken for running ACS.
 const STATEFUL: &[&str] = &[
     "hook", "init", "claim", "release", "off", "on", "plugin", "mcp", "git-hook", "override",
-    "watch",
+    "watch", "undo",
 ];
 
 /// Paths inside the repository that a command with unknown effects must not mention: ACS's
@@ -136,6 +139,11 @@ fn denied_sub(sub: &str, rest: &[&str], direct: bool) -> bool {
     let sub = sub.to_ascii_lowercase();
     if sub == "doctor" {
         return rest.contains(&"--fix");
+    }
+    if sub == "undo" {
+        // A dry run only reads; `--apply` rewrites files and makes revert commits, which is the
+        // pilot's call.
+        return rest.contains(&"--apply");
     }
     if sub == "lore" {
         // `acs lore list|show|stale` only read; `acs lore review` turns proposals into commits,
@@ -327,6 +335,12 @@ mod tests {
             "acs lore show src/a.rs",
             "acs lore stale --all",
             "acs lore help review",
+            "acs log --json",
+            "acs blame src/a.rs",
+            "acs stats",
+            "acs verify",
+            "acs undo ses_1",
+            "xargs acs undo",
             "grep -rn acs src",
             "rg acs off.rs",
             "cargo run -p acs-cli -- status",
@@ -345,6 +359,8 @@ mod tests {
             ("acs hook --canonical pre_tool", "acs hook"),
             ("acs mcp", "acs mcp"),
             ("acs doctor --fix", "acs doctor"),
+            ("acs undo ses_1 --apply", "acs undo"),
+            ("xargs acs undo --apply", "acs undo"),
             ("acs lore review", "acs lore review"),
             ("acs lore review --accept prop_1", "acs lore review"),
             ("acs lore --json review --list", "acs lore review"),

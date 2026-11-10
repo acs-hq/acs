@@ -53,6 +53,16 @@ pub enum Command {
     Watch(commands::watch::WatchArgs),
     /// Read the repository's lore and review what agents propose.
     Lore(commands::lore::LoreArgs),
+    /// List past sessions: who worked, what they claimed and changed, what was blocked.
+    Log(commands::log::LogArgs),
+    /// Show which session (pilot, agent, intent) last changed each line of a file.
+    Blame(commands::blame::BlameArgs),
+    /// Undo what one session changed, leaving other sessions' changes alone (dry run by default).
+    Undo(commands::undo::UndoArgs),
+    /// Check that session records are unbroken chains with valid signatures.
+    Verify(commands::verify::VerifyArgs),
+    /// Count what ACS prevented: collisions, destructive commands, sealed-path writes.
+    Stats(commands::stats::StatsArgs),
     /// Install the ACS plugin into an agent harness.
     Plugin(commands::plugin::PluginArgs),
     /// Run the MCP server on stdio: the tools `acs_status`, `acs_claim`, `acs_release`,
@@ -153,6 +163,11 @@ pub fn run(cli: Cli) -> ExitCode {
         Command::Sync(args) => commands::sync::run(&args),
         Command::Watch(args) => commands::watch::run(&args),
         Command::Lore(args) => commands::lore::run(&args),
+        Command::Log(args) => commands::log::run(&args),
+        Command::Blame(args) => commands::blame::run(&args),
+        Command::Undo(args) => commands::undo::run(&args),
+        Command::Verify(args) => commands::verify::run(&args),
+        Command::Stats(args) => commands::stats::run(&args),
         Command::Plugin(args) => commands::plugin::run(&args),
         Command::Mcp(args) => mcp::run(&args),
         Command::GitHook(args) => git_hook::run(&args),

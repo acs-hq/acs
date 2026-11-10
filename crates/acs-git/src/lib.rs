@@ -16,10 +16,13 @@
 //! hot-path reads are a few small files, and the one place that needs git's own logic
 //! (`.gitignore`, index comparison) runs `git`.
 
+pub mod blame;
 pub mod hooks;
 pub mod lore;
+pub mod merge;
 pub mod refs;
 pub mod repo;
+pub mod signing;
 pub mod status;
 pub mod sync;
 pub mod trailers;

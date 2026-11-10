@@ -24,9 +24,11 @@ pub mod home;
 pub mod lore;
 pub mod notices;
 pub mod overrides;
+pub mod records;
 pub mod repo_id;
 pub mod seats;
 pub mod snapshots;
+pub mod undo;
 
 pub use attributions::{Attribution, AttributionSource, StoredAttribution};
 pub use claims::{AcquireOutcome, Acquired, Conflict, SyncStatus};

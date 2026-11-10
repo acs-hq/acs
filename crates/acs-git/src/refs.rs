@@ -147,6 +147,14 @@ pub trait SyncStorage {
     /// [`GitError`] when `git` fails.
     fn ledger_entries(&self, pilot_id: &str) -> Result<Vec<LedgerEntry>, GitError>;
 
+    /// The ids of every pilot with a ledger on this machine, written here or fetched, sorted and
+    /// without duplicates. Each one can be read with [`SyncStorage::ledger_entries`].
+    ///
+    /// # Errors
+    ///
+    /// [`GitError`] when `git` fails.
+    fn ledger_pilots(&self) -> Result<Vec<String>, GitError>;
+
     /// Joins `pilot`'s ledger on this machine with the fetched one, so that it can be pushed as
     /// a fast-forward. They differ when one pilot works on two machines.
     ///
@@ -285,6 +293,32 @@ impl SyncStorage for CustomRefs {
             Some(tip) => crate::ledger::entries(&self.work_tree, &tip),
             None => Ok(Vec::new()),
         }
+    }
+
+    fn ledger_pilots(&self) -> Result<Vec<String>, GitError> {
+        let local = ledger_ref("");
+        let fetched = self.fetched_ref(&local);
+        let listing = git_text(
+            &self.work_tree,
+            &[
+                "for-each-ref",
+                "--format=%(refname)",
+                local.trim_end_matches('/'),
+                fetched.trim_end_matches('/'),
+            ],
+        )?;
+        let mut ids: Vec<String> = listing
+            .lines()
+            .filter_map(|name| {
+                name.strip_prefix(&local)
+                    .or_else(|| name.strip_prefix(&fetched))
+            })
+            .filter(|id| !id.is_empty() && !id.contains('/'))
+            .map(str::to_owned)
+            .collect();
+        ids.sort();
+        ids.dedup();
+        Ok(ids)
     }
 
     fn reconcile_ledger(&self, pilot: &Pilot) -> Result<(), GitError> {
