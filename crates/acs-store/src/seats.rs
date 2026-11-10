@@ -229,6 +229,23 @@ impl StateDb {
         raw.map(RawSeat::into_info).transpose()
     }
 
+    /// The seat whose session id (`ses_...`, the `ACS-Session` trailer value) this is, if it
+    /// exists. A read: `acs blame` uses it for sessions that have no ledger record yet.
+    ///
+    /// # Errors
+    ///
+    /// Any [`StoreError`].
+    pub fn seat_by_session_id(&self, session_id: &str) -> Result<Option<SeatInfo>, StoreError> {
+        let raw = self
+            .conn
+            .prepare_cached(&format!(
+                "SELECT {SEAT_COLUMNS} FROM seats WHERE session_id = ?1"
+            ))?
+            .query_row(params![session_id], RawSeat::from_row)
+            .optional()?;
+        raw.map(RawSeat::into_info).transpose()
+    }
+
     /// The seat with this id with its session id, intent and end time, if it exists.
     ///
     /// # Errors

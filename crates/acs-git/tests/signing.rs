@@ -535,13 +535,16 @@ fn join_commits_of_one_pilot_on_two_machines_are_accepted() {
     desktop.append(1);
     desktop
         .storage()
-        .push(&[], &[desktop.pilot.clone()])
+        .push(&[], std::slice::from_ref(&desktop.pilot))
         .unwrap();
     laptop.storage().fetch().unwrap();
     laptop.storage().reconcile_ledger(&laptop.pilot).unwrap();
     laptop.append(2);
     desktop.append(3);
-    laptop.storage().push(&[], &[laptop.pilot.clone()]).unwrap();
+    laptop
+        .storage()
+        .push(&[], std::slice::from_ref(&laptop.pilot))
+        .unwrap();
     desktop.storage().fetch().unwrap();
     desktop.storage().reconcile_ledger(&desktop.pilot).unwrap();
 
@@ -563,7 +566,9 @@ fn a_fetched_chain_that_dropped_records_or_was_rewritten_is_caught() {
     let first = sara.append(1);
     sara.append(2);
     sara.append(3);
-    sara.storage().push(&[], &[sara.pilot.clone()]).unwrap();
+    sara.storage()
+        .push(&[], std::slice::from_ref(&sara.pilot))
+        .unwrap();
     sara.storage().fetch().unwrap();
     let mut memory = VerifiedTips::in_memory();
     assert!(kinds(&sara.verify(&mut memory)).is_empty());
