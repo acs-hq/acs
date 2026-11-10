@@ -18,6 +18,20 @@ use crate::hook::redact::redact_text;
 /// crashed and gets a record.
 pub const CRASH_AFTER: std::time::Duration = std::time::Duration::from_secs(3600);
 
+/// The environment variable that overrides [`CRASH_AFTER`], in seconds (tests, and anyone whose
+/// harness is known to go quiet for longer).
+pub const CRASH_AFTER_ENV: &str = "ACS_CRASH_AFTER_SECS";
+
+fn crash_after_secs() -> i64 {
+    std::env::var(CRASH_AFTER_ENV)
+        .ok()
+        .and_then(|v| v.parse::<u32>().ok())
+        .map_or_else(
+            || i64::try_from(CRASH_AFTER.as_secs()).unwrap_or(i64::MAX),
+            i64::from,
+        )
+}
+
 /// How much earlier than a seat's start a commit may be dated and still count as its own (clock
 /// skew between the commit and the seat).
 const COMMIT_SLACK_SECS: i64 = 3600;
@@ -133,11 +147,8 @@ pub fn finalize(ctx: &RepoContext, now: Timestamp) -> Result<FinalizeReport, OpE
     let db = ctx
         .db()
         .map_err(|why| OpError::Unavailable(why.to_owned()))?;
-    let crashed_before = Timestamp::from_second(
-        now.as_second()
-            .saturating_sub(i64::try_from(CRASH_AFTER.as_secs()).unwrap_or(i64::MAX)),
-    )
-    .map_err(|err| OpError::Invalid(err.to_string()))?;
+    let crashed_before = Timestamp::from_second(now.as_second().saturating_sub(crash_after_secs()))
+        .map_err(|err| OpError::Invalid(err.to_string()))?;
     let due = db.records_due(crashed_before)?;
     let mut report = FinalizeReport::default();
     if due.is_empty() {
