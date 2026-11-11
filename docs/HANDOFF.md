@@ -6,6 +6,10 @@ written after Phase 1; that version is in git history (`git show 49c2cf0:docs/HA
 its process lessons still apply (summarized in section 2). Read this with the implementation plan
 and `docs/decisions/` before starting the next phase.
 
+**Tracking moved (2026-11-11).** The plan is `docs/PLAN.md` (no longer in the human's Downloads
+folder), open work is in GitHub issues, and `CLAUDE.md` says how sessions keep both current.
+Decision 0031 puts first testers before Phase 8, Phase 9 and Spec 1.0.
+
 **Antigravity and GitLab are deferred (2026-10-31).** Section 6 says what changed and when the
 human must be reminded. Check its triggers before starting any WP.
 
