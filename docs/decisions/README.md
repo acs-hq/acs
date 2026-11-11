@@ -7,3 +7,43 @@ Short records of decisions that are not obvious from the code, named `NNNN-title
 - **Consequences**: what follows from it, including trade-offs and follow-ups.
 
 Keep them brief. Supersede an old record with a new one rather than rewriting history.
+
+Every new record says who decided, in its status line: `Decided by: the human` or `Decided by: Claude`. Add a row to the index below in the same commit.
+
+## Index
+
+"Claude" means a Claude Code session decided while building, without asking. "You" means the human decided. "Open" lists what still waits for the human, with its issue.
+
+| No. | Subject | Decided by | Open |
+| --- | --- | --- | --- |
+| [0001](0001-workspace-and-toolchain.md) | Workspace and toolchain | Claude | |
+| [0002](0002-contracts.md) | Contracts | Claude | |
+| [0003](0003-acs-home-and-repo-id.md) | `ACS_HOME` and repository identity | Claude | |
+| [0004](0004-gate-interfaces.md) | Gate interfaces for Phase 1 | Claude | |
+| [0005](0005-policy-loader.md) | Policy loader | Claude | |
+| [0006](0006-state-store.md) | State store | Claude | |
+| [0007](0007-path-safety.md) | Path safety | Claude | |
+| [0008](0008-shell-analysis.md) | Shell analysis | Claude | |
+| [0009](0009-decision-engine.md) | Decision engine | Claude | |
+| [0010](0010-snapshot-store.md) | Snapshot store | Claude | |
+| [0011](0011-phase2-architecture.md) | Phase 2 architecture | Claude | |
+| [0012](0012-hook-pipeline.md) | Hook pipeline | Claude | |
+| [0013](0013-claude-code-adapter.md) | Claude Code adapter and plugin | Claude | Strict mode when `acs` is missing (issue 11) |
+| [0014](0014-antigravity-adapter.md) | Antigravity adapter and plugin | Claude | |
+| [0015](0015-git-backstop.md) | Git backstop | Claude | |
+| [0016](0016-mcp-server.md) | MCP server | Claude | |
+| [0017](0017-harness-sealed-defaults.md) | Harness files in the default sealed list | Claude | |
+| [0018](0018-cli-m1.md) | CLI for M1 | Claude | |
+| [0019](0019-defer-antigravity-and-gitlab.md) | Defer Antigravity and GitLab | You | |
+| [0020](0020-team-sync.md) | Team sync | Claude | |
+| [0021](0021-distribution.md) | Distribution and `acs plugin install` | Claude; Homebrew not published is yours | Release setup (issue 5) |
+| [0022](0022-setup-and-usage-skills.md) | Setup and usage skills | Claude | |
+| [0023](0023-m1-hardening.md) | M1 hardening | Claude | Windows latency budgets (issue 2) |
+| [0024](0024-antigravity-gate.md) | The Antigravity gate | Claude | Three questions and the desktop app checks (issues 6, 7, 8, 9) |
+| [0025](0025-init-proposals-without-codeowners.md) | `acs init` proposals without CODEOWNERS | You | |
+| [0026](0026-territory-overrides-and-self-protection.md) | Owned territory, overrides, self-protection | You, on four questions; the rest Claude | |
+| [0027](0027-outside-the-repository-is-opt-in.md) | Writes outside the repository ask only on request | You | |
+| [0028](0028-human-claims-from-editors.md) | Human claims from editors | Claude; the release rule and the `notify` crate are yours | Publishing the extension |
+| [0029](0029-lore.md) | Lore | Claude | |
+| [0030](0030-session-records-undo-verify.md) | Session records, log, blame, undo, verify, stats | Claude | |
+| [0031](0031-first-testers-and-first-run-defaults.md) | First testers before the spec; first-run defaults | You | Territory prompt at init, workflow and `.env` seals, commit trailer toggle |
