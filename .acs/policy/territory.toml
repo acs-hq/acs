@@ -4,8 +4,7 @@
 # needed), sealed (no agent).
 #
 # Proposed by `acs init` from folder names and the last 12 months of git history. It is
-# only a starting point: edit it freely. ACS does not enforce `owned` zones yet; until
-# it does they act like `shared`.
+# only a starting point: edit it freely.
 
 # docs/: folder name
 [[zone]]
