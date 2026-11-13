@@ -1,0 +1,20 @@
+{
+  "spec": "acs/0.1",
+  "pilot": "omarahmed3001@gmail.com",
+  "updated_at": "2026-11-13T21:57:36.7314917Z",
+  "claims": [
+    {
+      "claim_id": "clm_qomxdjux4zi7lp67l6kvats7fm",
+      "seat_id": "seat_t2pgywb3cqlcyxapjbeg7omwnu",
+      "pilot": "omarahmed3001@gmail.com",
+      "scope": {
+        "file": "crates/acs-git/src/merge.rs"
+      },
+      "target_branch": "main",
+      "acquired_at": "2026-11-13T21:24:11.787866Z",
+      "heartbeat_at": "2026-11-13T21:57:37.153296Z",
+      "ttl_secs": 900,
+      "origin": "agent"
+    }
+  ]
+}
