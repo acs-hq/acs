@@ -1,7 +1,7 @@
 //! Opening a repository: [`RepoContext`].
 
 use std::cell::OnceCell;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use acs_core::gate::PolicyView;
 use acs_git::{GitError, RepoLayout};
@@ -36,6 +36,10 @@ pub struct RepoContext {
     pub acs_home: Option<AcsHome>,
     /// This repository's state directory, when the repository id could be resolved.
     pub repo_home: Option<RepoHome>,
+    /// The work tree the session runs in, which a new seat is recorded under. It differs from
+    /// `layout.work_tree` when a hook event is judged in another work tree of the repository
+    /// because that is where its files are (`runtime::roots`).
+    pub session_tree: PathBuf,
     db: Result<StateDb, String>,
     snapshots: OnceCell<Result<SnapshotStore, String>>,
 }
@@ -71,7 +75,18 @@ impl RepoContext {
     ///
     /// [`OpenError`] when `cwd` is not in a git work tree.
     pub fn open_with(cwd: &Path, home: Result<AcsHome, HomeError>) -> Result<Self, OpenError> {
-        let layout = acs_git::discover(cwd)?;
+        Self::open_layout(acs_git::discover(cwd)?, home)
+    }
+
+    /// Opens the repository whose work tree is described by `layout` (from `acs_git::discover`).
+    ///
+    /// # Errors
+    ///
+    /// [`OpenError::Paths`] when the work tree root cannot be used for path resolution.
+    pub fn open_layout(
+        layout: RepoLayout,
+        home: Result<AcsHome, HomeError>,
+    ) -> Result<Self, OpenError> {
         let resolver = PathResolver::new(&layout.work_tree)?;
         let has_remote = acs_git::repo::has_remote(&layout.common_dir);
 
@@ -109,6 +124,7 @@ impl RepoContext {
         };
 
         Ok(Self {
+            session_tree: layout.work_tree.clone(),
             layout,
             resolver,
             policy,
@@ -153,10 +169,16 @@ impl RepoContext {
             .map_err(String::as_str)
     }
 
-    /// The work tree root as a string (the seat's `worktree`).
+    /// The work tree root as a string.
     #[must_use]
     pub fn worktree_str(&self) -> String {
         self.layout.work_tree.to_string_lossy().into_owned()
+    }
+
+    /// The session's work tree as a string (a new seat's `worktree`).
+    #[must_use]
+    pub fn session_tree_str(&self) -> String {
+        self.session_tree.to_string_lossy().into_owned()
     }
 }
 

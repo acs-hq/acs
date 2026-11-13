@@ -5,7 +5,7 @@
 
 use std::path::Path;
 
-use acs_core::gate::{ClaimSource, HeldClaim};
+use acs_core::gate::{ClaimSource, HeldClaim, PathLocation};
 use acs_core::{
     ClaimId, ClaimOrigin, ClaimScope, Outcome, Phase, ReasonCode, ReleaseReason, RepoPath, SeatId,
     SpecVersion, Timestamp, Tool, ToolEvent, ToolKind,
@@ -15,6 +15,7 @@ use serde::Serialize;
 
 use super::gate::{GateParams, run_gate};
 use super::paths::{NormalizeOptions, normalize, resolve_for_claim};
+use super::roots::split_by_tree;
 use super::seats::{HUMAN_HARNESS, current_view};
 use super::{OpError, RepoContext};
 
@@ -443,6 +444,11 @@ pub enum ClaimOutcome {
 /// `seat`, going through the same resolution, guards, conflict rule and atomic acquisition as an
 /// agent's edit. A human seat's claims have origin `human`.
 ///
+/// A path in another work tree of the repository (a linked worktree) is claimed as the file it
+/// is there, relative to that work tree's root, under that checkout's policy. Work trees are
+/// handled one after the other, so a refusal in a later one leaves the earlier ones claimed; the
+/// refusal then says so.
+///
 /// # Errors
 ///
 /// [`OpError`] only for failures unrelated to the decision itself; a claim the gate refuses is
@@ -454,8 +460,7 @@ pub fn claim_paths(
     cwd: &Path,
     now: Timestamp,
 ) -> Result<ClaimOutcome, OpError> {
-    let db = ctx
-        .db()
+    ctx.db()
         .map_err(|why| OpError::Unavailable(why.to_owned()))?;
     if paths.is_empty() {
         return Ok(ClaimOutcome::Refused {
@@ -463,6 +468,85 @@ pub fn claim_paths(
             message: "Name at least one file to claim.".to_owned(),
         });
     }
+    let (here, elsewhere) = split_by_tree(ctx, paths, cwd);
+    if elsewhere.is_empty() {
+        return claim_in(ctx, seat, &here, cwd, now);
+    }
+    let mut granted: Vec<RepoPath> = Vec::new();
+    let mut ids: Vec<ClaimId> = Vec::new();
+    let mut notes: Vec<String> = Vec::new();
+    let mut merge = |outcome: ClaimOutcome| -> Option<ClaimOutcome> {
+        match outcome {
+            ClaimOutcome::Granted {
+                paths,
+                claim_ids,
+                warnings,
+            } => {
+                for path in paths {
+                    if !granted.contains(&path) {
+                        granted.push(path);
+                    }
+                }
+                ids.extend(claim_ids);
+                for warning in warnings {
+                    if !notes.contains(&warning) {
+                        notes.push(warning);
+                    }
+                }
+                None
+            }
+            ClaimOutcome::Refused {
+                reason_code,
+                mut message,
+            } => {
+                if !granted.is_empty() {
+                    message.push_str(&format!(
+                        " (Already claimed for you in this call: {}.)",
+                        list(granted.iter().map(RepoPath::as_str))
+                    ));
+                }
+                Some(ClaimOutcome::Refused {
+                    reason_code,
+                    message,
+                })
+            }
+        }
+    };
+    if !here.is_empty()
+        && let Some(refused) = merge(claim_in(ctx, seat, &here, cwd, now)?)
+    {
+        return Ok(refused);
+    }
+    for (layout, group) in elsewhere {
+        let home = ctx
+            .acs_home
+            .clone()
+            .map_or_else(acs_store::AcsHome::from_env, Ok);
+        let work_tree = layout.work_tree.clone();
+        let other = RepoContext::open_layout(layout, home)
+            .map_err(|err| OpError::Invalid(err.to_string()))?;
+        if let Some(refused) = merge(claim_in(&other, seat, &group, &work_tree, now)?) {
+            return Ok(refused);
+        }
+    }
+    Ok(ClaimOutcome::Granted {
+        paths: granted,
+        claim_ids: ids,
+        warnings: notes,
+    })
+}
+
+/// [`claim_paths`] for paths that are all in `ctx`'s work tree.
+fn claim_in(
+    ctx: &RepoContext,
+    seat: &SeatInfo,
+    paths: &[String],
+    cwd: &Path,
+    now: Timestamp,
+) -> Result<ClaimOutcome, OpError> {
+    let db = ctx
+        .db()
+        .map_err(|why| OpError::Unavailable(why.to_owned()))?;
     let event = ToolEvent {
         spec: SpecVersion,
         harness: seat.seat.harness.clone(),
@@ -575,7 +659,8 @@ fn covers(target: &RepoPath, claimed: &RepoPath) -> bool {
 
 /// Releases `seat`'s claims on `paths` (relative to `cwd` or absolute). A directory, the
 /// repository root included, covers every claim under it; `released` lists the claimed files
-/// that were released. Only the seat's own claims are touched.
+/// that were released. Only the seat's own claims are touched. A path in another work tree of the
+/// repository names the file it is there, as in [`claim_paths`].
 ///
 /// # Errors
 ///
@@ -590,7 +675,20 @@ pub fn release_paths(
     let db = ctx
         .db()
         .map_err(|why| OpError::Unavailable(why.to_owned()))?;
-    let (inside, outside) = resolve_for_claim(ctx, paths, cwd);
+    let (here, elsewhere) = split_by_tree(ctx, paths, cwd);
+    let (mut inside, mut outside) = resolve_for_claim(ctx, &here, cwd);
+    for (layout, group) in elsewhere {
+        let Ok(resolver) = acs_paths::PathResolver::new(&layout.work_tree) else {
+            outside.extend(group);
+            continue;
+        };
+        for raw in group {
+            match resolver.resolve(&raw, &layout.work_tree).location {
+                PathLocation::InRepo(path) => inside.push(path),
+                PathLocation::Outside(_) | PathLocation::Unresolvable(_) => outside.push(raw),
+            }
+        }
+    }
     let mine: Vec<HeldClaim> = db
         .live_claims(now)?
         .into_iter()

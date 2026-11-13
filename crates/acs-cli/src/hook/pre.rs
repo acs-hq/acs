@@ -9,8 +9,8 @@ use super::markers::{self, CommitMarker, ToolMarker};
 use super::redact::redact_command;
 use super::snapshots::capture_pre;
 use crate::runtime::gate::{GateParams, run_gate};
-use crate::runtime::paths::{NormalizeOptions, normalize};
-use crate::runtime::{RepoContext, lore, seats};
+use crate::runtime::paths::{NormalizeOptions, absolute_cwd, normalize};
+use crate::runtime::{RepoContext, lore, roots, seats};
 
 /// The most paths stored in an event row.
 const MAX_EVENT_PATHS: usize = 20;
@@ -83,7 +83,7 @@ fn unavailable_seat(ctx: &RepoContext, event: &ToolEvent, now: Timestamp) -> Opt
         pilot: acs_git::repo::fallback_pilot(),
         harness: event.harness.clone(),
         harness_session_id: event.harness_session_id.clone(),
-        worktree: ctx.worktree_str(),
+        worktree: ctx.session_tree_str(),
         branch: acs_git::repo::current_branch(&ctx.layout.git_dir),
         target_branch: ctx
             .policy
@@ -168,37 +168,35 @@ fn leave_markers(
             },
         );
     }
-    if pushes(norm) {
-        let _ = markers::write_push_marker(
-            ctx,
-            &CommitMarker {
-                session_id: info.session_id.to_string(),
-                seat_id: info.seat.seat_id.to_string(),
-                harness: info.seat.harness.clone(),
-                created_at: now,
-            },
-        );
+    // The git hooks look a marker up by the work tree git runs in, which `cd` and `git -C` can
+    // make a different one from the session's (`cd <worktree> && git commit`).
+    let Some(shell) = &norm.shell else { return };
+    let cwd = absolute_cwd(&event.cwd);
+    let marker = CommitMarker {
+        session_id: info.session_id.to_string(),
+        seat_id: info.seat.seat_id.to_string(),
+        harness: info.seat.harness.clone(),
+        created_at: now,
+    };
+    let mut commits: Vec<std::path::PathBuf> = Vec::new();
+    let mut pushes: Vec<std::path::PathBuf> = Vec::new();
+    for git in shell.commands.iter().filter_map(|c| c.git.as_ref()) {
+        let trees = if git.creates_commit {
+            &mut commits
+        } else if git.subcommand == "push" {
+            &mut pushes
+        } else {
+            continue;
+        };
+        let tree = roots::git_work_tree(ctx, git, &cwd);
+        if !trees.contains(&tree) {
+            trees.push(tree);
+        }
     }
-    if norm.creates_commit {
-        let _ = markers::write_commit_marker(
-            ctx,
-            &CommitMarker {
-                session_id: info.session_id.to_string(),
-                seat_id: info.seat.seat_id.to_string(),
-                harness: info.seat.harness.clone(),
-                created_at: now,
-            },
-        );
+    for tree in &commits {
+        let _ = markers::write_commit_marker(ctx, tree, &marker);
     }
-}
-
-/// Whether a shell command in the event runs `git push` (the `pre-push` git hook then knows the
-/// push comes from an agent session).
-fn pushes(norm: &crate::runtime::paths::Normalized) -> bool {
-    norm.shell.as_ref().is_some_and(|shell| {
-        shell
-            .commands
-            .iter()
-            .any(|c| c.git.as_ref().is_some_and(|g| g.subcommand == "push"))
-    })
+    for tree in &pushes {
+        let _ = markers::write_push_marker(ctx, tree, &marker);
+    }
 }

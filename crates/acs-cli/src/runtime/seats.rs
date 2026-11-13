@@ -118,7 +118,7 @@ fn create(
     now: Timestamp,
 ) -> Result<ResolvedSeat, StoreError> {
     let branch = acs_git::repo::current_branch(&ctx.layout.git_dir);
-    let worktree = ctx.worktree_str();
+    let worktree = ctx.session_tree_str();
     let target = ctx
         .policy
         .policy

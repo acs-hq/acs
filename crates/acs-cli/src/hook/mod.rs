@@ -31,7 +31,7 @@ use acs_git::status::{ScanMode, ScanOptions};
 use acs_store::{AcsHome, HomeError};
 
 use crate::runtime::paths::absolute_cwd;
-use crate::runtime::{OpenError, RepoContext};
+use crate::runtime::{RepoContext, roots};
 
 /// What a hook invocation takes from its process environment, injectable for tests.
 #[derive(Debug)]
@@ -109,10 +109,18 @@ fn handle(event: &ToolEvent, env: HookEnv) -> Decision {
     } else {
         absolute_cwd(&event.cwd)
     };
-    let ctx = match RepoContext::open_with(&cwd, env.home) {
-        Ok(ctx) => ctx,
-        // Not a repository ACS manages: nothing to coordinate.
-        Err(OpenError::NotARepo(_)) => return Decision::new(Outcome::Allow, ReasonCode::Ok, ""),
+    // Not a repository ACS manages: nothing to coordinate.
+    let Ok(session) = acs_git::discover(&cwd) else {
+        return Decision::new(Outcome::Allow, ReasonCode::Ok, "");
+    };
+    let session_tree = session.work_tree.clone();
+    // The event is judged in the work tree its files are in, which is not always the session's.
+    let layout = roots::for_event(event, &cwd, session);
+    let ctx = match RepoContext::open_layout(layout, env.home) {
+        Ok(mut ctx) => {
+            ctx.session_tree = session_tree;
+            ctx
+        }
         Err(err) => {
             let mut decision = Decision::new(Outcome::Allow, ReasonCode::Ok, "");
             decision

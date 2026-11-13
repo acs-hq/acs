@@ -128,28 +128,38 @@ pub fn clear_tool_marker(ctx: &RepoContext, seat: &SeatId) {
     }
 }
 
-/// Writes the pending-commit marker of this work tree (last writer wins).
+/// Writes the pending-commit marker of `work_tree`, the work tree the commit is made in (last
+/// writer wins).
 ///
 /// # Errors
 ///
 /// The I/O error; callers ignore it (the commit then goes without a trailer from the marker).
-pub fn write_commit_marker(ctx: &RepoContext, marker: &CommitMarker) -> io::Result<()> {
-    let key = worktree_key(&ctx.layout.work_tree);
+pub fn write_commit_marker(
+    ctx: &RepoContext,
+    work_tree: &Path,
+    marker: &CommitMarker,
+) -> io::Result<()> {
+    let key = worktree_key(work_tree);
     match pending_file(ctx, "commit", &format!("{key}.json")) {
         Some(path) => write_json(&path, marker),
         None => Ok(()),
     }
 }
 
-/// Writes the pending-push marker of this work tree (last writer wins). Same content as the
-/// commit marker, kept apart so a commit does not consume a push and the other way round.
+/// Writes the pending-push marker of `work_tree`, the work tree the push is run in (last writer
+/// wins). Same content as the commit marker, kept apart so a commit does not consume a push and
+/// the other way round.
 ///
 /// # Errors
 ///
 /// The I/O error; callers ignore it (the push is then treated as a human's unless the harness
 /// environment says otherwise).
-pub fn write_push_marker(ctx: &RepoContext, marker: &CommitMarker) -> io::Result<()> {
-    let key = worktree_key(&ctx.layout.work_tree);
+pub fn write_push_marker(
+    ctx: &RepoContext,
+    work_tree: &Path,
+    marker: &CommitMarker,
+) -> io::Result<()> {
+    let key = worktree_key(work_tree);
     match pending_file(ctx, "push", &format!("{key}.json")) {
         Some(path) => write_json(&path, marker),
         None => Ok(()),

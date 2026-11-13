@@ -21,6 +21,7 @@ mod ops;
 pub mod paths;
 pub mod protect;
 pub mod records;
+pub mod roots;
 pub mod seats;
 pub mod sync;
 

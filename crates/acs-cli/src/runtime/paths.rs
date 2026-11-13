@@ -302,7 +302,8 @@ impl Builder<'_> {
     }
 
     fn shell(&mut self, tool_name: &str, command: &str) {
-        let analysis = analyze(command, dialect_for(tool_name));
+        let dialect = dialect_for(tool_name);
+        let analysis = analyze(command, dialect);
         for simple in &analysis.commands {
             if simple.git.as_ref().is_some_and(|git| git.creates_commit) {
                 self.out.creates_commit = true;
@@ -315,7 +316,11 @@ impl Builder<'_> {
                     self.home_target(&target.path, target.op, target.recursive);
                     continue;
                 }
-                let raw = target.path.as_str();
+                // Git Bash on Windows writes `C:\x` as `/c/x`.
+                let drive = (dialect == Dialect::Bash)
+                    .then(|| super::roots::git_bash_drive(&target.path))
+                    .flatten();
+                let raw = drive.as_deref().unwrap_or(target.path.as_str());
                 if target.confidence == Confidence::Pattern || has_glob_meta(raw) {
                     self.pattern(raw, target.op, target.recursive);
                 } else if target.op == TargetOp::Delete {
