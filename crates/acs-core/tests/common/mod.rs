@@ -382,6 +382,7 @@ pub fn git_command(
         force_push,
         creates_commit: false,
         refs: refs.iter().map(|r| (*r).to_owned()).collect(),
+        ..GitInvocation::default()
     });
     cmd
 }

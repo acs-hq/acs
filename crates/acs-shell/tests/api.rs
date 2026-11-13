@@ -130,3 +130,38 @@ fn the_same_program_in_other_dialects() {
     assert_eq!(cmd.commands[0].classes, [CommandClass::Delete]);
     assert!(cmd.commands[0].targets[0].recursive);
 }
+
+/// The directory of the `git` invocation in `line`, or `None` when it is unknown.
+fn git_dir(line: &str, dialect: Dialect) -> Option<String> {
+    let analysis = analyze(line, dialect);
+    let git = analysis.commands.iter().find_map(|c| c.git.as_ref())?;
+    (!git.dir_unknown).then(|| git.dir.clone())
+}
+
+#[test]
+fn a_git_invocation_knows_the_directory_it_runs_in() {
+    let bash = |line| git_dir(line, Dialect::Bash);
+    assert_eq!(bash("git commit -m x").as_deref(), Some(""));
+    assert_eq!(bash("cd wt && git commit -m x").as_deref(), Some("wt"));
+    assert_eq!(bash("git -C wt commit -m x").as_deref(), Some("wt"));
+    assert_eq!(
+        bash("cd a && git -C b -C ../c commit").as_deref(),
+        Some("a/c")
+    );
+    assert_eq!(bash("cd a && git -C .. commit").as_deref(), Some(""));
+    assert_eq!(
+        bash("cd a; git -C /abs/wt push").as_deref(),
+        Some("/abs/wt")
+    );
+    assert_eq!(
+        bash("cd 'C:/work/wt' && git add -A && git commit -m x").as_deref(),
+        Some("C:/work/wt")
+    );
+    assert_eq!(bash("(cd wt && true); git commit").as_deref(), Some(""));
+    assert_eq!(bash("cd \"$WT\" && git commit"), None);
+    assert_eq!(bash("git -C \"$WT\" commit"), None);
+    assert_eq!(
+        git_dir("cd wt; git commit -m x", Dialect::PowerShell).as_deref(),
+        Some("wt")
+    );
+}

@@ -77,7 +77,10 @@ impl Ctx {
         }
     }
 
-    fn record(&mut self, words: &[Word], outcome: Outcome) {
+    fn record(&mut self, words: &[Word], mut outcome: Outcome) {
+        if let Some(git) = &mut outcome.git {
+            self.cwd.locate(git);
+        }
         let mut texts: Vec<String> = words.iter().map(|w| w.text.clone()).collect();
         if let (Some(program), Some(first)) = (outcome.program, texts.first_mut()) {
             *first = program;
