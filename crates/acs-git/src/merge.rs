@@ -317,6 +317,10 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let repo = dir.path();
         git(repo, &["init", "-q", "-b", "main", "."]);
+        // `commit_only` runs a plain `git commit`, so the repository needs its own identity;
+        // CI runners have none.
+        git(repo, &["config", "user.email", "t@example.com"]);
+        git(repo, &["config", "user.name", "t"]);
         fs::write(repo.join("a.txt"), "a\n").unwrap();
         fs::write(repo.join("b.txt"), "b\n").unwrap();
         git(repo, &["add", "-A"]);
