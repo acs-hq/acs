@@ -197,6 +197,21 @@ Only `spec` is required, so a file containing just `spec = "acs/0.1"` is valid.
 | `[ledger] store_prompts` | `false` | Whether prompts may be stored in the ledger |
 | `[lore] max_inject_chars` | `4000` | Most characters of lore one tool call may add to an agent's context (section 5.4); at least 1 |
 | `[lore] stale_percent` | `30` | Share of changed lines, 1 to 100, at which an entry is stale (section 5.4) |
+| `[features] <name>` | see below | Whether a part of ACS runs in the repository |
+
+**Features.** The `[features]` table switches parts of ACS on and off for the whole repository. Each key is a boolean; a missing key takes its default.
+
+| Key | Default | Off means |
+| --- | --- | --- |
+| `claims` | `true` | No claim is requested, checked or needed (section 6), in the gate and in the git hooks; `delete_outside_claims` is never returned |
+| `guards` | `true` | `guards.toml` and its built-in defaults are not enforced (section 5.2), and `path_escapes_repo` is never returned. Self-protection (section 11.1) is enforced regardless |
+| `territory` | `true` | `territory.toml` has no effect: every path is `shared` (section 5.3) |
+| `lore` | `true` | No lore is injected and no proposal is stored (section 5.4) |
+| `history` | `true` | No pre- or post-images, no session records (section 4.3) and no commit trailers (section 7) are written |
+| `commit_checks` | `true` | The git hooks reject no commit and no push |
+| `sync` | `false` | Nothing is fetched from or pushed to the remote (section 8), and remote claims are ignored |
+
+An implementation MUST NOT let a feature switch weaken self-protection: with `guards` off, the seals of section 11.1 still hold, so that an agent cannot change the switches.
 
 ### 5.2 `guards.toml`
 

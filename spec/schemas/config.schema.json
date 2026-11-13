@@ -1,5 +1,47 @@
 {
   "$defs": {
+    "Features": {
+      "additionalProperties": false,
+      "description": "The `[features]` table of `config.toml`: which parts of ACS run in this repository.\n\nEvery part except `sync` is on unless it is switched off here. The file is committed, so the\nswitches are the same for everyone who works in the repository, and it is sealed, so only a\nperson can change them. ACS's protection of itself is not a feature and cannot be switched\noff: agents can never write `.acs/`, git's hooks and config or the harness's hook settings,\nrun the `acs` commands that change state, or skip the git hooks.",
+      "properties": {
+        "claims": {
+          "default": true,
+          "description": "One writer per file: an edit claims the file, and a file another session holds is\ndenied. Off: nothing is claimed or blocked by a claim, and the rule against deleting\nfiles outside one's claims does not apply.",
+          "type": "boolean"
+        },
+        "commit_checks": {
+          "default": true,
+          "description": "The checks in the git hooks: a commit of files someone else holds or of sealed paths,\nand an agent's force push to a protected branch.",
+          "type": "boolean"
+        },
+        "guards": {
+          "default": true,
+          "description": "The rules of `guards.toml` and their built-in defaults: sealed paths (other than ACS's\nown), banned commands, protected branches, the delete limits and the questions about\nwrites ACS cannot place.",
+          "type": "boolean"
+        },
+        "history": {
+          "default": true,
+          "description": "Session history: the copies of files kept for `acs undo`, the session records behind\n`acs log`, `acs blame` and `acs stats`, and the `ACS-Session` trailer on commits.",
+          "type": "boolean"
+        },
+        "lore": {
+          "default": true,
+          "description": "Lore: showing entries to agents and taking their proposals.",
+          "type": "boolean"
+        },
+        "sync": {
+          "default": false,
+          "description": "Team sync: publishing claims and session records to the git remote and fetching other\nmachines'. Off by default: nothing leaves the machine until the repository opts in.",
+          "type": "boolean"
+        },
+        "territory": {
+          "default": true,
+          "description": "The zones of `territory.toml`. Off: the whole repository is `shared`.",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
     "LedgerConfig": {
       "additionalProperties": false,
       "description": "Settings for the session ledger.",
@@ -58,6 +100,19 @@
       "default": "main",
       "description": "The branch work is integrated into when a seat's own target is not known.",
       "type": "string"
+    },
+    "features": {
+      "$ref": "#/$defs/Features",
+      "default": {
+        "claims": true,
+        "commit_checks": true,
+        "guards": true,
+        "history": true,
+        "lore": true,
+        "sync": false,
+        "territory": true
+      },
+      "description": "Which parts of ACS run in this repository."
     },
     "ledger": {
       "$ref": "#/$defs/LedgerConfig",
