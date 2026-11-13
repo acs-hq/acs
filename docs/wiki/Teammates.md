@@ -50,8 +50,8 @@ Without the `acs` program on your `PATH`, the plugin's hooks do nothing and say 
 | Hooks not tracked by the repository | `acs init` |
 | The git setting that fetches claims | `acs init` |
 | The `acs` program | You install it |
-| Other people's live claims | Automatic after `acs init`, as long as you can reach the remote |
+| Other people's live claims | Automatic after `acs init`, if the repository switched team sync on (`acs status` shows it on the `Remote:` line) and you can reach the remote |
 
-After `acs init`, `git branch -r` lists entries such as `origin/acs/claims/<id>`. These are not branches anyone works on: they are how ACS shares claims. See [How claims reach your team](The-Initiator#how-claims-reach-your-team).
+With team sync on, after `acs init`, `git branch -r` lists entries such as `origin/acs/claims/<id>`. These are not branches anyone works on: they are how ACS shares claims. See [How claims reach your team](The-Initiator#how-claims-reach-your-team).
 
 Next: [Working with ACS](Working-with-ACS).

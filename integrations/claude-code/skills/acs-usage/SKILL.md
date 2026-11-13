@@ -9,6 +9,10 @@ ACS lets several agents share one repository. Editing a file claims it for you; 
 another agent has claimed is blocked until they finish. Some paths (hooks, settings, CI, the ACS
 policy) are sealed and nobody's agent may change them.
 
+A repository can switch parts of ACS off. The message ACS adds when your session starts says
+which. If it says claims are switched off, skip the claiming and releasing steps below: files
+need no claim there. Only your pilot can change these switches.
+
 The ACS tools are the MCP server `acs` of this plugin. In Claude Code their full names are
 `mcp__plugin_acs_acs__acs_status`, `mcp__plugin_acs_acs__acs_intent`,
 `mcp__plugin_acs_acs__acs_claim`, `mcp__plugin_acs_acs__acs_release`,

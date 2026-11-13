@@ -72,6 +72,18 @@ as the plain repository path, and commit markers follow `cd` and `git -C`. Subag
 no longer need to release before committing. **Reinstall `acs` after merging**; no schema change.
 What is left is in issue 69.
 
+**Features can be switched off (2026-11-13, decision 0033).** `[features]` in `config.toml` has
+`claims`, `guards`, `territory`, `lore`, `history`, `commit_checks` and `sync`; all default to
+on except `sync`, which builds decision 0031's "sync off by default". `acs features` lists them
+and `acs features <name> on|off` flips one (people only). **Reinstall `acs` after merging; this
+repository then stops syncing until the human runs `acs features sync on`.** Where each switch
+is enforced: `guards` and `territory` in `acs-policy`'s compiler, `claims` and the rest of
+`guards` in the engine, the others in the pipeline (`RepoContext::features()`). A new feature
+that should be switchable adds a field to `acs_core::Features` and a variant to `Feature`; a new
+sealed default that protects ACS itself also goes in `SELF_PROTECTION_SEALED`, which stays
+sealed with `guards` off. Tests that need sync must set `[features] sync = true` in the test
+repository's `config.toml`.
+
 ## 1. Where things stand
 
 - `main` has Phase 0, Phase 1, **Phase 2 (WP2.1–WP2.6)**, **Phase 3 (WP3.1)**, including the rule

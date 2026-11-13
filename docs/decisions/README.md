@@ -48,3 +48,4 @@ Every new record says who decided, in its status line: `Decided by: the human` o
 | [0030](0030-session-records-undo-verify.md) | Session records, log, blame, undo, verify, stats | Claude | |
 | [0031](0031-first-testers-and-first-run-defaults.md) | First testers before the spec; first-run defaults | You | Territory prompt at init, workflow and `.env` seals, commit trailer toggle |
 | [0032](0032-calls-are-judged-in-the-work-tree-of-their-files.md) | A call is judged in the work tree its files are in | Claude | Four cases not covered (issue 69) |
+| [0033](0033-feature-switches.md) | Feature switches: `[features]` in `config.toml`, `acs features` | You for the idea and the seven switches; Claude for what each covers and what is never off | Set `sync = true` here if this repository should keep syncing |

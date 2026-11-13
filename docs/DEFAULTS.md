@@ -13,7 +13,7 @@ differ, the change is **not built yet** and the issue is named.
 | --- | --- | --- | --- |
 | Claims | Blocking: an edit of a file another session holds is denied | **Observe** (see below) | **No. Observe mode is not implemented.** No issue yet; the prompt is in the maintainer's notes |
 | Delete-outside-claims rule | On (limit 0) | Off in observe mode, recorded only | No, part of observe mode |
-| Team sync and ledger push | On as soon as the repository has a remote | **Off** until the repository opts in | No, issue 61 |
+| Team sync and ledger push | **Off** until the repository sets `[features] sync = true` (since decision 0033) | **Off** until the repository opts in | Yes (decision 0033) |
 | Territory prompt at `acs init` | Asks once in a terminal | No question at init | No, issue 61. Whether the proposal is still printed is open |
 | Territories (`owned`, `open`, `sealed` zones) | Enforced when written in `territory.toml` | Same: available and enforced when configured by hand | Yes |
 | Self-protection seals (`.git`, `.acs`, harness settings and hooks, `.husky`) | On, cannot be removed | On | Yes |
@@ -25,7 +25,8 @@ differ, the change is **not built yet** and the issue is named.
 | Writes outside the repository | Not asked about (`protect_outside_repo = false`) | Same | Yes |
 | Session records, `acs log`, `acs blame`, `acs undo`, `acs stats` | On | On, local only while sync is off | Yes |
 | Lore | On; does nothing until an entry exists | Same | Yes |
-| Git hooks and the `ACS-Session` commit trailer | On | On; a switch for the trailer is open | Yes; the switch is not built |
+| Git hooks and the `ACS-Session` commit trailer | On | On | Yes. The trailer goes off with `[features] history`, the rejections with `commit_checks` (decision 0033) |
+| Switching a feature off | `[features]` in `config.toml`: `claims`, `guards`, `territory`, `lore`, `history`, `commit_checks`, `sync` | Same | Yes (decision 0033) |
 | Strict mode when `acs` is missing | Off (Claude Code fails open) | Off | Not built (issue 11) |
 | `acs watch`, VS Code extension | Opt-in | Opt-in | Yes; the extension is not published |
 | Antigravity | Opt-in | Opt-in, not mentioned to testers | Yes |
@@ -62,9 +63,11 @@ file at once, how `acs off` relates to it, and what remote claims do.
 | `[lore] max_inject_chars` | `4000` | Keep | About 1,000 tokens at most per tool call, only on the first touch of a scope |
 | `[lore] stale_percent` | `30` | Keep | A stale entry is still shown, with a request to check it, so a wrong threshold is cheap |
 
-Keys we agreed on that do not exist yet: the claims mode (default `observe`), a switch for team
-sync (default off), and possibly a switch for the commit trailer. Each is a change to the frozen
-policy types and schemas.
+| `[features]` (seven switches) | all `true`, `sync = false` | Keep | Decision 0033. `acs init` writes the table out; `acs features <name> on\|off` flips one |
+
+Built since this was written (decision 0033): the switch for team sync (default off) and the
+switch for the commit trailer (`history`). Still missing: the claims mode (default `observe`),
+which is a change to the frozen policy types and schemas; `claims` is a boolean for now.
 
 ## 3. `guards.toml`
 

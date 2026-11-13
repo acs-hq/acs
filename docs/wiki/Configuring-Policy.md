@@ -40,6 +40,49 @@ sync_interval_secs = 60
 
 The file also has a commented `[ledger]` section. Leave it as it is.
 
+### Switching features on and off
+
+The `[features]` table at the end of `config.toml` says which parts of ACS run in the repository. `acs init` writes it out with the defaults:
+
+```toml
+[features]
+claims        = true
+guards        = true
+territory     = true
+lore          = true
+history       = true
+commit_checks = true
+sync          = false
+```
+
+For example, a team that wants owned folders but does not want agents blocked by each other's claims sets `claims = false` and leaves `territory = true`. Two agents can then edit `src/lib.rs` at the same time, and an agent is still denied in a folder owned by someone else.
+
+| Switch | Default | When it is off |
+| --- | --- | --- |
+| `claims` | on | Editing a file claims nothing, and no session is blocked because another one holds a file. Files can also be deleted without a claim. |
+| `guards` | on | The rules of `guards.toml` and their defaults do not apply: no sealed paths other than ACS's own files, no banned commands, no protected branches, no delete limits. |
+| `territory` | on | The zones of `territory.toml` do not apply. Every file is `shared`. |
+| `lore` | on | Agents are shown no lore and cannot propose any. |
+| `history` | on | ACS keeps no copies of files for `acs undo`, records no sessions for `acs log`, `acs blame` and `acs stats`, and adds no `ACS-Session` line to commits. |
+| `commit_checks` | on | The git hooks reject nothing. Commits of files someone else holds go through, and so do an agent's force pushes. |
+| `sync` | **off** | Nothing leaves your machine. Switch it on to share claims and session records with teammates through the git remote. See [Teammates](Teammates). |
+
+To see the switches, and to flip one without opening the file:
+
+```bash
+acs features
+```
+
+```bash
+acs features claims off
+```
+
+Then commit `.acs/policy/config.toml`, so the switch holds for everyone working in the repository. A switch you leave out of the file keeps its default.
+
+Some protection is not a feature and stays on whatever you switch off: agents can never change `.acs/`, the git hooks or the harness's hook settings, and can never run the `acs` commands that change ACS, `acs features <name> on|off` included. Only a person can flip a switch.
+
+`acs off` is different: it stops claims on your machine only, until you run `acs on`, and changes no file.
+
 ## guards.toml
 
 | Key | Default | Meaning |

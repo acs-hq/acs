@@ -70,13 +70,19 @@ ACS only coordinates people who run it, so everyone needs to do their part. You 
 | The git setting that fetches claims | No, it is local to each clone | Everyone runs `acs init`. |
 | The `acs` program itself | No | Everyone installs it. |
 | A new Claude Code session | No | Everyone starts one after setup. |
-| Live claims | Yes, on their own once a remote exists | Nobody, after `acs init`. |
+| Live claims | Yes, once you switch team sync on | Initiator switches it on and commits. Nobody else, after `acs init`. |
 
 ## How claims reach your team
 
-Once the repository has a remote, ACS syncs claims on its own in the background while sessions run, about every 30 seconds by default. You do not need to push or pull anything for this. If you add the remote after `acs init`, run `acs init` again.
+Team sync is off until you switch it on, so a fresh setup sends nothing to the remote. To share claims with teammates, run this in your own terminal and commit the change to `.acs/policy/config.toml`:
 
-With no remote, claims stay on your machine.
+```bash
+acs features sync on
+```
+
+From then on ACS syncs claims on its own in the background while sessions run, about every 30 seconds by default. You do not need to push or pull anything for this. Teammates run `acs init` once after pulling the change. If you add the remote later, run `acs init` again.
+
+With sync off, or with no remote, claims stay on your machine.
 
 Claims travel through hidden refs (`refs/acs/*`), not through your commits.
 
