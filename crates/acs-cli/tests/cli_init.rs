@@ -71,6 +71,13 @@ fn init_creates_policy_and_refspec_and_is_idempotent() {
     }
     let config = fs::read_to_string(world.repo.join(".acs/policy/config.toml")).unwrap();
     assert!(config.contains("spec = \"acs/0.1\""));
+    // Team sync is off by default, so `init` leaves the remotes alone (decision 0033).
+    let said = stdout(&first);
+    assert!(said.contains("team sync is off"), "{said}");
+    for remote in ["origin", "fork"] {
+        assert_eq!(fetch_specs(&world, remote).len(), 1, "{remote}");
+    }
+    assert_success(&acs(&world, &["features", "sync", "on"]));
     for remote in ["origin", "fork"] {
         let specs = fetch_specs(&world, remote);
         let wanted = format!("+refs/acs/*:refs/remotes/{remote}/acs/*");
@@ -148,6 +155,9 @@ fn init_without_a_remote_says_so() {
     let out = acs(&world, &["init"]);
     assert_success(&out);
     let text = stdout(&out);
+    assert!(text.contains("team sync is off"), "{text}");
+    assert_success(&acs(&world, &["features", "sync", "on"]));
+    let text = stdout(&acs(&world, &["init"]));
     assert!(text.contains("no git remote"), "{text}");
     let report = json(&acs(&world, &["init", "--json"]));
     assert_eq!(report["remotes"].as_array().unwrap().len(), 0);

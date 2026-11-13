@@ -34,6 +34,24 @@ pub const DEFAULT_SEALED: &[&str] = &[
     ".husky/**",
 ];
 
+/// The part of [`DEFAULT_SEALED`] that keeps ACS itself in place: its policy and state, git's
+/// hooks and config, and the harness files that load the ACS hooks. These stay sealed when
+/// `[features] guards` is off, so that switching a feature off never lets an agent switch ACS
+/// off (or a feature back on, or another one off).
+pub const SELF_PROTECTION_SEALED: &[&str] = &[
+    ".git/**",
+    ".acs/**",
+    "**/.claude/settings*.json",
+    "**/.claude/hooks/**",
+    "**/.agents/**/hooks*.json",
+    "**/.agent/**/hooks*.json",
+    "**/.agents/plugins/**",
+    "**/.agent/plugins/**",
+    "**/.agents/plugins.json",
+    "**/.agent/plugins.json",
+    ".husky/**",
+];
+
 const DEFAULT_CLAIM_TTL_SECS: NonZeroU64 = non_zero(900);
 const DEFAULT_SYNC_INTERVAL_SECS: NonZeroU64 = non_zero(30);
 const DEFAULT_LORE_MAX_INJECT_CHARS: NonZeroU32 = match NonZeroU32::new(4_000) {
@@ -63,6 +81,165 @@ fn default_sync_interval_secs() -> NonZeroU64 {
 
 fn default_max_files_deleted_per_command() -> u32 {
     50
+}
+
+fn enabled() -> bool {
+    true
+}
+
+/// The `[features]` table of `config.toml`: which parts of ACS run in this repository.
+///
+/// Every part except `sync` is on unless it is switched off here. The file is committed, so the
+/// switches are the same for everyone who works in the repository, and it is sealed, so only a
+/// person can change them. ACS's protection of itself is not a feature and cannot be switched
+/// off: agents can never write `.acs/`, git's hooks and config or the harness's hook settings,
+/// run the `acs` commands that change state, or skip the git hooks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct Features {
+    /// One writer per file: an edit claims the file, and a file another session holds is
+    /// denied. Off: nothing is claimed or blocked by a claim, and the rule against deleting
+    /// files outside one's claims does not apply.
+    #[serde(default = "enabled")]
+    pub claims: bool,
+    /// The rules of `guards.toml` and their built-in defaults: sealed paths (other than ACS's
+    /// own), banned commands, protected branches, the delete limits and the questions about
+    /// writes ACS cannot place.
+    #[serde(default = "enabled")]
+    pub guards: bool,
+    /// The zones of `territory.toml`. Off: the whole repository is `shared`.
+    #[serde(default = "enabled")]
+    pub territory: bool,
+    /// Lore: showing entries to agents and taking their proposals.
+    #[serde(default = "enabled")]
+    pub lore: bool,
+    /// Session history: the copies of files kept for `acs undo`, the session records behind
+    /// `acs log`, `acs blame` and `acs stats`, and the `ACS-Session` trailer on commits.
+    #[serde(default = "enabled")]
+    pub history: bool,
+    /// The checks in the git hooks: a commit of files someone else holds or of sealed paths,
+    /// and an agent's force push to a protected branch.
+    #[serde(default = "enabled")]
+    pub commit_checks: bool,
+    /// Team sync: publishing claims and session records to the git remote and fetching other
+    /// machines'. Off by default: nothing leaves the machine until the repository opts in.
+    #[serde(default)]
+    pub sync: bool,
+}
+
+impl Default for Features {
+    fn default() -> Self {
+        Self {
+            claims: true,
+            guards: true,
+            territory: true,
+            lore: true,
+            history: true,
+            commit_checks: true,
+            sync: false,
+        }
+    }
+}
+
+/// One switch of [`Features`], for code that names a feature to people.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Feature {
+    /// [`Features::claims`]
+    Claims,
+    /// [`Features::guards`]
+    Guards,
+    /// [`Features::territory`]
+    Territory,
+    /// [`Features::lore`]
+    Lore,
+    /// [`Features::history`]
+    History,
+    /// [`Features::commit_checks`]
+    CommitChecks,
+    /// [`Features::sync`]
+    Sync,
+}
+
+impl Feature {
+    /// Every feature, in the order of the `[features]` table.
+    pub const ALL: [Self; 7] = [
+        Self::Claims,
+        Self::Guards,
+        Self::Territory,
+        Self::Lore,
+        Self::History,
+        Self::CommitChecks,
+        Self::Sync,
+    ];
+
+    /// The key in the `[features]` table.
+    #[must_use]
+    pub const fn key(self) -> &'static str {
+        match self {
+            Self::Claims => "claims",
+            Self::Guards => "guards",
+            Self::Territory => "territory",
+            Self::Lore => "lore",
+            Self::History => "history",
+            Self::CommitChecks => "commit_checks",
+            Self::Sync => "sync",
+        }
+    }
+
+    /// What the feature does, in a few words.
+    #[must_use]
+    pub const fn summary(self) -> &'static str {
+        match self {
+            Self::Claims => "one writer per file: a file another session holds is blocked",
+            Self::Guards => "sealed paths, banned commands, protected branches, delete limits",
+            Self::Territory => "the zones of territory.toml (owned, open, sealed)",
+            Self::Lore => "lore shown to agents, and their proposals",
+            Self::History => {
+                "copies for `acs undo`, session records (`acs log`, `acs blame`, `acs stats`), \
+                 the ACS-Session commit trailer"
+            }
+            Self::CommitChecks => "git hooks that reject commits and pushes",
+            Self::Sync => "claims and session records shared through the git remote",
+        }
+    }
+
+    /// The feature with this key, if any.
+    #[must_use]
+    pub fn from_key(key: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|feature| feature.key() == key)
+    }
+}
+
+impl fmt::Display for Feature {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.key())
+    }
+}
+
+impl Features {
+    /// Whether `feature` is on.
+    #[must_use]
+    pub const fn is_on(&self, feature: Feature) -> bool {
+        match feature {
+            Feature::Claims => self.claims,
+            Feature::Guards => self.guards,
+            Feature::Territory => self.territory,
+            Feature::Lore => self.lore,
+            Feature::History => self.history,
+            Feature::CommitChecks => self.commit_checks,
+            Feature::Sync => self.sync,
+        }
+    }
+
+    /// The features that are off, in table order.
+    #[must_use]
+    pub fn off(&self) -> Vec<Feature> {
+        Feature::ALL
+            .into_iter()
+            .filter(|feature| !self.is_on(*feature))
+            .collect()
+    }
 }
 
 /// Settings for the session ledger.
@@ -177,6 +354,9 @@ pub struct Config {
     /// Lore settings.
     #[serde(default)]
     pub lore: LoreConfig,
+    /// Which parts of ACS run in this repository.
+    #[serde(default)]
+    pub features: Features,
 }
 
 impl Default for Config {
@@ -188,6 +368,7 @@ impl Default for Config {
             sync_interval_secs: DEFAULT_SYNC_INTERVAL_SECS,
             ledger: LedgerConfig::default(),
             lore: LoreConfig::default(),
+            features: Features::default(),
         }
     }
 }
@@ -417,6 +598,35 @@ mod tests {
         assert_eq!(config.claim_ttl_secs.get(), 900);
         assert_eq!(config.sync_interval_secs.get(), 30);
         assert!(!config.ledger.store_prompts);
+    }
+
+    #[test]
+    fn features_default_to_on_except_sync_and_reject_typos() {
+        let config: Config = toml::from_str("spec = \"acs/0.1\"").unwrap();
+        assert_eq!(config.features.off(), [Feature::Sync]);
+        let config: Config = toml::from_str(
+            "spec = \"acs/0.1\"\n[features]\nclaims = false\nsync = true\ncommit_checks = false",
+        )
+        .unwrap();
+        assert_eq!(
+            config.features.off(),
+            [Feature::Claims, Feature::CommitChecks]
+        );
+        assert!(config.features.territory && config.features.sync);
+        let err = toml::from_str::<Config>("spec = \"acs/0.1\"\n[features]\nclaim = false")
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("unknown field `claim`"), "{err}");
+        for feature in Feature::ALL {
+            assert_eq!(Feature::from_key(feature.key()), Some(feature));
+        }
+    }
+
+    #[test]
+    fn self_protection_seals_are_default_seals() {
+        for glob in SELF_PROTECTION_SEALED {
+            assert!(DEFAULT_SEALED.contains(glob), "{glob}");
+        }
     }
 
     #[test]

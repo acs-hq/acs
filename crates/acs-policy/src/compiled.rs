@@ -3,7 +3,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use acs_core::gate::{PolicyView, ZoneMatch};
-use acs_core::{Config, ContentHash, Destructive, Guards, Owner, RepoPath, Territory, ZoneKind};
+use acs_core::{
+    Config, ContentHash, Destructive, Guards, Owner, RepoPath, SELF_PROTECTION_SEALED, Territory,
+    ZoneKind,
+};
 
 use crate::error::{PolicyError, PolicyFile, Problem, ProblemKind};
 use crate::files::{PolicyFiles, effective_sealed};
@@ -91,7 +94,9 @@ pub struct CompiledPolicy {
     files: PolicyFiles,
     hash: ContentHash,
     case_insensitive: bool,
-    sealed: Vec<Glob>,
+    /// One per entry of `files.guards.sealed`; `None` for a seal that is not in force because
+    /// the `guards` feature is off.
+    sealed: Vec<Option<Glob>>,
     protected: Vec<Glob>,
     bans: Vec<BanPattern>,
     /// Zone globs, most specific first.
@@ -239,6 +244,26 @@ impl CompiledPolicy {
         zones.sort_by(|a, b| {
             (b.alt.specificity(), b.zone, b.path).cmp(&(a.alt.specificity(), a.zone, a.path))
         });
+        // Everything above is validated whatever the feature switches say, so a broken file is
+        // reported before its feature is switched back on. What is switched off is then left
+        // out of the matchers; `files` keeps the policy as written.
+        let features = files.config.features;
+        let sealed = sealed
+            .into_iter()
+            .zip(&files.guards.sealed)
+            .map(|(glob, pattern)| {
+                (features.guards || SELF_PROTECTION_SEALED.contains(&pattern.as_str()))
+                    .then_some(glob)
+            })
+            .collect();
+        let (protected, bans) = if features.guards {
+            (protected, bans)
+        } else {
+            (Vec::new(), Vec::new())
+        };
+        if !features.territory {
+            zones.clear();
+        }
         Ok(Self {
             files,
             hash,
@@ -297,9 +322,10 @@ impl PolicyView for CompiledPolicy {
 
     fn sealed_match(&self, path: &RepoPath) -> Option<&str> {
         let index = with_segments(path.as_str(), self.case_insensitive, |segs| {
-            self.sealed
-                .iter()
-                .position(|glob| glob.alts().iter().any(|alt| alt.is_match(segs)))
+            self.sealed.iter().position(|glob| {
+                glob.as_ref()
+                    .is_some_and(|glob| glob.alts().iter().any(|alt| alt.is_match(segs)))
+            })
         })?;
         Some(self.files.guards.sealed[index].as_str())
     }
@@ -326,7 +352,7 @@ impl PolicyView for CompiledPolicy {
     }
 
     fn protect_outside_repo(&self) -> bool {
-        self.files.guards.protect_outside_repo
+        self.files.config.features.guards && self.files.guards.protect_outside_repo
     }
 
     fn banned_match(&self, command: &str) -> Option<&str> {

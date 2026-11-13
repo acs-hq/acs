@@ -101,6 +101,13 @@ struct State {
 
 fn execute(args: &WatchArgs) -> Result<ExitCode, CliError> {
     let (ctx, _) = open_repo()?;
+    if !ctx.features().claims {
+        return Err(CliError::new(
+            "feature_off",
+            "Claims are switched off in this repository, so there is nothing for `acs watch` \
+             to claim. `acs features claims on` switches them back on.",
+        ));
+    }
     let now = Timestamp::now();
     let seat = human_seat(&ctx, now)?;
     let ttl = ctx.policy.policy.files().config.claim_ttl_secs.get();

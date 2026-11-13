@@ -30,7 +30,7 @@ const MAX_PATHS: usize = 64;
 #[must_use]
 pub fn inject(ctx: &RepoContext, seat: &SeatId, paths: &[&str], now: Timestamp) -> Vec<String> {
     let work_tree = &ctx.layout.work_tree;
-    if paths.is_empty() || !work_tree.join(LORE_DIR).is_dir() {
+    if !ctx.features().lore || paths.is_empty() || !work_tree.join(LORE_DIR).is_dir() {
         return Vec::new();
     }
     let Ok(db) = ctx.db() else {
@@ -143,6 +143,13 @@ pub fn propose(
     draft: &Draft,
     now: Timestamp,
 ) -> Result<Proposed, OpError> {
+    if !ctx.features().lore {
+        return Err(OpError::Invalid(
+            "Lore is switched off in this repository (`[features] lore` in \
+             `.acs/policy/config.toml`), so the proposal was not stored."
+                .to_owned(),
+        ));
+    }
     let ci = ctx.resolver.case_insensitive();
     let set = LoreSet::load(&ctx.layout.work_tree, ci);
     let checked = acs_lore::propose::check(draft, &set, ci).map_err(OpError::Invalid)?;

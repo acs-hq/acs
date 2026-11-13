@@ -175,6 +175,9 @@ pub fn run_checks(cwd: &Path, fix: bool) -> Vec<Check> {
         checks.push(check);
         valid
     };
+    if policy_valid {
+        checks.push(check_features(&layout, &policy_dir));
+    }
     if let Some(repo) = &repo_home {
         checks.push(check_policy_cache(repo, &policy_dir, policy_valid, fix));
     }
@@ -483,6 +486,27 @@ fn quarantine_db(repo: &RepoHome) -> Result<String, String> {
 // ---------------------------------------------------------------------------------------------
 // Policy and its cache
 // ---------------------------------------------------------------------------------------------
+
+/// Which features the policy switches off. Informational: a feature that is off explains why
+/// something a person expects (a blocked edit, a session in `acs log`) does not happen.
+fn check_features(layout: &RepoLayout, policy_dir: &Path) -> Check {
+    const ID: &str = "features";
+    const TITLE: &str = "Features";
+    let case_insensitive = PathResolver::new(&layout.work_tree).is_ok_and(|r| r.case_insensitive());
+    let features = load(policy_dir, LoadOptions { case_insensitive })
+        .map(|loaded| loaded.policy.files().config.features)
+        .unwrap_or_default();
+    let off: Vec<&str> = features.off().into_iter().map(|f| f.key()).collect();
+    if off.is_empty() {
+        Check::pass(ID, TITLE, "all on")
+    } else {
+        Check::pass(
+            ID,
+            TITLE,
+            format!("switched off: {} (see `acs features`)", off.join(", ")),
+        )
+    }
+}
 
 fn check_policy(layout: &RepoLayout, policy_dir: &Path) -> (Check, bool) {
     const ID: &str = "policy";

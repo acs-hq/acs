@@ -53,6 +53,21 @@
 //!   command or a history rewrite is denied with `state_unavailable`; anything else is allowed
 //!   with that reason and a warning. Snapshots are still requested.
 //!
+//! # Features
+//!
+//! `config.toml`'s `[features]` table switches whole steps off
+//! ([`Features`](crate::policy_types::Features)):
+//!
+//! - `guards` off: step 1 and step 2 do not run, except for the sealed paths the policy still
+//!   reports (ACS's own, [`SELF_PROTECTION_SEALED`](crate::policy_types::SELF_PROTECTION_SEALED),
+//!   and the seals outside the repository) and the self-protection rules. Those are never off.
+//! - `claims` off: step 3's claims half does not run (no conflict, no claim requests), and
+//!   neither does the rule about deletes outside the seat's claims.
+//! - `territory` off: the policy reports no zones, so step 3's territory half finds nothing and
+//!   every file is `shared`.
+//!
+//! The other features (`lore`, `history`, `commit_checks`, `sync`) belong to the pipeline.
+//!
 //! # Other phases
 //!
 //! The engine only gates `pre_tool` events. For any other phase it returns `allow` with `ok`, no
@@ -91,14 +106,15 @@ pub fn decide(input: &GateInput<'_>, policy: &dyn PolicyView) -> GateOutput {
     }
 
     let plan = Plan::build(input, policy);
+    let features = policy.config().features;
     let off = input.state.gate_off;
     let unavailable = input.state.state_unavailable && !off;
     let mut verdict = Verdict::default();
-    if unavailable {
+    if unavailable && features.claims {
         verdict.warnings.push(messages::state_unavailable_warning());
     }
 
-    if !off {
+    if !off && features.guards {
         path_step(policy, &plan, &mut verdict);
     }
     guards(input, policy, &plan, off, unavailable, &mut verdict);
@@ -107,7 +123,7 @@ pub fn decide(input: &GateInput<'_>, policy: &dyn PolicyView) -> GateOutput {
     } else {
         territory_step(input, &plan, &mut verdict)
     };
-    let claim_requests = if off || unavailable {
+    let claim_requests = if off || unavailable || !features.claims {
         Vec::new()
     } else {
         claims_step(input, policy, &plan, &mut verdict)
@@ -201,7 +217,8 @@ fn path_step(policy: &dyn PolicyView, plan: &Plan<'_, '_>, verdict: &mut Verdict
 }
 
 /// Step 2: sealed paths, self-protection, banned commands, protected branches and destructive
-/// budgets. With the gate off only the first three run.
+/// budgets. With the gate off only the first three run; with the `guards` feature off only the
+/// first two do, on the seals the policy still reports.
 fn guards(
     input: &GateInput<'_>,
     policy: &dyn PolicyView,
@@ -228,6 +245,12 @@ fn guards(
     }
     if let Some(shell) = input.shell {
         self_protection(input, shell, verdict);
+    }
+    let features = policy.config().features;
+    if !features.guards {
+        return;
+    }
+    if let Some(shell) = input.shell {
         banned_commands(policy, shell, verdict);
     }
     if off {
@@ -239,13 +262,14 @@ fn guards(
     }
 
     if unavailable {
-        if is_destructive(input, plan) {
+        // The denial stands in for the claims that cannot be checked.
+        if features.claims && is_destructive(input, plan) {
             verdict.deny(
                 ReasonCode::StateUnavailable,
                 messages::state_unavailable_denied,
             );
         }
-    } else {
+    } else if features.claims {
         deletes_outside_claims(input, policy, plan, verdict);
     }
     delete_budget(policy, plan, verdict);

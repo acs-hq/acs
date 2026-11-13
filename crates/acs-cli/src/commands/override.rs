@@ -76,6 +76,13 @@ fn grant(args: &OverrideArgs, raw: &str, json: bool) -> Result<ExitCode, CliErro
         }
     };
     let (ctx, _cwd) = open_repo()?;
+    if !ctx.features().territory {
+        return Err(CliError::new(
+            "feature_off",
+            "Territory is switched off in this repository, so no zone is owned and there is \
+             nothing to override. `acs features territory on` switches it back on.",
+        ));
+    }
     let pattern = normalize_pattern(raw);
     Glob::new(&pattern, ctx.resolver.case_insensitive()).map_err(|err| {
         CliError::new(

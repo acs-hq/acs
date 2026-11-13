@@ -1309,3 +1309,69 @@ fn loading_a_cached_policy_is_fast() {
     };
     assert!(mean < budget, "mean {mean:?} exceeds {budget:?}");
 }
+
+// ---------------------------------------------------------------------------------------------
+// Feature switches (decision 0033)
+// ---------------------------------------------------------------------------------------------
+
+#[test]
+fn guards_off_keeps_only_the_self_protection_seals() {
+    let files = [
+        (
+            "config.toml",
+            "spec = \"acs/0.1\"\n[features]\nguards = false\n",
+        ),
+        (
+            "guards.toml",
+            "sealed = [\"secrets/**\"]\nprotect_outside_repo = true\n",
+        ),
+    ];
+    let policy = load_ok(&files, CS);
+    for open in [".env", "secrets/key", ".github/workflows/ci.yml"] {
+        assert_eq!(policy.sealed_match(&rp(open)), None, "{open}");
+    }
+    for (path, glob) in [
+        (".acs/policy/config.toml", ".acs/**"),
+        (".git/hooks/pre-commit", ".git/**"),
+        (
+            "sub/.claude/settings.local.json",
+            "**/.claude/settings*.json",
+        ),
+        (".husky/pre-commit", ".husky/**"),
+    ] {
+        assert_eq!(policy.sealed_match(&rp(path)), Some(glob), "{path}");
+    }
+    assert!(!policy.is_protected_branch("main"));
+    assert_eq!(policy.banned_match("git push --force origin main"), None);
+    assert!(!policy.protect_outside_repo());
+    // The files are kept as written, and still checked.
+    assert!(
+        policy
+            .files()
+            .guards
+            .sealed
+            .contains(&"secrets/**".to_owned())
+    );
+    let broken = policy_dir(&[files[0], ("guards.toml", "sealed = [\"a/**/**/[\"]\n")]);
+    assert!(load(broken.path(), CS).is_err());
+}
+
+#[test]
+fn territory_off_reports_no_zones() {
+    let on = load_ok(&[("territory.toml", TERRITORY)], CS);
+    assert!(on.zone(&rp("payments/a.rs")).is_some());
+    let off = load_ok(
+        &[
+            (
+                "config.toml",
+                "spec = \"acs/0.1\"\n[features]\nterritory = false\n",
+            ),
+            ("territory.toml", TERRITORY),
+        ],
+        CS,
+    );
+    assert!(off.zone(&rp("payments/a.rs")).is_none());
+    assert!(!off.files().territory.zone.is_empty());
+    // Guards are untouched by the territory switch.
+    assert_eq!(off.sealed_match(&rp(".env")), Some("**/.env*"));
+}

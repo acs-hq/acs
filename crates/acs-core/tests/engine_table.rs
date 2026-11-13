@@ -1473,3 +1473,102 @@ fn decisions_are_deterministic() {
         );
     }
 }
+
+// ---------------------------------------------------------------------------------------------
+// Feature switches (decision 0033)
+// ---------------------------------------------------------------------------------------------
+
+fn without(switch: impl FnOnce(&mut acs_core::Features)) -> FakePolicy {
+    let mut policy = FakePolicy::default();
+    switch(&mut policy.config.features);
+    policy
+}
+
+#[test]
+fn claims_off_requests_nothing_and_no_claim_blocks() {
+    let policy = without(|f| f.claims = false);
+    let out = run(
+        &Fixture::edit("src/a.rs").claimed(theirs("src/a.rs")),
+        &policy,
+    );
+    assert_eq!(
+        (out.decision.outcome, out.decision.reason_code),
+        (Outcome::Allow, ReasonCode::Ok)
+    );
+    assert!(out.claim_requests.is_empty());
+    assert_eq!(out.snapshot_requests, vec![snapshot("src/a.rs", false)]);
+    // Deleting a file the seat holds no claim on is a claims rule.
+    let out = run(&rm(&["src/a.rs"]), &policy);
+    assert_eq!(out.decision.outcome, Outcome::Allow);
+    // The state database being down denies deletes only because claims cannot be checked.
+    let out = run(&rm(&["src/a.rs"]).state_unavailable(), &policy);
+    assert_eq!(out.decision.outcome, Outcome::Allow);
+    assert!(out.decision.warnings.is_empty());
+    // Guards are another switch.
+    let out = run(&Fixture::edit(".env"), &policy);
+    assert_eq!(out.decision.reason_code, ReasonCode::SealedPath);
+}
+
+#[test]
+fn guards_off_leaves_self_protection_and_claims() {
+    let policy = without(|f| f.guards = false)
+        .banning("git push --force*")
+        .protecting("main")
+        .budgets(0, 1)
+        .guarding_outside();
+    let force = git_command(
+        &["git", "push", "--force", "origin", "main"],
+        "push",
+        false,
+        true,
+        &["main"],
+    );
+    for fixture in [
+        Fixture::shell(vec![force], Vec::new()),
+        rm(&["src/a.rs", "src/b.rs"]),
+        Fixture::new(ToolKind::Write).with(outside("/etc/hosts", TargetOp::Write)),
+    ] {
+        let out = run(&fixture, &policy);
+        assert_eq!(out.decision.outcome, Outcome::Allow, "{:?}", out.decision);
+    }
+    // Claims are still requested and still conflict.
+    let out = run(&Fixture::edit("src/a.rs"), &policy);
+    assert_eq!(out.claim_requests, vec![file_request("src/a.rs")]);
+    let out = run(
+        &Fixture::edit("src/a.rs").claimed(theirs("src/a.rs")),
+        &policy,
+    );
+    assert_eq!(out.decision.reason_code, ReasonCode::ClaimConflict);
+    // Self-protection is not a feature: state-changing `acs` commands stay banned.
+    let acs_off = command(&["acs", "off"], &[CommandClass::Unknown]);
+    let out = run(&Fixture::shell(vec![acs_off], Vec::new()), &policy);
+    assert_eq!(
+        (out.decision.outcome, out.decision.reason_code),
+        (Outcome::Deny, ReasonCode::BannedCommand)
+    );
+    // And whatever the policy still reports as sealed is still denied.
+    let out = run(&Fixture::edit(".acs/policy/config.toml"), &policy);
+    assert_eq!(out.decision.reason_code, ReasonCode::SealedPath);
+}
+
+#[test]
+fn agents_may_list_features_but_not_switch_them() {
+    for (words, denied) in [
+        (&["acs", "features"][..], false),
+        (&["acs", "features", "--json"][..], false),
+        (&["acs", "features", "claims", "off"][..], true),
+        (&["acs", "features", "sync", "on"][..], true),
+    ] {
+        let cmd = command(words, &[CommandClass::Unknown]);
+        let out = run(
+            &Fixture::shell(vec![cmd], Vec::new()),
+            &FakePolicy::default(),
+        );
+        assert_eq!(
+            out.decision.outcome == Outcome::Deny,
+            denied,
+            "{words:?}: {:?}",
+            out.decision
+        );
+    }
+}

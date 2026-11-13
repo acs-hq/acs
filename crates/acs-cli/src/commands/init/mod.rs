@@ -25,7 +25,7 @@ use std::io::{BufRead as _, IsTerminal as _, Write as _};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use acs_core::ZoneKind;
+use acs_core::{Feature, Features, ZoneKind};
 use acs_paths::PathResolver;
 use acs_policy::{LoadOptions, load};
 use clap::Args;
@@ -93,7 +93,9 @@ pub struct InitReport {
     pub policy_dir: &'static str,
     /// One entry per policy file.
     pub policy_files: Vec<PolicyFileReport>,
-    /// One entry per configured remote.
+    /// The features switched off in `config.toml` (`sync` is, unless the repository opted in).
+    pub features_off: Vec<Feature>,
+    /// One entry per configured remote; empty while team sync is off.
     pub remotes: Vec<RemoteReport>,
     /// The git hook step.
     pub git_hooks: HooksInstall,
@@ -318,24 +320,32 @@ pub fn initialize(
 
     // Validate what is on disk now (ours or the team's); a broken policy is reported, not fatal.
     let case_insensitive = PathResolver::new(work_tree).is_ok_and(|r| r.case_insensitive());
+    let mut features = Features::default();
     match load(&policy_dir, LoadOptions { case_insensitive }) {
-        Ok(loaded) => warnings.extend(loaded.warnings),
+        Ok(loaded) => {
+            features = loaded.policy.files().config.features;
+            warnings.extend(loaded.warnings);
+        }
         Err(err) => warnings.push(format!(
             "the policy in .acs/policy is invalid and will not be enforced until fixed: {err}"
         )),
     }
 
+    // The fetch setting is only for repositories that switched team sync on: with it off,
+    // nothing ACS does touches the remote or the git config for it.
     let mut remote_reports = Vec::new();
-    match remotes::list(work_tree) {
-        Ok(names) => {
-            for name in names {
-                match remotes::ensure(work_tree, &name) {
-                    Ok(report) => remote_reports.push(report),
-                    Err(err) => errors.push(format!("remote `{name}`: {err}")),
+    if features.sync {
+        match remotes::list(work_tree) {
+            Ok(names) => {
+                for name in names {
+                    match remotes::ensure(work_tree, &name) {
+                        Ok(report) => remote_reports.push(report),
+                        Err(err) => errors.push(format!("remote `{name}`: {err}")),
+                    }
                 }
             }
+            Err(err) => errors.push(err),
         }
-        Err(err) => errors.push(err),
     }
 
     let git_hooks = install_hooks(layout);
@@ -372,6 +382,7 @@ pub fn initialize(
         worktree: work_tree.to_string_lossy().into_owned(),
         policy_dir: ".acs/policy",
         policy_files,
+        features_off: features.off(),
         remotes: remote_reports,
         git_hooks,
         harnesses,
@@ -466,8 +477,32 @@ pub fn render(report: &InitReport) -> String {
         }
     }
 
+    out.push_str("\nFeatures\n");
+    let on: Vec<&str> = Feature::ALL
+        .into_iter()
+        .filter(|f| !report.features_off.contains(f))
+        .map(Feature::key)
+        .collect();
+    let off: Vec<&str> = report.features_off.iter().map(|f| f.key()).collect();
+    out.push_str(&wrap(&format!("on: {}", on.join(", ")), "  ", "    "));
+    if !off.is_empty() {
+        out.push_str(&wrap(&format!("off: {}", off.join(", ")), "  ", "    "));
+    }
+    out.push_str(&wrap(
+        "Switch one with `acs features <name> on|off` (`acs features` explains each).",
+        "  ",
+        "  ",
+    ));
+
     out.push_str("\nFetch refspec for claims shared through git\n");
-    if report.remotes.is_empty() {
+    if report.features_off.contains(&Feature::Sync) {
+        out.push_str(&wrap(
+            "not added: team sync is off, so nothing leaves this machine. `acs features sync \
+             on` shares claims and session records through the git remote.",
+            "  ",
+            "  ",
+        ));
+    } else if report.remotes.is_empty() {
         out.push_str(&wrap(
             "none: no git remote is configured. Claims stay on this machine; run `acs init` \
              again after adding a remote.",

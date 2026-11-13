@@ -23,8 +23,9 @@ pub use event::{EditInfo, Phase, Tool, ToolEvent, ToolKind, ToolResult};
 pub use ids::{ClaimId, LoreId, NoticeId, OverrideId, SeatId, SessionId, pilot_id};
 pub use jiff::Timestamp;
 pub use policy_types::{
-    Config, DEFAULT_SEALED, Destructive, Guards, LedgerConfig, LoreConfig, LoreFrontMatter, Owner,
-    Percent, Territory, Zone, ZoneKind, split_front_matter,
+    Config, DEFAULT_SEALED, Destructive, Feature, Features, Guards, LedgerConfig, LoreConfig,
+    LoreFrontMatter, Owner, Percent, SELF_PROTECTION_SEALED, Territory, Zone, ZoneKind,
+    split_front_matter,
 };
 pub use records::{
     Claim, ClaimHistoryEntry, ClaimOrigin, ClaimScope, ClaimsDocument, EndedReason, FileChange,

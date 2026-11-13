@@ -5,3 +5,12 @@ sync_interval_secs = 30
 
 [ledger]
 store_prompts = false
+
+[features]
+claims = true
+guards = true
+territory = true
+lore = true
+history = true
+commit_checks = true
+sync = false

@@ -13,7 +13,8 @@ use crate::gate::{CommandClass, OutsideSeal, SimpleCommand};
 /// `acs` subcommands an agent may run from its shell: they only read, or only share claims with
 /// the remote. `doctor` is listed, but `doctor --fix` is not allowed; `undo` is listed, but
 /// `undo --apply` is not (a dry run only reads). `lore` is decided per action in [`denied_sub`]:
-/// `list`, `show` and `stale` are allowed, `review` is not.
+/// `list`, `show` and `stale` are allowed, `review` is not. `features` is decided there too: the
+/// bare list is allowed, switching a feature is not.
 const READ_ONLY: &[&str] = &[
     "status", "sync", "doctor", "help", "log", "blame", "stats", "verify", "undo",
 ];
@@ -157,6 +158,15 @@ fn denied_sub(sub: &str, rest: &[&str], direct: bool) -> bool {
             action.as_deref(),
             None | Some("list" | "show" | "stale" | "help")
         );
+    }
+    if sub == "features" {
+        // A bare `acs features` lists the switches; `acs features <name> on|off` flips one,
+        // which is a person's call (decision 0033).
+        return rest
+            .iter()
+            .position(|w| w.eq_ignore_ascii_case("features"))
+            .and_then(|at| next_operand(rest, at + 1))
+            .is_some_and(|word| !word.eq_ignore_ascii_case("help"));
     }
     if direct {
         !READ_ONLY.contains(&sub.as_str())

@@ -23,6 +23,7 @@ model), and the rest of WP10.1 and WP10.2. No release has been tagged.
 | 2026-11-07 | `acs init` proposals use history and folder names; no CODEOWNERS parsing | 0025 |
 | 2026-11-09 | Writes outside the repository no longer ask by default | 0027 |
 | 2026-11-11 | First testers come before Phase 8, Phase 9 and Spec 1.0; claims default to observe; sync is off by default | 0031 |
+| 2026-11-13 | Every feature can be switched on or off per repository (`[features]` in `config.toml`, `acs features`); sync off by default is built | 0033 |
 
 Open work is in GitHub issues, not in this file. Decisions are in `docs/decisions/`.
 

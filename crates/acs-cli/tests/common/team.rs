@@ -57,7 +57,7 @@ impl Team {
         git(&seed, &config, &["init", "-q", "-b", "main", "."]);
         fs::write(
             seed.join(".acs/policy/config.toml"),
-            "spec = \"acs/0.1\"\nsync_interval_secs = 5\n",
+            "spec = \"acs/0.1\"\nsync_interval_secs = 5\n[features]\nsync = true\n",
         )
         .unwrap();
         fs::write(seed.join("src/lib.rs"), "pub fn lib() {}\n").unwrap();

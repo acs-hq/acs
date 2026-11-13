@@ -7,8 +7,8 @@ use std::path::Path;
 
 use acs_core::gate::{ClaimSource, HeldClaim, PathLocation};
 use acs_core::{
-    ClaimId, ClaimOrigin, ClaimScope, Outcome, Phase, ReasonCode, ReleaseReason, RepoPath, SeatId,
-    SpecVersion, Timestamp, Tool, ToolEvent, ToolKind,
+    ClaimId, ClaimOrigin, ClaimScope, Feature, Outcome, Phase, ReasonCode, ReleaseReason, RepoPath,
+    SELF_PROTECTION_SEALED, SeatId, SpecVersion, Timestamp, Tool, ToolEvent, ToolKind,
 };
 use acs_store::{Collision, FLAG_GATE_OFF, LastDecision, NewEvent, SeatInfo, StateDb, StoreError};
 use serde::Serialize;
@@ -18,6 +18,11 @@ use super::paths::{NormalizeOptions, normalize, resolve_for_claim};
 use super::roots::split_by_tree;
 use super::seats::{HUMAN_HARNESS, current_view};
 use super::{OpError, RepoContext};
+
+/// What a claim request is told where the `claims` feature is off.
+pub const CLAIMS_OFF: &str = "Claims are switched off in this repository (`[features] claims` in \
+                              `.acs/policy/config.toml`), so nothing was claimed and nothing \
+                              needs to be: files can be edited without one.";
 
 /// The longest intent text stored, in characters.
 pub const MAX_INTENT_CHARS: usize = 500;
@@ -165,6 +170,9 @@ pub struct SeatSummary {
 /// The state of the link to the git remote.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct RemoteView {
+    /// Team sync is switched on (`[features] sync`). Off: nothing is fetched or published, and
+    /// the claims of other machines are not listed.
+    pub enabled: bool,
     /// A git remote is configured.
     pub configured: bool,
     /// Sync has run at least once on this machine.
@@ -199,6 +207,8 @@ pub struct StatusView {
     pub target_branch: String,
     /// `acs off` is active (sealed paths still hold).
     pub gate_off: bool,
+    /// The features switched off in `config.toml`'s `[features]` table.
+    pub features_off: Vec<Feature>,
     /// Why the state database cannot be used, if it cannot; claims are then not listed.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub state_unavailable: Option<String>,
@@ -231,17 +241,34 @@ impl StatusView {
     /// what is sealed. Kept short on purpose (each line is spent context).
     #[must_use]
     pub fn summary_lines(&self) -> Vec<String> {
-        let mut lines = vec![
+        let claims = !self.features_off.contains(&Feature::Claims);
+        let mut lines = vec![if claims {
             "ACS coordinates the agents working in this repository. Editing a file claims it for \
              you; a file another seat has claimed is blocked until they finish."
-                .to_owned(),
-        ];
-        if self.gate_off {
+                .to_owned()
+        } else {
+            "ACS is set up in this repository with claims switched off: files need no claim, \
+             so `acs_claim` and `acs_release` are not needed here."
+                .to_owned()
+        }];
+        // Sync is not the agent's concern, and it is off by default.
+        let off: Vec<&str> = self
+            .features_off
+            .iter()
+            .filter(|f| !matches!(f, Feature::Claims | Feature::Sync))
+            .map(|f| f.key())
+            .collect();
+        if !off.is_empty() {
+            lines.push(format!("Also switched off here: {}.", off.join(", ")));
+        }
+        if self.gate_off && claims {
             lines.push(
                 "`acs off` is active: claims are not enforced. Sealed paths still are.".to_owned(),
             );
         }
-        if self.my_claims.is_empty() {
+        if !claims {
+            // Nothing to hold.
+        } else if self.my_claims.is_empty() {
             lines.push("You hold no claims yet.".to_owned());
         } else {
             lines.push(format!(
@@ -296,21 +323,32 @@ fn list<'a>(items: impl Iterator<Item = &'a str>) -> String {
 #[must_use]
 pub fn status(ctx: &RepoContext, seat: Option<&SeatInfo>, now: Timestamp) -> StatusView {
     let files = ctx.policy.policy.files();
-    let mut sealed: Vec<String> = files.guards.sealed.clone();
-    sealed.extend(
-        files
-            .territory
-            .zone
-            .iter()
-            .filter(|zone| zone.kind == acs_core::ZoneKind::Sealed)
-            .flat_map(|zone| zone.paths.iter().cloned()),
-    );
+    let features = files.config.features;
+    // With `guards` off only ACS's own seals are in force; with `territory` off no zone is.
+    let mut sealed: Vec<String> = files
+        .guards
+        .sealed
+        .iter()
+        .filter(|glob| features.guards || SELF_PROTECTION_SEALED.contains(&glob.as_str()))
+        .cloned()
+        .collect();
+    if features.territory {
+        sealed.extend(
+            files
+                .territory
+                .zone
+                .iter()
+                .filter(|zone| zone.kind == acs_core::ZoneKind::Sealed)
+                .flat_map(|zone| zone.paths.iter().cloned()),
+        );
+    }
     let mut view = StatusView {
         repo_id: ctx.repo_home.as_ref().map(|h| h.id().as_str().to_owned()),
         worktree: ctx.worktree_str(),
         branch: acs_git::repo::current_branch(&ctx.layout.git_dir),
         target_branch: files.config.default_target_branch.clone(),
         gate_off: false,
+        features_off: features.off(),
         state_unavailable: None,
         seat: seat.map(|info| SeatSummary {
             seat_id: info.seat.seat_id.to_string(),
@@ -326,6 +364,7 @@ pub fn status(ctx: &RepoContext, seat: Option<&SeatInfo>, now: Timestamp) -> Sta
         overrides: Vec::new(),
         sealed,
         remote: RemoteView {
+            enabled: features.sync,
             configured: ctx.has_remote,
             sync_ran: false,
             stale: false,
@@ -347,7 +386,11 @@ pub fn status(ctx: &RepoContext, seat: Option<&SeatInfo>, now: Timestamp) -> Sta
         view.gate_off = db.flag_is_set(FLAG_GATE_OFF)?;
         let mine = seat.map(|s| &s.seat.seat_id);
         let local = db.live_claims(now)?;
-        let remote = db.live_remote_claims(now)?;
+        let remote = if features.sync {
+            db.live_remote_claims(now)?
+        } else {
+            Vec::new()
+        };
         for held in local.iter().chain(remote.iter()) {
             let item = ClaimView::of(held);
             if mine == Some(&held.claim.seat_id) {
@@ -380,7 +423,8 @@ pub fn status(ctx: &RepoContext, seat: Option<&SeatInfo>, now: Timestamp) -> Sta
         let sync = db.remote_sync_status()?;
         let stale_after = files.config.sync_interval_secs.get().saturating_mul(3);
         view.remote.sync_ran = sync.last_attempt_at.is_some();
-        view.remote.stale = ctx.has_remote
+        view.remote.stale = features.sync
+            && ctx.has_remote
             && view.remote.sync_ran
             && sync.last_success_at.is_none_or(|at| {
                 now.as_second().saturating_sub(at.as_second())
@@ -462,6 +506,12 @@ pub fn claim_paths(
 ) -> Result<ClaimOutcome, OpError> {
     ctx.db()
         .map_err(|why| OpError::Unavailable(why.to_owned()))?;
+    if !ctx.features().claims {
+        return Ok(ClaimOutcome::Refused {
+            reason_code: ReasonCode::Ok,
+            message: CLAIMS_OFF.to_owned(),
+        });
+    }
     if paths.is_empty() {
         return Ok(ClaimOutcome::Refused {
             reason_code: ReasonCode::Ok,

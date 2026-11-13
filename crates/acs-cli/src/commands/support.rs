@@ -4,7 +4,7 @@
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-use acs_core::Timestamp;
+use acs_core::{Feature, Timestamp};
 use acs_store::SeatInfo;
 use clap::Args;
 use serde::Serialize;
@@ -108,6 +108,26 @@ pub fn open_repo() -> Result<(RepoContext, PathBuf), CliError> {
         .map_err(|err| CliError::new("cwd", format!("cannot read the current directory: {err}")))?;
     let ctx = RepoContext::open(&cwd)?;
     Ok((ctx, cwd))
+}
+
+/// Tells a person (on stderr, and not with `--json`) that `feature` is switched off in this
+/// repository, for commands that still show what was recorded before. `effect` finishes the
+/// sentence "... is switched off here, so".
+pub fn note_feature_off(ctx: &RepoContext, feature: Feature, json: bool, effect: &str) {
+    if json || ctx.feature_on(feature) {
+        return;
+    }
+    eprint!(
+        "{}",
+        wrap(
+            &format!(
+                "Note: {feature} is switched off here, so {effect} (`acs features {feature} on` \
+                 switches it back on)."
+            ),
+            "",
+            "  ",
+        )
+    );
 }
 
 /// The human seat of the repository's pilot, created on first use.

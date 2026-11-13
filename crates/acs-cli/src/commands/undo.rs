@@ -108,6 +108,12 @@ enum Committed {
 
 fn execute(args: &UndoArgs) -> Result<ExitCode, CliError> {
     let (ctx, _cwd) = open_repo()?;
+    super::support::note_feature_off(
+        &ctx,
+        acs_core::Feature::History,
+        args.output.json,
+        "no copies of files are kept any more; only sessions from before can be undone",
+    );
     let now = Timestamp::now();
     let seat = find_seat(&ctx, &args.session)?;
     let db = ctx.db().map_err(state_error)?;

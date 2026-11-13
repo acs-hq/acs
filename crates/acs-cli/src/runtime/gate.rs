@@ -10,7 +10,8 @@ use std::time::Duration;
 
 use acs_core::engine::decide;
 use acs_core::gate::{
-    ClaimRequest, ClaimsSnapshot, GateInput, GateOutput, GateState, HeldClaim, PathLocation,
+    ClaimRequest, ClaimSource, ClaimsSnapshot, GateInput, GateOutput, GateState, HeldClaim,
+    PathLocation,
 };
 use acs_core::{ClaimOrigin, Decision, Notice, Outcome, ReasonCode, Seat, Timestamp, ToolEvent};
 use acs_store::{AcquireOutcome, FLAG_GATE_OFF, StateDb, StoreError};
@@ -196,6 +197,13 @@ fn load_view(
         params.now,
         stale_after,
     )?;
+    if !ctx.features().sync {
+        // Sync is switched off: what an earlier sync fetched is no longer anyone's word.
+        claims
+            .claims
+            .retain(|held| held.source != ClaimSource::Remote);
+        claims.remote_stale = false;
+    }
     if claims.remote_stale {
         // No remote, or sync never ran: there is no remote view to be stale (decision 0011
         // section 3), so the engine must not warn about it on every claim.

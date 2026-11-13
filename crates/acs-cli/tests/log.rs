@@ -224,7 +224,8 @@ fn sync_without_a_remote_still_writes_records() {
     let out = run_env(&world, &["sync", "--json"], &[]);
     assert!(out.status.success(), "{out:?}");
     let report: Value = serde_json::from_slice(&out.stdout).unwrap();
-    assert_eq!(report["status"], "local_only");
+    // Sync is off by default; the records are written all the same.
+    assert_eq!(report["status"], "sync_off");
     assert_eq!(report["records"]["written"], 1);
     assert_eq!(ledger_commits(&world), 1);
 }

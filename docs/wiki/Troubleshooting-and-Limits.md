@@ -41,6 +41,7 @@ acs sync
 ```
 
 - If you added the remote after setup, run `acs init` again.
+- If the `Remote:` line says team sync is off, nothing is shared on purpose. `acs features sync on` switches it on for the repository; commit the change. See [Switching features on and off](Configuring-Policy#switching-features-on-and-off).
 - `acs sync` never prompts for credentials. If `git fetch` asks you for them, sync fails until they are cached.
 - `acs doctor` does not check sync yet, so a clean result does not prove that claims are being shared.
 - If the remote cannot be reached, you get a one-line warning. Local claims are still enforced, but other machines' claims are not.

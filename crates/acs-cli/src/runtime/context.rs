@@ -4,6 +4,7 @@ use std::cell::OnceCell;
 use std::path::{Path, PathBuf};
 
 use acs_core::gate::PolicyView;
+use acs_core::{Feature, Features};
 use acs_git::{GitError, RepoLayout};
 use acs_paths::{PathResolver, PathsError};
 use acs_policy::{CompiledPolicy, LoadOptions, LoadOutcome, Origin};
@@ -140,6 +141,18 @@ impl RepoContext {
     #[must_use]
     pub fn policy_view(&self) -> &dyn PolicyView {
         &self.policy.policy
+    }
+
+    /// The feature switches of `config.toml`'s `[features]` table.
+    #[must_use]
+    pub fn features(&self) -> Features {
+        self.policy.policy.files().config.features
+    }
+
+    /// Whether `feature` is switched on in this repository.
+    #[must_use]
+    pub fn feature_on(&self, feature: Feature) -> bool {
+        self.features().is_on(feature)
     }
 
     /// The state database, or why it is unavailable (the hook maps the latter to

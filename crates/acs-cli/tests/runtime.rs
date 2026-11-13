@@ -271,6 +271,10 @@ fn status_lists_mine_others_sealed_gate_and_remote() {
 #[test]
 fn the_remote_is_only_stale_once_sync_ran() {
     let world = World::new();
+    world.write(
+        ".acs/policy/config.toml",
+        "spec = \"acs/0.1\"\n[features]\nsync = true\n",
+    );
     common::git(
         &world.repo,
         &world.git_config,

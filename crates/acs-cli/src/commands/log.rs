@@ -60,6 +60,12 @@ pub fn run(args: &LogArgs) -> ExitCode {
 
 fn execute(args: &LogArgs) -> Result<ExitCode, CliError> {
     let (ctx, _cwd) = open_repo()?;
+    super::support::note_feature_off(
+        &ctx,
+        acs_core::Feature::History,
+        args.output.json,
+        "sessions are not recorded any more; this lists what was recorded before",
+    );
     let now = Timestamp::now();
     let since = args
         .since

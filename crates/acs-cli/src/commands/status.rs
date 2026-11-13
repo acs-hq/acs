@@ -72,6 +72,15 @@ pub fn render(view: &StatusView, now: Timestamp, all_sealed: bool) -> String {
         out.push_str(&field("you", &format!("{} ({})", seat.pilot, seat.harness)));
     }
 
+    if !view.features_off.is_empty() {
+        let keys: Vec<&str> = view.features_off.iter().map(|f| f.key()).collect();
+        out.push_str(&wrap(
+            &format!("{} (see `acs features`)", keys.join(", ")),
+            "  off       ",
+            "            ",
+        ));
+    }
+
     if view.gate_off {
         out.push('\n');
         out.push_str("!! GATE OFF: claims are not enforced on this machine.\n");
@@ -262,7 +271,9 @@ fn claim_target(claim: &ClaimView) -> String {
 fn remote_lines(view: &StatusView, now: Timestamp) -> String {
     let remote = &view.remote;
     let mut out = String::new();
-    let line = if !remote.configured {
+    let line = if !remote.enabled {
+        "Remote: team sync is off (`[features] sync`); claims are not shared".to_owned()
+    } else if !remote.configured {
         "Remote: none configured (local-only; claims are not shared)".to_owned()
     } else if !remote.sync_ran {
         "Remote: configured; no sync has run yet, others' claims are not visible".to_owned()
@@ -313,6 +324,7 @@ mod tests {
             branch: Some("feature/a-rather-long-branch-name".to_owned()),
             target_branch: "main".to_owned(),
             gate_off: true,
+            features_off: acs_core::Feature::ALL.to_vec(),
             state_unavailable: Some("x".repeat(150)),
             seat: Some(SeatSummary {
                 seat_id: "s".to_owned(),
@@ -353,6 +365,7 @@ mod tests {
                 .map(|i| format!("{}{i}/**", "g".repeat(100)))
                 .collect(),
             remote: RemoteView {
+                enabled: true,
                 configured: true,
                 sync_ran: true,
                 stale: true,
