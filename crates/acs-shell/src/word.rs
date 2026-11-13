@@ -1,6 +1,6 @@
 //! Words, working-directory tracking and lexical path helpers shared by every dialect.
 
-use acs_core::gate::{Confidence, ShellTarget, TargetOp};
+use acs_core::gate::{Confidence, GitInvocation, ShellTarget, TargetOp};
 
 /// How much is known about the value of a word.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -103,6 +103,27 @@ impl Cwd {
             Self::Known(base) if base.is_empty() => {}
             Self::Known(base) => target.path = join(base, &target.path),
             Self::Unknown => target.confidence = Confidence::Partial,
+        }
+    }
+
+    /// Places the directory a `git` invocation runs in (its own `-C` chain so far) under this
+    /// directory.
+    pub fn locate(&self, git: &mut GitInvocation) {
+        if git.dir_unknown || is_absolute(&git.dir) {
+            return;
+        }
+        match self {
+            Self::Known(base) if git.dir.is_empty() => git.dir.clone_from(base),
+            Self::Known(base) => {
+                git.dir = join(base, &git.dir);
+                if git.dir == "." {
+                    git.dir.clear();
+                }
+            }
+            Self::Unknown => {
+                git.dir_unknown = true;
+                git.dir.clear();
+            }
         }
     }
 }

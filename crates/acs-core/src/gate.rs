@@ -153,6 +153,14 @@ pub struct GitInvocation {
     /// Empty when the command acts on the current branch implicitly.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub refs: Vec<String>,
+    /// The directory git runs in, after a `cd` earlier in the command line and git's own `-C`:
+    /// relative to where the command line started (empty for that directory itself) or
+    /// absolute. Not meaningful when `dir_unknown` is set.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub dir: String,
+    /// Whether that directory could not be determined (`cd "$X" && git ...`, `git -C "$X" ...`).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub dir_unknown: bool,
 }
 
 /// One simple command (a program and its arguments) from a command line.

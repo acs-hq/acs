@@ -4,7 +4,7 @@
 use acs_core::gate::{CommandClass, GitInvocation, TargetOp};
 
 use crate::args::{Outcome, Parsed};
-use crate::word::{Kind, Word, basename};
+use crate::word::{Kind, Word, basename, is_absolute, join, normalize};
 
 /// Subcommands that only read the repository.
 const READ_ONLY: &[&str] = &[
@@ -62,12 +62,17 @@ const GLOBAL_VALUE_OPTS: &[&str] = &[
 /// Classifies `git <args>`.
 pub(crate) fn classify(args: &[Word], out: &mut Outcome) {
     let mut dirs: Vec<Word> = Vec::new();
+    // The `-C` values alone: they move git itself, which decides the work tree its hooks run in.
+    let mut chdirs: Vec<Word> = Vec::new();
     let mut i = 0;
     while i < args.len() && args[i].is_option() {
         let name = args[i].text.as_str();
         i += 1;
         match name {
             "-C" | "--work-tree" if i < args.len() => {
+                if name == "-C" {
+                    chdirs.push(args[i].clone());
+                }
                 dirs.push(args[i].clone());
                 i += 1;
             }
@@ -114,6 +119,21 @@ pub(crate) fn classify(args: &[Word], out: &mut Outcome) {
     }
     if inv.rewrites_history {
         out.class(CommandClass::GitHistoryRewrite);
+    }
+    for dir in &chdirs {
+        if !dir.is_exact() {
+            inv.dir_unknown = true;
+            inv.dir.clear();
+            break;
+        }
+        inv.dir = if is_absolute(&dir.text) {
+            normalize(&dir.text)
+        } else {
+            join(&inv.dir, &dir.text)
+        };
+        if inv.dir == "." {
+            inv.dir.clear();
+        }
     }
     out.git = Some(inv);
 }
