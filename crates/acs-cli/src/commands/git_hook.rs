@@ -141,10 +141,20 @@ pub fn handle(name: &str, args: &[String], stdin: &str, env: HookEnv, agent_env:
         Ok(ctx) => ctx,
         Err(err) => return Verdict::warn(format!("could not open this repository: {err}")),
     };
+    // `commit_checks` off: nothing is rejected. The markers an agent's command left are still
+    // used up, so that they cannot be mistaken for a later commit or push.
+    let checks = ctx.features().commit_checks;
     match name {
-        "pre-commit" => pre_commit(&ctx, env.now, agent_env),
+        "pre-commit" if checks => pre_commit(&ctx, env.now, agent_env),
+        "pre-commit" => Verdict::allow(),
         "prepare-commit-msg" => prepare_commit_msg(&ctx, args, env.now),
-        "pre-push" => pre_push(&ctx, stdin, env.now, agent_env),
+        "pre-push" if checks => pre_push(&ctx, stdin, env.now, agent_env),
+        "pre-push" => {
+            if let Some(pending) = pending_dir(&ctx) {
+                let _ = markers::take_push_marker(&pending, &ctx.layout.work_tree, env.now);
+            }
+            Verdict::allow()
+        }
         other => Verdict::warn(format!("unknown git hook `{other}`")),
     }
 }
@@ -190,7 +200,7 @@ fn pre_commit(ctx: &RepoContext, now: Timestamp, agent_env: bool) -> Verdict {
         .db()
         .ok()
         .is_some_and(|db| db.flag_is_set(FLAG_GATE_OFF).unwrap_or(false));
-    if !gate_off {
+    if !gate_off && ctx.features().claims {
         match ctx.db() {
             Ok(db) => match claim_findings(ctx, db, &paths, marker.as_ref(), now) {
                 Ok((found, stale)) => {
@@ -287,6 +297,13 @@ fn claim_findings(
     let mut snapshot =
         db.claims_snapshot(paths, &config.default_target_branch, now, stale_after)?;
     let mut stale = false;
+    if !ctx.features().sync {
+        // As the gate does: with sync switched off, an old fetch is nobody's word.
+        snapshot
+            .claims
+            .retain(|held| held.source != ClaimSource::Remote);
+        snapshot.remote_stale = false;
+    }
     if snapshot.remote_stale {
         // As the gate does (decision 0012): with no remote or no sync yet there is no view.
         let sync_ran = ctx.has_remote && db.remote_sync_status()?.last_attempt_at.is_some();
@@ -427,6 +444,10 @@ fn prepare_commit_msg(ctx: &RepoContext, args: &[String], now: Timestamp) -> Ver
     let marker =
         pending_dir(ctx).and_then(|p| markers::take_commit_marker(&p, &ctx.layout.work_tree, now));
     let mut found: Vec<Trailer> = Vec::new();
+    if !ctx.features().history {
+        // The trailer points at a session record, and none is written.
+        return Verdict::Allow(warnings);
+    }
     if let Some(marker) = &marker {
         found.push(Trailer::session(&marker.session_id));
     } else if !matches!(source, Some("merge" | "squash")) && !history_operation(ctx) {

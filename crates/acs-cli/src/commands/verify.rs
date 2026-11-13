@@ -44,6 +44,12 @@ pub fn run(args: &VerifyArgs) -> ExitCode {
 
 fn verify(args: &VerifyArgs) -> Result<ExitCode, CliError> {
     let (ctx, _) = open_repo()?;
+    super::support::note_feature_off(
+        &ctx,
+        acs_core::Feature::History,
+        args.output.json,
+        "sessions are not recorded any more; this checks the records from before",
+    );
     let git = |err: acs_git::GitError| CliError::new("git", format!("cannot verify: {err}"));
     let store = storage(&ctx);
     let mut pilots = store.ledger_pilots().map_err(git)?;

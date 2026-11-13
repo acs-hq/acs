@@ -50,13 +50,15 @@ pub fn run(ctx: &RepoContext, event: &ToolEvent, now: Timestamp) -> Decision {
     let proceeds = outcome != Outcome::Deny;
 
     if let (Some(info), true) = (&seat_info, proceeds) {
-        decision.warnings.extend(capture_pre(
-            ctx,
-            &info.session_id,
-            &output.snapshot_requests,
-            &norm,
-            now,
-        ));
+        if ctx.features().history {
+            decision.warnings.extend(capture_pre(
+                ctx,
+                &info.session_id,
+                &output.snapshot_requests,
+                &norm,
+                now,
+            ));
+        }
         // Lore goes before the notices (SPEC section 9, step 7).
         let lore = lore::inject_for_event(ctx, &info.seat.seat_id, event, &norm, now);
         decision.context.splice(0..0, lore);

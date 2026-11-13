@@ -149,8 +149,12 @@ pub fn finalize(ctx: &RepoContext, now: Timestamp) -> Result<FinalizeReport, OpE
         .map_err(|why| OpError::Unavailable(why.to_owned()))?;
     let crashed_before = Timestamp::from_second(now.as_second().saturating_sub(crash_after_secs()))
         .map_err(|err| OpError::Invalid(err.to_string()))?;
-    let due = db.records_due(crashed_before)?;
     let mut report = FinalizeReport::default();
+    if !ctx.features().history {
+        // Sessions stay due: if history is switched back on, what they left is recorded then.
+        return Ok(report);
+    }
+    let due = db.records_due(crashed_before)?;
     if due.is_empty() {
         return Ok(report);
     }

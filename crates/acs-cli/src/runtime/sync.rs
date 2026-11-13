@@ -50,13 +50,19 @@ pub fn lock(ctx: &RepoContext, wait: bool) -> io::Result<Option<SyncLock>> {
     }
 }
 
-/// Whether hooks may sync this repository on their own: it has a remote, and it adopted ACS.
+/// Whether hooks may sync this repository on their own: it has a remote, it adopted ACS, and
+/// its policy switches sync on (`[features] sync`, off by default).
 ///
 /// A plugin enabled for a user runs its hooks in every repository they open. Sync publishes file
-/// paths and the pilot's email, so it takes the repository's `.acs/policy/` to start it unasked;
-/// without one, only someone typing `acs sync` does.
-fn may_sync(ctx: &RepoContext) -> bool {
-    ctx.has_remote && ctx.layout.work_tree.join(".acs").join("policy").is_dir()
+/// paths and the pilot's email, so it takes the repository's `.acs/policy/` and its say-so to
+/// start it.
+#[must_use]
+pub fn may_sync(ctx: &RepoContext) -> bool {
+    ctx.features().sync && ctx.has_remote && adopted(ctx)
+}
+
+fn adopted(ctx: &RepoContext) -> bool {
+    ctx.layout.work_tree.join(".acs").join("policy").is_dir()
 }
 
 /// Starts a detached `acs sync` if the repository takes part in sync, `sync_interval_secs` has
@@ -92,9 +98,10 @@ pub fn spawn_now(ctx: &RepoContext) {
 /// Starts a detached `acs sync --wait` when a session ended, so its record is written to the
 /// ledger without waiting for the next command. Unlike [`spawn_now`] this needs no remote (the
 /// record lands in the local ledger), only that the repository adopted ACS (`.acs/policy/`): a
-/// plugin runs its hooks in every repository its user opens.
+/// plugin runs its hooks in every repository its user opens. With the `history` feature off
+/// there is no record to write, so it only starts where the released claims have somewhere to go.
 pub fn spawn_for_records(ctx: &RepoContext) {
-    if ctx.layout.work_tree.join(".acs").join("policy").is_dir() {
+    if (ctx.features().history && adopted(ctx)) || may_sync(ctx) {
         spawn(ctx, true);
     }
 }

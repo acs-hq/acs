@@ -62,6 +62,12 @@ pub fn run(args: &BlameArgs) -> ExitCode {
 
 fn blame(args: &BlameArgs) -> Result<ExitCode, CliError> {
     let (ctx, cwd) = open_repo()?;
+    super::support::note_feature_off(
+        &ctx,
+        acs_core::Feature::History,
+        args.output.json,
+        "commits get no ACS-Session trailer any more; newer lines show no session",
+    );
     let resolved = ctx.resolver.resolve(&args.path, &cwd);
     let Some(repo_path) = resolved.repo_path().cloned() else {
         return Err(CliError::new(

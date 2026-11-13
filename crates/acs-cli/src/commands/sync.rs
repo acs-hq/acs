@@ -67,6 +67,17 @@ fn execute(args: &SyncArgs) -> Result<ExitCode, CliError> {
         warnings: vec![format!("could not write session records: {err}")],
         ..FinalizeReport::default()
     });
+    if !ctx.features().sync {
+        say(
+            json,
+            "sync_off",
+            remote.as_deref(),
+            "Team sync is switched off in this repository, so nothing was fetched or \
+             published. `acs features sync on` switches it on.",
+            Some(&records),
+        );
+        return Ok(ExitCode::SUCCESS);
+    }
     let Some(remote) = remote else {
         say(
             json,

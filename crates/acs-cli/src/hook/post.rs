@@ -39,6 +39,12 @@ pub fn run(ctx: &RepoContext, event: &ToolEvent, now: Timestamp, scan: &ScanOpti
 
     let (observed, source) = match kind {
         None | Some(ToolKind::Read) => (Vec::new(), AttributionSource::Tool),
+        // History off: no copies are kept, so there is nothing to compare and attribute. The
+        // marker the pre-tool step left is still used up.
+        Some(_) if !ctx.features().history => {
+            let _ = markers::take_tool_marker(ctx, &info.seat.seat_id);
+            (Vec::new(), AttributionSource::Tool)
+        }
         Some(ToolKind::Shell) => (
             shell_changes(ctx, db, &info, now, scan),
             AttributionSource::Shell,
