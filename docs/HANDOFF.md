@@ -66,6 +66,12 @@ items are covered by tests (interleaved undo and junction recovery in `tests/e2e
 tampered ledgers); no real-agent run was made for Phase 4. Dogfooding found that commits from a
 subagent's worktree are rejected for the agent's own claims (section 2, "New in Phase 4").
 
+**The worktree bugs are fixed (2026-11-13, decision 0032).** A hook event is judged in the work
+tree that holds its files (`runtime::roots`), so an edit under `.claude/worktrees/<wp>/` is claimed
+as the plain repository path, and commit markers follow `cd` and `git -C`. Subagents in worktrees
+no longer need to release before committing. **Reinstall `acs` after merging**; no schema change.
+What is left is in issue 69.
+
 ## 1. Where things stand
 
 - `main` has Phase 0, Phase 1, **Phase 2 (WP2.1–WP2.6)**, **Phase 3 (WP3.1)**, including the rule
@@ -327,7 +333,10 @@ New in Phase 4:
    other, across worktrees too. But their `cd <worktree> && git commit` is rejected by the
    pre-commit hook as "made by a person" for the seat's own claims: the pending-commit marker is
    keyed by the event's `cwd` (the main checkout). Workaround used: `acs_release` the committed
-   files, then commit. Never `--no-verify`. Open bug, `docs/security/overrides.md`.
+   files, then commit. Never `--no-verify`. **Fixed by decision 0032** once the human has
+   reinstalled `acs`; the workaround is then only needed when the command hides the directory
+   (`cd "$X" && git commit`), so have subagents commit with `git -C <worktree> commit`. Claude
+   Code itself asks for approval of `cd <dir> && git ...` in a headless run.
 4. **Subagents still script edits with inline `python`** although the brief says not to; those
    edits skip the gate. Repeat the rule in the prompt itself, not only in a rules file.
 5. **Do not kill processes by broad name** (`cargo|rustc` and every test binary): the auto-mode
