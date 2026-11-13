@@ -1,14 +1,15 @@
 //! The default policy files `acs init` writes into `.acs/policy/`.
 //!
-//! Every template is valid policy as written (`config.toml` sets only `spec`; the other two are
-//! entirely comments), and the commented values are generated from the built-in defaults, so
-//! they cannot drift from what the engine applies. Existing files are never touched.
+//! Every template is valid policy as written (`config.toml` sets `spec` and writes out the
+//! `[features]` switches at their defaults; the other two are entirely comments), and the
+//! values are generated from the built-in defaults, so they cannot drift from what the engine
+//! applies. Existing files are never touched.
 
 use std::fs::{self, OpenOptions};
 use std::io::{self, Write};
 use std::path::Path;
 
-use acs_core::DEFAULT_SEALED;
+use acs_core::{DEFAULT_SEALED, Feature, Features};
 use acs_policy::{DEFAULT_BAN, DEFAULT_PROTECTED_BRANCHES};
 use serde::Serialize;
 
@@ -84,7 +85,20 @@ fn quoted_list(items: &[&str], indent: &str) -> String {
 }
 
 fn config_template() -> String {
-    "\
+    let defaults = Features::default();
+    let features: String = Feature::ALL
+        .into_iter()
+        .map(|feature| {
+            format!(
+                "# {}.\n{} = {}\n",
+                capitalized(feature.summary()),
+                feature.key(),
+                defaults.is_on(feature)
+            )
+        })
+        .collect();
+    format!(
+        "\
 # ACS repository policy, spec acs/0.1. Commit this file: it is the same for every clone.
 # Everything except `spec` is optional; the commented values are the defaults.
 spec = \"acs/0.1\"
@@ -101,8 +115,20 @@ spec = \"acs/0.1\"
 # [ledger]
 # Store the text of user prompts in the session ledger.
 # store_prompts = false
-"
-    .to_owned()
+
+# Which parts of ACS run in this repository. Set one to false to switch it off (or run
+# `acs features <name> on|off`). The values below are the defaults. Only people can change
+# them: ACS's protection of its own files, hooks and state is always on.
+[features]
+{features}"
+    )
+}
+
+fn capitalized(text: &str) -> String {
+    let mut chars = text.chars();
+    chars.next().map_or_else(String::new, |first| {
+        first.to_uppercase().collect::<String>() + chars.as_str()
+    })
 }
 
 fn guards_template() -> String {

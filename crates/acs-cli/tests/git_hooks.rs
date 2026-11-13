@@ -389,6 +389,11 @@ fn a_commit_from_an_agents_shell_that_acs_cannot_place_is_not_told_to_skip_the_h
 /// A claim on `src/util.rs` held on another machine since `acquired_at`, as a sync stores it, with
 /// a fresh fetch.
 fn claim_on_another_machine(world: &World, acquired_at: Timestamp) {
+    // Claims of other machines only count where team sync is on.
+    world.write(
+        ".acs/policy/config.toml",
+        "spec = \"acs/0.1\"\n[features]\nsync = true\n",
+    );
     let db = world.db();
     let now = Timestamp::now();
     let claim = Claim {

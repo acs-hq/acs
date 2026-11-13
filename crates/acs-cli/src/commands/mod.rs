@@ -10,6 +10,7 @@
 pub mod blame;
 pub mod claim;
 pub mod doctor;
+pub mod features;
 pub mod git_hook;
 pub mod init;
 pub mod log;

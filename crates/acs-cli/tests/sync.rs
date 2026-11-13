@@ -121,7 +121,8 @@ fn claims_on_another_integration_branch_do_not_conflict() {
     let omar = team.clone("omar", "omar@example.com");
     fs::write(
         omar.repo.join(".acs/policy/config.toml"),
-        "spec = \"acs/0.1\"\nsync_interval_secs = 5\ndefault_target_branch = \"develop\"\n",
+        "spec = \"acs/0.1\"\nsync_interval_secs = 5\ndefault_target_branch = \"develop\"\n\
+         [features]\nsync = true\n",
     )
     .unwrap();
     assert_eq!(sara.edit("s1", "src/lib.rs").outcome, Outcome::Allow);
@@ -199,7 +200,7 @@ fn post_tool_only_syncs_once_the_interval_has_passed() {
     let sara = team.clone("sara", "sara@example.com");
     fs::write(
         sara.repo.join(".acs/policy/config.toml"),
-        "spec = \"acs/0.1\"\nsync_interval_secs = 3600\n",
+        "spec = \"acs/0.1\"\nsync_interval_secs = 3600\n[features]\nsync = true\n",
     )
     .unwrap();
     assert_eq!(sara.edit("s1", "src/lib.rs").outcome, Outcome::Allow);
@@ -239,8 +240,16 @@ fn hooks_publish_nothing_from_a_repository_that_never_adopted_acs() {
         .unwrap();
     assert!(refs.stdout.is_empty(), "{refs:?}");
 
-    // Typing the command is an explicit choice, and works.
-    assert_eq!(sara.json(&["sync"])["report"]["documents_published"], 1);
+    // Typing the command does not publish either: sync is off until a policy switches it on
+    // (decision 0033).
+    assert_eq!(sara.json(&["sync"])["status"], "sync_off");
+    let refs = Command::new("git")
+        .arg("-C")
+        .arg(&team.remote)
+        .args(["for-each-ref", "refs/acs"])
+        .output()
+        .unwrap();
+    assert!(refs.stdout.is_empty(), "{refs:?}");
 }
 
 /// A remote that hangs for five seconds on every connection, reached through a fake ssh.

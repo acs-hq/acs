@@ -45,6 +45,8 @@ pub enum Command {
     On(commands::off::OnArgs),
     /// Let agents change files in owned territory they do not own (for a person at a terminal).
     Override(commands::r#override::OverrideArgs),
+    /// Show which parts of ACS run in this repository, or switch one on or off.
+    Features(commands::features::FeaturesArgs),
     /// Check the installation and repair what can be repaired.
     Doctor(commands::doctor::DoctorArgs),
     /// Share claims with other machines through the git remote.
@@ -159,6 +161,7 @@ pub fn run(cli: Cli) -> ExitCode {
         Command::Off(args) => commands::off::run_off(&args),
         Command::On(args) => commands::off::run_on(&args),
         Command::Override(args) => commands::r#override::run(&args),
+        Command::Features(args) => commands::features::run(&args),
         Command::Doctor(args) => commands::doctor::run(&args),
         Command::Sync(args) => commands::sync::run(&args),
         Command::Watch(args) => commands::watch::run(&args),
