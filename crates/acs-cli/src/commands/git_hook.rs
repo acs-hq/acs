@@ -142,7 +142,7 @@ pub fn handle(name: &str, args: &[String], stdin: &str, env: HookEnv, agent_env:
         Err(err) => return Verdict::warn(format!("could not open this repository: {err}")),
     };
     match name {
-        "pre-commit" => pre_commit(&ctx, env.now),
+        "pre-commit" => pre_commit(&ctx, env.now, agent_env),
         "prepare-commit-msg" => prepare_commit_msg(&ctx, args, env.now),
         "pre-push" => pre_push(&ctx, stdin, env.now, agent_env),
         other => Verdict::warn(format!("unknown git hook `{other}`")),
@@ -164,7 +164,7 @@ struct Finding {
     sealed: bool,
 }
 
-fn pre_commit(ctx: &RepoContext, now: Timestamp) -> Verdict {
+fn pre_commit(ctx: &RepoContext, now: Timestamp, agent_env: bool) -> Verdict {
     let staged = match query::staged_changes(&ctx.layout.work_tree) {
         Ok(staged) => staged,
         Err(err) => return Verdict::warn(format!("could not list the staged files: {err}")),
@@ -219,7 +219,7 @@ fn pre_commit(ctx: &RepoContext, now: Timestamp) -> Verdict {
             let _ = markers::take_commit_marker(p, &ctx.layout.work_tree, now);
         }
     }
-    let message = rejection(&findings, marker.as_ref());
+    let message = rejection(&findings, marker.as_ref(), agent_env);
     record_collisions(ctx, &findings, marker.as_ref(), &message, now);
     Verdict::Reject(message)
 }
@@ -361,9 +361,16 @@ fn age(now: Timestamp, since: Timestamp) -> String {
     }
 }
 
-fn rejection(findings: &[Finding], marker: Option<&CommitMarker>) -> String {
+/// The rejection text. `agent_env` is whether the harness environment says the commit comes from
+/// an agent's shell: without a marker ACS cannot tell which session it is, so the session's own
+/// claims counted against it, and the advice a person gets (`--no-verify`) is one agents are
+/// denied.
+fn rejection(findings: &[Finding], marker: Option<&CommitMarker>, agent_env: bool) -> String {
     let who = match marker {
         Some(m) => format!("by agent session {} ({})", m.session_id, m.harness),
+        None if agent_env => {
+            "from an agent's shell, by a session ACS could not identify".to_owned()
+        }
         None => "by a person".to_owned(),
     };
     let mut out =
@@ -391,6 +398,13 @@ fn rejection(findings: &[Finding], marker: Option<&CommitMarker>) -> String {
                 );
             }
         }
+        None if agent_env => out.push_str(
+            "If a file is claimed by your own session, release it with `acs_release` and commit \
+             again; that happens when ACS cannot see which directory the commit runs in, so name \
+             it plainly (`git -C <dir> commit ...`). Otherwise unstage the file (`git restore \
+             --staged <path>`), or wait until the holder releases it and coordinate through your \
+             pilot.\n",
+        ),
         None => out.push_str(
             "Wait until the holder releases the claim (`acs status` shows who holds what), or \
              coordinate with them. To commit anyway, run `git commit --no-verify`: that is your \

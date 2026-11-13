@@ -284,6 +284,108 @@ fn a_human_commit_of_a_file_claimed_in_another_worktree_is_rejected() {
     assert!(there.status.success(), "{}", stderr(&there));
 }
 
+/// A world with a committed policy (so a linked worktree's checkout has it and gets the git hook
+/// checks) and a worktree inside the main checkout, as Claude Code's subagents use.
+fn world_with_nested_worktree() -> (World, PathBuf) {
+    let world = World::new();
+    world.write(".acs/policy/guards.toml", "");
+    git_ok(&world, &world.repo, &["add", "-A"]);
+    git_ok(&world, &world.repo, &["commit", "-q", "-m", "policy"]);
+    let layout = acs_git::discover(&world.repo).unwrap();
+    acs_git::hooks::install(&layout).unwrap();
+    git_ok(
+        &world,
+        &world.repo,
+        &[
+            "worktree",
+            "add",
+            "-q",
+            "-b",
+            "side",
+            ".claude/worktrees/wp",
+        ],
+    );
+    let wt = dunce::canonicalize(world.repo.join(".claude/worktrees/wp")).unwrap();
+    (world, wt)
+}
+
+/// A session that runs in the main checkout edits a file in the worktree and commits there, with
+/// `commit` as its shell command. The commit must be the agent's own, trailer included.
+fn commit_from_the_main_checkout(commit: impl Fn(&Path) -> String) {
+    let (world, wt) = world_with_nested_worktree();
+    let agent = Agent::new(&world, "claude-code", "c1");
+    agent.start();
+    let file = wt.join("src/lib.rs");
+    assert_eq!(
+        agent
+            .pre_edit(&file.to_string_lossy())
+            .claims_acquired
+            .len(),
+        1
+    );
+    fs::write(&file, "pub fn mine() {}\n").unwrap();
+    git_ok(&world, &wt, &["add", "src/lib.rs"]);
+
+    let command = commit(&wt);
+    agent.pre_shell(&command);
+    let out = git(&world, &wt, &["commit", "-q", "-m", "work"]);
+    assert!(out.status.success(), "`{command}`: {}", stderr(&out));
+    let session = agent.info().session_id;
+    let message = message_of_head(&world, &wt);
+    assert!(
+        message.contains(&format!("\n\nACS-Session: {session}")),
+        "`{command}`: {message}"
+    );
+}
+
+#[test]
+fn an_agent_commit_after_cd_into_a_worktree_is_the_agents_own() {
+    commit_from_the_main_checkout(|_| "cd .claude/worktrees/wp && git commit -m work".to_owned());
+}
+
+#[test]
+fn an_agent_commit_after_cd_to_an_absolute_worktree_path_is_the_agents_own() {
+    commit_from_the_main_checkout(|wt| {
+        let dir = wt.to_string_lossy().replace('\\', "/");
+        format!("cd \"{dir}\" && git add -A && git commit -m work")
+    });
+}
+
+#[test]
+fn an_agent_commit_with_git_dash_c_into_a_worktree_is_the_agents_own() {
+    commit_from_the_main_checkout(|_| "git -C .claude/worktrees/wp commit -m work".to_owned());
+}
+
+#[test]
+fn a_commit_from_an_agents_shell_that_acs_cannot_place_is_not_told_to_skip_the_hooks() {
+    let (world, wt) = world_with_nested_worktree();
+    let agent = Agent::new(&world, "claude-code", "c1");
+    agent.start();
+    let file = wt.join("src/lib.rs");
+    agent.pre_edit(&file.to_string_lossy());
+    fs::write(&file, "pub fn mine() {}\n").unwrap();
+    git_ok(&world, &wt, &["add", "src/lib.rs"]);
+
+    // The directory is not visible in the command, so the marker stays with the session's work
+    // tree and the hook in the worktree cannot tell whose commit this is.
+    agent.pre_shell("cd \"$WT\" && git commit -m work");
+    let out = git_cmd(&world, &wt, &["commit", "-q", "-m", "work"])
+        .env("CLAUDECODE", "1")
+        .output()
+        .unwrap();
+    assert!(!out.status.success());
+    let text = stderr(&out);
+    assert!(text.contains("from an agent's shell"), "{text}");
+    assert!(text.contains("acs_release"), "{text}");
+    assert!(!text.contains("--no-verify"), "{text}");
+
+    // The same rejection for a person keeps the advice a person can follow.
+    let out = git(&world, &wt, &["commit", "-q", "-m", "work"]);
+    let text = stderr(&out);
+    assert!(text.contains("by a person"), "{text}");
+    assert!(text.contains("git commit --no-verify"), "{text}");
+}
+
 /// A claim on `src/util.rs` held on another machine since `acquired_at`, as a sync stores it, with
 /// a fresh fetch.
 fn claim_on_another_machine(world: &World, acquired_at: Timestamp) {
