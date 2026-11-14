@@ -657,3 +657,162 @@ fn replays_the_requests_captured_from_claude_code() {
     );
     server.finish();
 }
+
+/// What a session is told by `acs mcp` and by its session-start message where `switch` is off.
+struct Told {
+    instructions: String,
+    tools: Vec<String>,
+    descriptions: String,
+    status: String,
+    start: String,
+}
+
+fn told_with(features: &str) -> Told {
+    let world = World::new();
+    world.write(
+        ".acs/policy/config.toml",
+        &format!("spec = \"acs/0.1\"\n\n[features]\n{features}\n"),
+    );
+    let agent = Agent::new(&world, "claude-code", "cc-1");
+    let start = agent.start().context.join("\n");
+    let mut server = Server::start(
+        &world,
+        &["--harness", "claude-code"],
+        &[("CLAUDE_CODE_SESSION_ID", "cc-1")],
+    );
+    let init = server.initialize("claude-code");
+    let listed = server.request("tools/list", json!({}));
+    let tools = listed["result"]["tools"].as_array().unwrap().clone();
+    let status = text(&server.call("acs_status", json!({})));
+    server.finish();
+    Told {
+        instructions: init["instructions"].as_str().unwrap_or_default().to_owned(),
+        tools: tools
+            .iter()
+            .filter_map(|t| t["name"].as_str().map(str::to_owned))
+            .collect(),
+        descriptions: tools
+            .iter()
+            .filter_map(|t| t["description"].as_str())
+            .collect::<Vec<_>>()
+            .join("\n"),
+        status,
+        start,
+    }
+}
+
+const ALL_TOOLS: [&str; 6] = [
+    "acs_status",
+    "acs_claim",
+    "acs_release",
+    "acs_intent",
+    "acs_why",
+    "acs_lore_propose",
+];
+
+/// Decision 0034: for every switch, what the agent is told matches what is on. A tool whose
+/// feature is off is not listed and nothing mentions it; the other switches change no tool and
+/// are named in the status, except `sync`, which is not the agent's concern.
+#[test]
+fn what_an_agent_is_told_follows_every_switch() {
+    for (features, tools, named_off) in [
+        ("", ALL_TOOLS.to_vec(), None),
+        (
+            "claims = false",
+            vec!["acs_status", "acs_intent", "acs_why", "acs_lore_propose"],
+            None,
+        ),
+        (
+            "lore = false",
+            vec![
+                "acs_status",
+                "acs_claim",
+                "acs_release",
+                "acs_intent",
+                "acs_why",
+            ],
+            Some("lore"),
+        ),
+        ("guards = false", ALL_TOOLS.to_vec(), Some("guards")),
+        ("territory = false", ALL_TOOLS.to_vec(), Some("territory")),
+        ("history = false", ALL_TOOLS.to_vec(), Some("history")),
+        (
+            "commit_checks = false",
+            ALL_TOOLS.to_vec(),
+            Some("commit_checks"),
+        ),
+        ("sync = false", ALL_TOOLS.to_vec(), None),
+        (
+            "claims = false\nlore = false",
+            vec!["acs_status", "acs_intent", "acs_why"],
+            Some("lore"),
+        ),
+    ] {
+        let told = told_with(features);
+        assert_eq!(told.tools, tools, "[{features}]");
+        let everything = format!(
+            "{}\n{}\n{}\n{}",
+            told.instructions, told.descriptions, told.status, told.start
+        );
+        for tool in ALL_TOOLS {
+            assert!(
+                tools.contains(&tool) || !everything.contains(tool),
+                "[{features}] {tool} is not listed, so nothing may mention it:\n{everything}"
+            );
+        }
+        match named_off {
+            Some(name) => {
+                assert!(
+                    told.status
+                        .lines()
+                        .any(|l| l.starts_with("Switched off in this repository:")
+                            && l.contains(name)),
+                    "[{features}] {}",
+                    told.status
+                );
+                assert!(
+                    told.start
+                        .lines()
+                        .any(|l| l.starts_with("Also switched off here:") && l.contains(name)),
+                    "[{features}] {}",
+                    told.start
+                );
+            }
+            None => {
+                assert!(
+                    !told.status.contains("Switched off in this repository"),
+                    "[{features}] {}",
+                    told.status
+                );
+                assert!(!told.start.contains("Also switched off"), "{}", told.start);
+            }
+        }
+        let claims = tools.contains(&"acs_claim");
+        for said in [&told.status, &told.start, &told.instructions] {
+            let lower = said.to_lowercase();
+            assert_eq!(
+                lower.contains("claims switched off") || lower.contains("claims are switched off"),
+                !claims,
+                "[{features}] {said}"
+            );
+        }
+        assert_eq!(
+            told.status.contains("Your claims"),
+            claims,
+            "{}",
+            told.status
+        );
+        // ACS's protection of itself is listed whatever is off.
+        assert!(
+            told.status.contains("`.acs/**`"),
+            "[{features}] {}",
+            told.status
+        );
+        assert_eq!(
+            told.status.contains("`**/.env*`"),
+            !features.contains("guards"),
+            "[{features}] {}",
+            told.status
+        );
+    }
+}

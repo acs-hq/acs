@@ -243,10 +243,10 @@ fn guards(
     if !sealed.is_empty() {
         verdict.deny(ReasonCode::SealedPath, || messages::sealed_path(&sealed));
     }
-    if let Some(shell) = input.shell {
-        self_protection(input, shell, verdict);
-    }
     let features = policy.config().features;
+    if let Some(shell) = input.shell {
+        self_protection(input, shell, features, verdict);
+    }
     if !features.guards {
         return;
     }
@@ -288,7 +288,12 @@ fn guards(
 
 /// ACS's own rules (decision 0026): commands that would switch ACS off or skip it, and commands
 /// with unknown effects that mention a protected location.
-fn self_protection(input: &GateInput<'_>, shell: &ShellAnalysis, verdict: &mut Verdict) {
+fn self_protection(
+    input: &GateInput<'_>,
+    shell: &ShellAnalysis,
+    features: crate::policy_types::Features,
+    verdict: &mut Verdict,
+) {
     for command in &shell.commands {
         if let Some(what) = protect::mentioned(command, input.outside_sealed) {
             verdict.deny(ReasonCode::SealedPath, || {
@@ -297,7 +302,7 @@ fn self_protection(input: &GateInput<'_>, shell: &ShellAnalysis, verdict: &mut V
         }
         if let Some(breach) = protect::check(command) {
             verdict.deny(ReasonCode::BannedCommand, || {
-                messages::self_protection(&breach)
+                messages::self_protection(&breach, features)
             });
         }
     }
