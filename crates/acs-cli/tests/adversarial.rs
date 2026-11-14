@@ -100,11 +100,7 @@ fn snapshot(dir: &Path, out: &mut Vec<(String, u64, Option<std::time::SystemTime
             out.push((path.display().to_string(), 0, None));
             snapshot(&path, out);
         } else {
-            out.push((
-                path.display().to_string(),
-                meta.len(),
-                meta.modified().ok(),
-            ));
+            out.push((path.display().to_string(), meta.len(), meta.modified().ok()));
         }
     }
     out.sort();

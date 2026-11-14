@@ -433,7 +433,10 @@ mod tests {
             ("acs undo --apply --help", "acs undo"),
             ("acs doctor --fix --help", "acs doctor"),
             ("xargs acs claim --json --help", "acs claim"),
-            ("cargo run -p acs-cli -- override --path --help", "acs override"),
+            (
+                "cargo run -p acs-cli -- override --path --help",
+                "acs override",
+            ),
             ("/usr/local/bin/acs off", "acs off"),
             ("C:\\tools\\ACS.EXE off", "acs off"),
             ("./target/debug/acs.exe override", "acs override"),
