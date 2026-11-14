@@ -416,7 +416,11 @@ pushed to the remote: keep it structural and pass text through `hook::redact::re
 records only through `runtime::records::ledger_records` (latest record per session wins). A new
 `acs` subcommand an agent may run goes in `READ_ONLY` in `crates/acs-core/src/engine/protect.rs`.
 Undo depends on snapshots of ended sessions being kept (no `drop_session` at session end; they are
-evicted by budget only) and on `acs watch` not pruning attributions.
+evicted by budget only) and on `acs watch` not pruning attributions. The budget (500 MiB per
+repository, `runtime::cleanup`, decision 0037) is enforced by `acs sync` after it writes records,
+never in a hook; seats silent past the crash window do not pin their copies. A subcommand whose
+trailing arguments allow hyphen values (like `acs git-hook`) needs the `--help` exception in
+`protect::asks_for_help_only` (decision 0038).
 
 **Antigravity** — done on `antigravity-gate`: skills synced (both plugins ship exact copies),
 `acs plugin install antigravity` (writes the built-in plugin to `.agents/plugins/acs/`), a setup
