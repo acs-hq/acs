@@ -25,6 +25,28 @@ deny: acs lore review --accept prop_abc
 deny: acs lore review --reject prop_abc --json
 deny: acs some-future-command
 
+# ---- ... that look like help but do something else (decision 0038) ---------------------------
+deny: acs override --path --help --once
+deny: acs override --path --help
+deny: acs override --path=--help --once
+deny: acs claim -- --help
+deny: acs claim --help --json
+deny: acs claim --help --help
+deny: acs claim --json --help
+deny: acs claim src/lib.rs --help
+deny: acs claim --help=x
+deny: acs claim -hx
+deny: acs --help claim
+deny: acs git-hook pre-commit --help
+deny: acs lore review --accept --help
+deny: acs undo ses_abc --apply --help
+deny: acs doctor --fix --help
+deny: acs off --help && acs off
+deny: acs claim --help; acs off
+deny: xargs acs claim --json --help
+deny: cargo run -p acs-cli -- override --path --help
+deny-ps: acs override --path --help --once
+
 # ---- ... through wrappers, paths and other programs ------------------------------------------
 deny: sudo acs off
 deny: env FOO=1 acs off
@@ -118,6 +140,19 @@ allow: acs stats
 allow: acs verify
 allow: acs undo ses_abc
 allow: acs --version
+allow: acs claim --help
+allow: acs claim -h
+allow: acs override --help
+allow: acs release -h
+allow: acs lore review --help
+allow: acs plugin install --help
+allow: acs git-hook --help
+allow: sudo acs claim --help
+allow: env FOO=1 acs claim --help
+allow: ./target/debug/acs claim --help
+allow: xargs acs claim --help
+allow: cargo run -p acs-cli -- claim --help
+allow-ps: acs claim --help
 allow: grep -rn "acs off" docs
 allow: rg acs src
 allow: git commit -m "Document acs off and --no-verify"

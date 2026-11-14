@@ -87,6 +87,63 @@ fn decide(world: &World, user_home: &Path, tool: &str, command: &str) -> Decisio
     serde_json::from_slice(&out.stdout).unwrap()
 }
 
+/// Every file under `dir` with its size and modification time.
+fn snapshot(dir: &Path, out: &mut Vec<(String, u64, Option<std::time::SystemTime>)>) {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let meta = entry.metadata().unwrap();
+        if meta.is_dir() {
+            // A directory's own time moves for reasons unrelated to ACS; its files are listed.
+            out.push((path.display().to_string(), 0, None));
+            snapshot(&path, out);
+        } else {
+            out.push((path.display().to_string(), meta.len(), meta.modified().ok()));
+        }
+    }
+    out.sort();
+}
+
+/// Decision 0038: the shapes the hook lets through as help really only print help. Each allowed
+/// `--help` / `-h` form of the fixture runs on the built binary: exit 0, usage on stdout, and
+/// neither the repository nor the ACS home changes.
+#[test]
+fn the_help_forms_the_hook_allows_only_print_help() {
+    let world = World::new();
+    let mut ran = 0;
+    for case in cases().iter().filter(|c| !c.deny) {
+        let Some(rest) = case.command.strip_prefix("acs ") else {
+            continue;
+        };
+        let words: Vec<&str> = rest.split_whitespace().collect();
+        if !matches!(words.last(), Some(&("--help" | "-h"))) {
+            continue;
+        }
+        let (mut before, mut after) = (Vec::new(), Vec::new());
+        snapshot(&world.repo, &mut before);
+        snapshot(&world.home, &mut before);
+        let out = Command::new(acs_bin())
+            .args(&words)
+            .current_dir(&world.repo)
+            .env("ACS_HOME", &world.home)
+            .env("GIT_CONFIG_GLOBAL", &world.git_config)
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .stdin(Stdio::null())
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "{}: {out:?}", case.command);
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        assert!(stdout.contains("Usage:"), "{}: {stdout}", case.command);
+        snapshot(&world.repo, &mut after);
+        snapshot(&world.home, &mut after);
+        assert_eq!(before, after, "{} changed state", case.command);
+        ran += 1;
+    }
+    assert!(ran >= 6, "the help forms of the fixture shrank ({ran})");
+}
+
 #[test]
 fn every_adversarial_command_is_denied_and_the_controls_are_not() {
     let world = World::new();
