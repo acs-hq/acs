@@ -3,7 +3,7 @@
 use acs_core::{Decision, Outcome, ReasonCode, Timestamp, ToolEvent};
 use acs_store::NewEvent;
 
-use super::markers;
+use super::{keep_alive, markers};
 use crate::runtime::{RepoContext, seats, status, sync};
 
 fn allow() -> Decision {
@@ -58,14 +58,17 @@ pub fn start(ctx: &RepoContext, event: &ToolEvent, now: Timestamp) -> Decision {
 
 /// `prompt_submit`: delivers pending notices, and nothing else. Some harnesses call this before
 /// every model call, so with nothing undelivered the context is empty.
+///
+/// A session without a seat has nothing waiting for it, so none is created here: the first
+/// event that needs one does that. A live seat is kept alive, not marked as seen every time.
 pub fn prompt(ctx: &RepoContext, event: &ToolEvent, now: Timestamp) -> Decision {
     let mut decision = allow();
     let Ok(db) = ctx.db() else { return decision };
-    let Ok(resolved) = seats::agent_seat(ctx, db, &event.harness, &event.harness_session_id, now)
-    else {
+    let Ok(Some(info)) = db.seat_by_session(&event.harness, &event.harness_session_id) else {
         return decision;
     };
-    let Ok(notices) = db.pending_notices(&resolved.info.seat.seat_id) else {
+    keep_alive(db, &info, now);
+    let Ok(notices) = db.pending_notices(&info.seat.seat_id) else {
         return decision;
     };
     if notices.is_empty() {
@@ -89,22 +92,29 @@ pub fn end(ctx: &RepoContext, event: &ToolEvent, now: Timestamp) -> Decision {
     let Ok(Some(info)) = db.seat_by_session(&event.harness, &event.harness_session_id) else {
         return decision;
     };
-    let _ = db.record_event(&NewEvent {
-        seat_id: &info.seat.seat_id,
-        at: now,
-        phase: event.phase,
-        tool_name: None,
-        tool_kind: None,
-        paths: &[],
-        reason_code: None,
-        outcome: None,
-        detail: None,
-    });
+    // With claims, history and sync all off nothing reads this event: there are no claims to
+    // release, no record to write and nothing to push. The seat is still ended, so that the MCP
+    // server does not take a finished session for a live one.
+    let features = ctx.features();
+    if features.claims || features.history || features.sync {
+        let _ = db.record_event(&NewEvent {
+            seat_id: &info.seat.seat_id,
+            at: now,
+            phase: event.phase,
+            tool_name: None,
+            tool_kind: None,
+            paths: &[],
+            reason_code: None,
+            outcome: None,
+            detail: None,
+        });
+    }
     let _ = db.end_seat(&info.seat.seat_id, now);
     markers::clear_tool_marker(ctx, &info.seat.seat_id);
     // The claims just released would otherwise block other machines until their TTL: there may
     // be no further event here to carry the news. The same detached `acs sync` writes the
-    // session's record to the ledger, with or without a remote.
+    // session's record to the ledger, with or without a remote. With history and sync both off
+    // it starts nothing.
     sync::spawn_for_records(ctx);
     decision
 }
