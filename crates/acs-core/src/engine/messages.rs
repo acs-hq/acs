@@ -8,7 +8,7 @@ use jiff::Timestamp;
 use super::plan::Sealed;
 use super::protect::Breach;
 use crate::gate::{ClaimSource, HeldClaim, ResolvedPath};
-use crate::policy_types::Owner;
+use crate::policy_types::{Features, Owner};
 use crate::values::RepoPath;
 
 /// How many paths a message names before it says "and N more".
@@ -125,13 +125,26 @@ pub(super) fn sealed_mention(command: &str, what: &str) -> String {
     )
 }
 
-/// A command that breaks one of ACS's self-protection rules.
-pub(super) fn self_protection(breach: &Breach) -> String {
+/// A command that breaks one of ACS's self-protection rules. The claim and lore tools are
+/// named only where their feature is on: elsewhere they are not listed (decision 0034).
+pub(super) fn self_protection(breach: &Breach, features: Features) -> String {
     match breach {
+        Breach::AcsCli(shown) if shown.starts_with("acs lore ") && !features.lore => format!(
+            "Agents may not run {}: accepting or rejecting lore is the owner's decision, and \
+             lore is switched off in this repository. `acs lore list`, `acs lore show` and \
+             `acs lore stale` are fine to run.",
+            tick(shown)
+        ),
         Breach::AcsCli(shown) if shown.starts_with("acs lore ") => format!(
             "Agents may not run {}: accepting or rejecting lore is the owner's decision. Propose \
              lore with the `acs_lore_propose` tool instead; `acs lore list`, `acs lore show` and \
              `acs lore stale` are fine to run.",
+            tick(shown)
+        ),
+        Breach::AcsCli(shown) if !features.claims => format!(
+            "Agents may not run {}: it changes ACS state as your pilot, not as you. Claims are \
+             switched off in this repository, so your files need none; for anything else, ask \
+             your pilot to run it in their own terminal.",
             tick(shown)
         ),
         Breach::AcsCli(shown) => format!(

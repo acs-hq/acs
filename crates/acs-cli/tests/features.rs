@@ -352,3 +352,33 @@ fn sync_is_off_until_a_person_switches_it_on() {
     let unknown = world.run(&["features", "telepathy", "on"], b"", &world.repo);
     assert!(!unknown.status.success());
 }
+
+/// Decision 0034: a denial points at a tool only where that tool is listed.
+#[test]
+fn denials_name_no_tool_whose_feature_is_off() {
+    let world = World::new();
+    let agent = Agent::new(&world, "claude-code", "c1");
+    agent.start();
+    let d = agent.pre_shell("acs claim src/lib.rs");
+    assert_eq!(d.outcome, Outcome::Deny);
+    assert!(d.message.contains("`acs_claim`"), "{}", d.message);
+    let d = agent.pre_shell("acs lore review --list");
+    assert_eq!(d.outcome, Outcome::Deny);
+    assert!(d.message.contains("`acs_lore_propose`"), "{}", d.message);
+
+    let world = world_with("claims = false\nlore = false");
+    let agent = Agent::new(&world, "claude-code", "c1");
+    agent.start();
+    let d = agent.pre_shell("acs claim src/lib.rs");
+    assert_eq!(d.outcome, Outcome::Deny);
+    assert!(!d.message.contains("acs_claim"), "{}", d.message);
+    assert!(
+        d.message.contains("Claims are switched off"),
+        "{}",
+        d.message
+    );
+    let d = agent.pre_shell("acs lore review --list");
+    assert_eq!(d.outcome, Outcome::Deny);
+    assert!(!d.message.contains("acs_lore_propose"), "{}", d.message);
+    assert!(d.message.contains("lore is switched off"), "{}", d.message);
+}

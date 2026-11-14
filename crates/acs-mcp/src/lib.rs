@@ -23,9 +23,9 @@ pub mod tools;
 use rmcp::ServiceExt;
 
 pub use backend::{
-    Backend, BackendError, Caller, ClaimInfo, ClaimReply, ClaimRequest, DecisionInfo, IntentReply,
-    IntentRequest, LoreProposeReply, LoreProposeRequest, ReleaseReply, ReleaseRequest, SeatInfo,
-    StatusReply, WhyReply,
+    Available, Backend, BackendError, Caller, ClaimInfo, ClaimReply, ClaimRequest, DecisionInfo,
+    IntentReply, IntentRequest, LoreProposeReply, LoreProposeRequest, ReleaseReply, ReleaseRequest,
+    SeatInfo, StatusReply, WhyReply,
 };
 pub use bind::BindingSettings;
 pub use server::{AcsServer, ServerOptions};

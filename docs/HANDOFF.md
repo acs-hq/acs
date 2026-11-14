@@ -84,6 +84,17 @@ sealed default that protects ACS itself also goes in `SELF_PROTECTION_SEALED`, w
 sealed with `guards` off. Tests that need sync must set `[features] sync = true` in the test
 repository's `config.toml`.
 
+**What agents are told follows the switches (2026-11-14, decision 0034).** `acs mcp` lists
+`acs_claim` and `acs_release` only where `claims` is on and `acs_lore_propose` only where `lore`
+is on, and builds its instructions from the switches (`acs_mcp::Backend::available`,
+`tools::definitions_for`, `tools::instructions`). The Antigravity rule and the usage skill no
+longer assume claims. **The rule for anything agent-facing: a file shipped with a plugin says
+only what is true in every repository; what depends on a switch is said by `acs`.** The test
+`what_an_agent_is_told_follows_every_switch` in `crates/acs-cli/tests/mcp.rs` checks every
+switch; add a row for a new one. **Reinstall `acs` after merging**, and run
+`acs plugin install antigravity` again where Antigravity is used; no schema change. No real-agent
+run was made.
+
 ## 1. Where things stand
 
 - `main` has Phase 0, Phase 1, **Phase 2 (WP2.1–WP2.6)**, **Phase 3 (WP3.1)**, including the rule

@@ -12,9 +12,9 @@ use serde::{Deserialize, Deserializer};
 use serde_json::{Map, Value};
 
 use crate::backend::{
-    Backend, BackendError, Caller, ClaimInfo, ClaimReply, ClaimRequest, DecisionInfo, IntentReply,
-    IntentRequest, LoreProposeReply, LoreProposeRequest, ReleaseReply, ReleaseRequest, StatusReply,
-    WhyReply,
+    Available, Backend, BackendError, Caller, ClaimInfo, ClaimReply, ClaimRequest, DecisionInfo,
+    IntentReply, IntentRequest, LoreProposeReply, LoreProposeRequest, ReleaseReply, ReleaseRequest,
+    StatusReply, WhyReply,
 };
 
 /// `acs_status`.
@@ -145,6 +145,50 @@ fn schema_of<T: JsonSchema>() -> Map<String, Value> {
         .entry("properties")
         .or_insert_with(|| Value::Object(Map::new()));
     schema
+}
+
+/// What the server tells a model about itself at `initialize`, for a repository with these
+/// features on. Short: it is spent context. It names no tool that [`definitions_for`] leaves
+/// out, so nothing tells an agent to claim where claims are switched off.
+#[must_use]
+pub fn instructions(available: Available) -> String {
+    let mut text = "ACS coordinates the coding agents working in this repository.".to_owned();
+    text.push_str(if available.claims {
+        " Claim files with acs_claim before you edit or delete them, say what you are doing \
+         with acs_intent, release files when done, and call acs_why when something is denied."
+    } else {
+        " Claims are switched off here, so files need no claim. Say what you are doing with \
+         acs_intent, and call acs_why when something is denied."
+    });
+    if available.lore {
+        text.push_str(
+            " Follow the lore ACS shows you, and propose what the next agent should know with \
+             acs_lore_propose.",
+        );
+    }
+    text
+}
+
+/// The tools listed in a repository with these features on: `acs_claim` and `acs_release` need
+/// claims, `acs_lore_propose` needs lore. A tool that is not listed still answers when called
+/// (a session that started before the switch changed), saying that its feature is off.
+#[must_use]
+pub fn definitions_for(available: Available) -> Vec<ToolDef> {
+    let mut defs = definitions();
+    defs.retain(|def| match def.name {
+        CLAIM | RELEASE => available.claims,
+        LORE_PROPOSE => available.lore,
+        _ => true,
+    });
+    if !available.claims {
+        for def in &mut defs {
+            if def.name == STATUS {
+                def.description = "Show which parts of ACS are on in this repository and which \
+                                   paths are never writable. Call it at the start of a task.";
+            }
+        }
+    }
+    defs
 }
 
 /// The six tool definitions, in the order they are listed.
@@ -390,13 +434,25 @@ fn status_text(reply: &StatusReply) -> String {
         )),
         None => lines.push("You: no active ACS session yet.".to_owned()),
     }
-    if reply.gate_off {
+    if reply.gate_off && !reply.claims_off {
         lines.push(
             "ACS enforcement is off (`acs off`): claims are not enforced. Sealed paths still are."
                 .to_owned(),
         );
     }
-    if reply.my_claims.is_empty() {
+    if !reply.also_off.is_empty() {
+        lines.push(format!(
+            "Switched off in this repository: {}.",
+            reply.also_off.join(", ")
+        ));
+    }
+    if reply.claims_off {
+        lines.push(
+            "Claims are switched off in this repository: files need no claim, and deleting or \
+             moving a file needs none either."
+                .to_owned(),
+        );
+    } else if reply.my_claims.is_empty() {
         lines.push("Your claims: none.".to_owned());
     } else {
         let paths: Vec<String> = reply.my_claims.iter().map(|c| c.path.clone()).collect();
@@ -406,7 +462,9 @@ fn status_text(reply: &StatusReply) -> String {
             ticked(&paths, LIST_LIMIT)
         ));
     }
-    if reply.other_claims.is_empty() {
+    if reply.claims_off {
+        // Nothing is held by anyone.
+    } else if reply.other_claims.is_empty() {
         lines.push("Claimed by others: nothing.".to_owned());
     } else {
         lines.push(format!("Claimed by others ({}):", reply.other_claims.len()));
@@ -419,6 +477,13 @@ fn status_text(reply: &StatusReply) -> String {
                 reply.other_claims.len() - LIST_LIMIT
             ));
         }
+    }
+    if !reply.claims_off {
+        lines.push(
+            "Before you delete or move a file, claim it with acs_claim: deletes and moves \
+             outside your own claims are denied."
+                .to_owned(),
+        );
     }
     if !reply.sealed.is_empty() {
         lines.push(format!(
@@ -743,6 +808,103 @@ Use X."
             json!("array")
         );
         assert_eq!(claim.input_schema["required"], json!(["paths"]));
+    }
+
+    fn listed(available: Available) -> Vec<&'static str> {
+        definitions_for(available).iter().map(|d| d.name).collect()
+    }
+
+    #[test]
+    fn a_tool_whose_feature_is_off_is_not_listed() {
+        assert_eq!(listed(Available::default()), names());
+        assert_eq!(
+            listed(Available {
+                claims: false,
+                lore: true
+            }),
+            ["acs_status", "acs_intent", "acs_why", "acs_lore_propose"]
+        );
+        assert_eq!(
+            listed(Available {
+                claims: true,
+                lore: false
+            }),
+            [
+                "acs_status",
+                "acs_claim",
+                "acs_release",
+                "acs_intent",
+                "acs_why"
+            ]
+        );
+        assert_eq!(
+            listed(Available {
+                claims: false,
+                lore: false
+            }),
+            ["acs_status", "acs_intent", "acs_why"]
+        );
+    }
+
+    #[test]
+    fn nothing_listed_or_said_mentions_a_tool_that_is_left_out() {
+        for claims in [true, false] {
+            for lore in [true, false] {
+                let available = Available { claims, lore };
+                let mut said = vec![instructions(available)];
+                said.extend(
+                    definitions_for(available)
+                        .iter()
+                        .map(|d| d.description.to_owned()),
+                );
+                let said = said.join("\n");
+                assert_eq!(said.contains("acs_claim"), claims, "{available:?}: {said}");
+                assert_eq!(
+                    said.contains("acs_lore_propose"),
+                    lore,
+                    "{available:?}: {said}"
+                );
+                if !claims {
+                    assert!(!said.contains("acs_release"), "{said}");
+                    assert!(!said.to_lowercase().contains("you have claimed"), "{said}");
+                    assert!(said.contains("Claims are switched off"), "{said}");
+                }
+                assert!(instructions(available).len() < 420, "{available:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn status_with_claims_off_says_so_and_lists_no_claims() {
+        let reply = StatusReply {
+            worktree: "/repo".into(),
+            target_branch: "main".into(),
+            claims_off: true,
+            also_off: vec!["lore".into()],
+            sealed: vec![".env".into()],
+            ..StatusReply::default()
+        };
+        let text = status_text(&reply);
+        assert!(text.contains("Claims are switched off"), "{text}");
+        assert!(
+            text.contains("Switched off in this repository: lore."),
+            "{text}"
+        );
+        assert!(!text.contains("Your claims"), "{text}");
+        assert!(!text.contains("Claimed by others"), "{text}");
+        assert!(!text.contains("acs_claim"), "{text}");
+        assert!(text.contains("Never writable: `.env`"), "{text}");
+    }
+
+    #[test]
+    fn status_with_claims_on_says_to_claim_before_deleting() {
+        let out = run(&Fake::default(), STATUS, json!({}));
+        assert!(
+            out.text
+                .contains("Before you delete or move a file, claim it with acs_claim"),
+            "{}",
+            out.text
+        );
     }
 
     #[test]

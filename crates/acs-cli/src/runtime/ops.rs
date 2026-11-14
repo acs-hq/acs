@@ -247,8 +247,9 @@ impl StatusView {
              you; a file another seat has claimed is blocked until they finish."
                 .to_owned()
         } else {
-            "ACS is set up in this repository with claims switched off: files need no claim, \
-             so `acs_claim` and `acs_release` are not needed here."
+            // The claim tools are not listed here, so they are not named either.
+            "ACS is set up in this repository with claims switched off: files need no claim \
+             before you edit, delete or move them."
                 .to_owned()
         }];
         // Sync is not the agent's concern, and it is off by default.
@@ -276,7 +277,8 @@ impl StatusView {
                 list(self.my_claims.iter().map(|c| c.path.as_str()))
             ));
         }
-        if !self.other_claims.is_empty() {
+        // A claim taken before claims were switched off holds nothing now.
+        if claims && !self.other_claims.is_empty() {
             let shown = self.other_claims.iter().take(3).map(|c| {
                 let who = c.harness.as_deref().map_or_else(
                     || c.pilot.clone(),

@@ -16,18 +16,12 @@ use rmcp::model::{
 use rmcp::service::{RequestContext, RoleServer};
 use serde_json::{Map, Value};
 
-use crate::backend::Backend;
+use crate::backend::{Available, Backend};
 use crate::bind::BindingSettings;
 use crate::tools::{self, ToolDef, ToolOutput};
 
 /// Antigravity loads MCP tools on demand unless the tool says otherwise (v1.3.3 and later).
 const ANTIGRAVITY_ALWAYS_LOAD: &str = "antigravity/alwaysLoad";
-
-/// What the server tells a model about itself at `initialize`. Short: it is spent context.
-const INSTRUCTIONS: &str = "ACS coordinates the coding agents working in this repository. \
-Claim files with acs_claim before you edit or delete them, say what you are doing with \
-acs_intent, release files when done, and call acs_why when something is denied. Follow the \
-lore ACS shows you, and propose what the next agent should know with acs_lore_propose.";
 
 /// How the server behaves.
 #[derive(Debug, Clone, Default)]
@@ -86,10 +80,15 @@ fn tool_of(def: &ToolDef) -> Tool {
         .with_meta(meta)
 }
 
-/// The tool list as `tools/list` returns it.
+/// The tool list as `tools/list` returns it where these features are on.
 #[must_use]
-pub fn list_tools_result() -> ListToolsResult {
-    ListToolsResult::with_all_items(tools::definitions().iter().map(tool_of).collect())
+pub fn list_tools_result(available: Available) -> ListToolsResult {
+    ListToolsResult::with_all_items(
+        tools::definitions_for(available)
+            .iter()
+            .map(tool_of)
+            .collect(),
+    )
 }
 
 fn result_of(output: ToolOutput, structured: bool) -> CallToolResult {
@@ -123,7 +122,9 @@ impl<B: Backend> ServerHandler for AcsServer<B> {
     fn get_info(&self) -> ServerConfig {
         ServerConfig::new(ServerCapabilities::builder().enable_tools().build())
             .with_server_info(Implementation::new("acs", env!("CARGO_PKG_VERSION")))
-            .with_instructions(INSTRUCTIONS)
+            // Read from the repository's switches each time, so a new session never hears
+            // about a feature that is off (decision 0034).
+            .with_instructions(tools::instructions(self.backend.available()))
     }
 
     async fn initialize(
@@ -141,7 +142,7 @@ impl<B: Backend> ServerHandler for AcsServer<B> {
         _request: Option<PaginatedRequestParams>,
         _context: RequestContext<RoleServer>,
     ) -> Result<ListToolsResult, McpError> {
-        Ok(list_tools_result())
+        Ok(list_tools_result(self.backend.available()))
     }
 
     async fn call_tool(
