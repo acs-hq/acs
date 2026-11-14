@@ -332,9 +332,9 @@ New in WP7.3 and WP7.4:
    whether the extension is built on it (it is not: both call the same claim code). A walk-through
    (save `src/payments.rs`, the agent is denied naming you, two minutes later it is released)
    landed where a list of rules did not. Lead user docs and replies with one.
-6. **Self-protection blocks `acs <stateful subcommand> --help`** from an agent's shell, and takes
-   the rest of the command line with it; use `acs help <subcommand>` (dogfooding table in
-   `docs/security/overrides.md`, still open).
+6. **Self-protection used to block `acs <stateful subcommand> --help`** from an agent's shell;
+   fixed by decision 0038 (subcommand names then one last `--help` or `-h` are allowed;
+   dogfooding table in `docs/security/overrides.md`).
 7. **Checking the extension without a VS Code window:** load `out/src/extension.js` in Node with
    a stub `vscode` module (a `Proxy` that returns no-op disposables, with real values for
    `workspace.workspaceFolders` and `window.visibleTextEditors`) and call `activate`. It catches
