@@ -492,3 +492,145 @@ fn old_history_is_left_out() {
     assert!(report["territory"]["proposal"]["commits"].as_u64().unwrap() <= 1);
     assert_eq!(report["territory"]["status"], "nothing_proposed");
 }
+
+// ---------------------------------------------------------------------------------------------
+// The main branch (issue 67, decision 0040)
+// ---------------------------------------------------------------------------------------------
+
+fn loaded_files(world: &World) -> acs_policy::PolicyFiles {
+    acs_policy::load(
+        &world.repo.join(".acs/policy"),
+        acs_policy::LoadOptions::default(),
+    )
+    .unwrap()
+    .policy
+    .files()
+    .clone()
+}
+
+#[test]
+fn a_repository_on_master_gets_master_as_target_and_protected() {
+    let world = World::new();
+    git(
+        &world.repo,
+        &world.git_config,
+        &["branch", "-m", "main", "master"],
+    );
+
+    let out = acs(&world, &["init"]);
+    assert_success(&out);
+    let said = stdout(&out);
+    assert_fits_80(&said);
+    assert!(
+        said.contains("master (the current branch): set as"),
+        "{said}"
+    );
+    assert!(!said.contains("WARNING"), "{said}");
+    let files = loaded_files(&world);
+    assert_eq!(files.config.default_target_branch, "master");
+    assert_eq!(
+        files.guards.protected_branches,
+        ["main", "release/*", "master"]
+    );
+
+    // A second run changes nothing and agrees with the files.
+    let before = snapshot(&world);
+    let again = json(&acs(&world, &["init", "--json"]));
+    assert_eq!(again["changed"], false);
+    assert_eq!(again["default_branch"]["found"]["name"], "master");
+    assert_eq!(again["default_branch"]["written_to"], serde_json::json!([]));
+    assert_eq!(again["default_branch"]["target_branch"], "master");
+    assert_eq!(again["warnings"], serde_json::json!([]));
+    assert_eq!(snapshot(&world), before);
+}
+
+#[test]
+fn the_remote_head_wins_over_the_current_branch() {
+    let world = World::new();
+    let upstream = world.tmp.path().join("upstream.git");
+    git(
+        world.tmp.path(),
+        &world.git_config,
+        &[
+            "init",
+            "-q",
+            "--bare",
+            "-b",
+            "develop",
+            upstream.to_str().unwrap(),
+        ],
+    );
+    git(
+        &world.repo,
+        &world.git_config,
+        &["remote", "add", "origin", upstream.to_str().unwrap()],
+    );
+    git(
+        &world.repo,
+        &world.git_config,
+        &["push", "-q", "origin", "main:develop"],
+    );
+    git(&world.repo, &world.git_config, &["fetch", "-q", "origin"]);
+    git(
+        &world.repo,
+        &world.git_config,
+        &["remote", "set-head", "origin", "--auto"],
+    );
+
+    let report = json(&acs(&world, &["init", "--json"]));
+    assert_eq!(report["default_branch"]["found"]["name"], "develop");
+    assert_eq!(
+        report["default_branch"]["found"]["source"],
+        serde_json::json!({"kind": "remote_head", "remote": "origin"})
+    );
+    assert_eq!(
+        report["default_branch"]["written_to"],
+        serde_json::json!(["config.toml", "guards.toml"])
+    );
+    assert_eq!(loaded_files(&world).config.default_target_branch, "develop");
+}
+
+#[test]
+fn main_and_unknown_branches_keep_the_plain_defaults() {
+    let world = World::new();
+    let report = json(&acs(&world, &["init", "--json"]));
+    assert_eq!(report["default_branch"]["found"]["name"], "main");
+    assert_eq!(
+        report["default_branch"]["written_to"],
+        serde_json::json!([])
+    );
+    let config = fs::read_to_string(world.repo.join(".acs/policy/config.toml")).unwrap();
+    assert!(
+        config.contains("# default_target_branch = \"main\""),
+        "{config}"
+    );
+
+    let other = World::new();
+    git(
+        &other.repo,
+        &other.git_config,
+        &["branch", "-m", "main", "trunk"],
+    );
+    let out = acs(&other, &["init"]);
+    assert_success(&out);
+    let said = stdout(&out);
+    assert!(said.contains("not found"), "{said}");
+    assert_eq!(loaded_files(&other).config.default_target_branch, "main");
+}
+
+#[test]
+fn an_existing_policy_that_names_another_branch_is_kept_with_a_warning() {
+    let world = World::new();
+    assert_success(&acs(&world, &["init"]));
+    git(
+        &world.repo,
+        &world.git_config,
+        &["branch", "-m", "main", "master"],
+    );
+    let before = snapshot(&world);
+    let out = acs(&world, &["init"]);
+    assert_success(&out);
+    let said = stdout(&out);
+    assert!(said.contains("looks like `master`"), "{said}");
+    assert_eq!(snapshot(&world), before);
+}

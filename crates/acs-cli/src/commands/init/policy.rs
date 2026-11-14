@@ -35,18 +35,24 @@ pub struct PolicyFileReport {
     pub action: FileAction,
 }
 
-/// The `(file name, contents)` of each template, in the order they are written.
+/// The `(file name, contents)` of each template, in the order they are written. `branch` is the
+/// repository's main branch when it is not `main` (decision 0040): `config.toml` then sets it as
+/// `default_target_branch` and `guards.toml` adds it to the default `protected_branches`.
 #[must_use]
-pub fn templates() -> [(&'static str, String); 3] {
+pub fn templates(branch: Option<&str>) -> [(&'static str, String); 3] {
+    let branch = branch.filter(|b| *b != DEFAULT_TARGET_BRANCH);
     [
-        ("config.toml", config_template()),
-        ("guards.toml", guards_template()),
+        ("config.toml", config_template(branch)),
+        ("guards.toml", guards_template(branch)),
         ("territory.toml", territory_template()),
     ]
 }
 
+/// The branch the built-in `default_target_branch` names.
+pub const DEFAULT_TARGET_BRANCH: &str = "main";
+
 /// Writes the policy directory and the files that are missing. `territory`, when given, is
-/// written in place of the `territory.toml` template.
+/// written in place of the `territory.toml` template; `branch` is passed to [`templates`].
 ///
 /// # Errors
 ///
@@ -54,10 +60,11 @@ pub fn templates() -> [(&'static str, String); 3] {
 pub fn write_missing(
     policy_dir: &Path,
     territory: Option<&str>,
+    branch: Option<&str>,
 ) -> io::Result<Vec<PolicyFileReport>> {
     fs::create_dir_all(policy_dir)?;
     let mut reports = Vec::new();
-    for (file, template) in templates() {
+    for (file, template) in templates(branch) {
         let contents = match territory {
             Some(text) if file == "territory.toml" => text.to_owned(),
             _ => template,
@@ -84,7 +91,22 @@ fn quoted_list(items: &[&str], indent: &str) -> String {
         .collect()
 }
 
-fn config_template() -> String {
+/// `text` as a TOML basic string (JSON's escapes are valid TOML).
+fn toml_string(text: &str) -> String {
+    serde_json::to_string(text).unwrap_or_else(|_| format!("\"{text}\""))
+}
+
+fn config_template(branch: Option<&str>) -> String {
+    let target = match branch {
+        Some(name) => format!(
+            "# The branch work is integrated into. `acs init` found that it is not `main`.\n\
+             default_target_branch = {}\n",
+            toml_string(name)
+        ),
+        None => format!(
+            "# The branch work is integrated into.\n# default_target_branch = \"{DEFAULT_TARGET_BRANCH}\"\n"
+        ),
+    };
     let defaults = Features::default();
     let features: String = Feature::ALL
         .into_iter()
@@ -103,9 +125,7 @@ fn config_template() -> String {
 # Everything except `spec` is optional; the commented values are the defaults.
 spec = \"acs/0.1\"
 
-# The branch work is integrated into.
-# default_target_branch = \"main\"
-
+{target}
 # Seconds a claim stays live without a heartbeat.
 # claim_ttl_secs = 900
 
@@ -131,13 +151,28 @@ fn capitalized(text: &str) -> String {
     })
 }
 
-fn guards_template() -> String {
+fn guards_template(branch: Option<&str>) -> String {
     let sealed = quoted_list(DEFAULT_SEALED, "#   ");
-    let branches = DEFAULT_PROTECTED_BRANCHES
+    let mut branches = DEFAULT_PROTECTED_BRANCHES
         .iter()
         .map(|b| format!("\"{b}\""))
-        .collect::<Vec<_>>()
-        .join(", ");
+        .collect::<Vec<_>>();
+    let protected = match branch {
+        Some(name) => {
+            branches.push(toml_string(name));
+            format!(
+                "# Branches on which history rewrites and force pushes are denied. The defaults, plus\n\
+                 # the main branch `acs init` found.\n\
+                 protected_branches = [{}]\n",
+                branches.join(", ")
+            )
+        }
+        None => format!(
+            "# Branches on which history rewrites and force pushes are denied.\n\
+             # protected_branches = [{}]\n",
+            branches.join(", ")
+        ),
+    };
     let ban = DEFAULT_BAN
         .iter()
         .map(|b| format!("\"{b}\""))
@@ -153,9 +188,7 @@ fn guards_template() -> String {
 # sealed = [
 {sealed}# ]
 
-# Branches on which history rewrites and force pushes are denied.
-# protected_branches = [{branches}]
-
+{protected}
 # Ask before an agent writes or deletes outside the repository. Off by default: ACS guards the
 # repository. Paths it cannot resolve, and paths outside that link back into the repository, are
 # asked about either way; ACS's own state and harness settings are always denied.
@@ -215,7 +248,7 @@ mod tests {
     fn the_templates_are_valid_policy_equal_to_the_defaults() {
         let dir = tempfile::tempdir().unwrap();
         let policy_dir = dir.path().join("policy");
-        let reports = write_missing(&policy_dir, None).unwrap();
+        let reports = write_missing(&policy_dir, None, None).unwrap();
         assert!(reports.iter().all(|r| r.action == FileAction::Created));
         let loaded = load(&policy_dir, LoadOptions::default()).unwrap();
         assert!(loaded.warnings.is_empty(), "{:?}", loaded.warnings);
@@ -226,7 +259,7 @@ mod tests {
     #[test]
     fn uncommenting_the_guards_template_keeps_the_defaults() {
         let dir = tempfile::tempdir().unwrap();
-        let text = guards_template()
+        let text = guards_template(None)
             .lines()
             .map(|l| {
                 l.strip_prefix("# ")
@@ -253,6 +286,34 @@ mod tests {
     }
 
     #[test]
+    fn another_main_branch_is_written_and_keeps_the_defaults() {
+        let dir = tempfile::tempdir().unwrap();
+        write_missing(dir.path(), None, Some("master")).unwrap();
+        let loaded = load(dir.path(), LoadOptions::default()).unwrap();
+        assert!(loaded.warnings.is_empty(), "{:?}", loaded.warnings);
+        let files = loaded.policy.files();
+        assert_eq!(files.config.default_target_branch, "master");
+        let mut wanted: Vec<String> = DEFAULT_PROTECTED_BRANCHES
+            .iter()
+            .map(|b| (*b).to_owned())
+            .collect();
+        wanted.push("master".to_owned());
+        assert_eq!(files.guards.protected_branches, wanted);
+        // Everything else stays at the defaults.
+        let defaults = load(&dir.path().join("none"), LoadOptions::default()).unwrap();
+        assert_eq!(files.guards.sealed, defaults.policy.files().guards.sealed);
+        assert_eq!(
+            files.config.features,
+            defaults.policy.files().config.features
+        );
+    }
+
+    #[test]
+    fn main_writes_the_plain_templates() {
+        assert_eq!(templates(Some("main")), templates(None));
+    }
+
+    #[test]
     fn existing_files_are_never_overwritten() {
         let dir = tempfile::tempdir().unwrap();
         fs::write(
@@ -260,7 +321,7 @@ mod tests {
             "spec = \"acs/0.1\"\n# mine\n",
         )
         .unwrap();
-        let reports = write_missing(dir.path(), None).unwrap();
+        let reports = write_missing(dir.path(), None, None).unwrap();
         assert_eq!(reports[0].action, FileAction::Exists);
         assert_eq!(reports[1].action, FileAction::Created);
         assert!(
