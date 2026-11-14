@@ -322,6 +322,32 @@ impl RepoIdentity {
     pub fn home(&self, home: &AcsHome) -> RepoHome {
         home.repo(&self.id)
     }
+
+    /// The identity-cache file of the repository containing `start`, whether or not it exists.
+    /// Nothing is read or written.
+    ///
+    /// # Errors
+    ///
+    /// See [`find_common_dir`].
+    pub fn cache_file_for(home: &AcsHome, start: &Path) -> Result<PathBuf, RepoIdError> {
+        Ok(Cache::new(home, &find_common_dir(start)?).path)
+    }
+
+    /// Every file and directory under `home` that belongs to this repository and exists: its
+    /// state directory, the state directory of its path-derived id (left from before its first
+    /// commit, or by a failed move), and its entry in the identity cache. `acs uninstall
+    /// --state` deletes them.
+    #[must_use]
+    pub fn local_files(&self, home: &AcsHome) -> Vec<PathBuf> {
+        let mut paths = vec![home.repo(&self.id).dir().to_path_buf()];
+        let path_id = RepoId::from_path(&self.common_dir);
+        if path_id != self.id {
+            paths.push(home.repo(&path_id).dir().to_path_buf());
+        }
+        paths.push(Cache::new(home, &self.common_dir).path);
+        paths.retain(|p| fs::symlink_metadata(p).is_ok());
+        paths
+    }
 }
 
 /// Why a repository identity could not be resolved.

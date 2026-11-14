@@ -33,6 +33,9 @@ pub enum Command {
     Hook(HookArgs),
     /// Set the repository up: policy defaults, fetch refspec, git hooks, plugin hints.
     Init(commands::init::InitArgs),
+    /// Remove ACS from the repository: git hooks, fetch refspecs, refs, plugin settings, and on
+    /// request the policy, the local state and the refs on the remotes.
+    Uninstall(commands::uninstall::UninstallArgs),
     /// Show claims, sealed paths and whether the gate is on.
     Status(commands::status::StatusArgs),
     /// Claim files for yourself (the human seat).
@@ -155,6 +158,7 @@ pub fn run(cli: Cli) -> ExitCode {
     match cli.command {
         Command::Hook(args) => run_hook(&args),
         Command::Init(args) => commands::init::run(&args),
+        Command::Uninstall(args) => commands::uninstall::run(&args),
         Command::Status(args) => commands::status::run(&args),
         Command::Claim(args) => commands::claim::run(&args),
         Command::Release(args) => commands::release::run(&args),
