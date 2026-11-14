@@ -179,7 +179,7 @@ Commands: `acs hook --canonical <phase>`, `acs hook <claude-code|antigravity|can
 `acs mcp [--harness]`, `acs git-hook <name>`, `acs init|status|claim|release|off|on|doctor|sync`
 `acs lore list|show <path>...|stale [--all]|review [--list|--accept <id> [--body-file F] [--owner O]|--reject <id>]`,
 `acs log [--pilot] [--harness] [--since] [--path] [--limit]`, `acs blame <path>`,
-`acs undo <session> [--apply]`, `acs verify [--pilot] [--require-signed] [--accept-history]`,
+`acs undo <session>|--last [--apply]`, `acs verify [--pilot] [--require-signed] [--accept-history]`,
 `acs stats [--pilot] [--since]`,
 `acs override --path <glob> --once|--session` / `--revoke <id>`, `acs watch [--idle <secs>]` (JSON
 Lines with `--json`) and `acs plugin install <harness>` (each with `--json`). `acs init` also takes `--yes`, `--min-share` and `--min-commits` for its
