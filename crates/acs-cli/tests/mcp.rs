@@ -814,5 +814,13 @@ fn what_an_agent_is_told_follows_every_switch() {
             "[{features}] {}",
             told.status
         );
+        // So is the built-in exception that goes with it (decision 0042).
+        for said in [&told.status, &told.start] {
+            assert_eq!(
+                said.contains("`**/.env*.{example,sample,template,dist}`"),
+                !features.contains("guards"),
+                "[{features}] {said}"
+            );
+        }
     }
 }

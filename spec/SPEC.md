@@ -226,12 +226,11 @@ Every key defaults to empty (zero for the numeric limits noted); the built-in de
 | `[destructive] max_files_deleted_per_command` | Default `50`: a command deleting more files asks the human (`destructive_budget`) |
 | `[destructive] ban` | Command patterns that are always denied; `*` matches any run of characters (`banned_command`) |
 
-**Default sealed globs.** The default `sealed` list is below. It exists so that an agent cannot switch ACS off by editing its own configuration. Adapters extend it with their harness's hook and settings files.
+**Default sealed globs.** The default `sealed` list is below. It exists so that an agent cannot switch ACS off by editing its own configuration, nor change the repository's environment files. Adapters extend it with their harness's hook and settings files. CI workflows are not in it: a repository that wants them sealed lists `.github/workflows/**` in `sealed`.
 
 ```
 .git/**
 .acs/**
-.github/workflows/**
 **/.env*
 **/.claude/settings*.json
 **/.claude/hooks/**
@@ -243,6 +242,8 @@ Every key defaults to empty (zero for the numeric limits noted); the built-in de
 **/.agent/plugins.json
 .husky/**
 ```
+
+**Built-in exception.** A path that matches `**/.env*.{example,sample,template,dist}` is not sealed by the default glob `**/.env*`: example environment files (`.env.example`, `.env.local.sample`, ...) hold no secrets, and agents edit them. Such a path is still sealed by any other glob that matches it, such as `**/.env*.example` listed by the repository. Only the glob `**/.env*` carries this exception.
 
 ### 5.3 `territory.toml`
 

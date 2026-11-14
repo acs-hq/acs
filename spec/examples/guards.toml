@@ -1,7 +1,6 @@
 sealed = [
   ".git/**",
   ".acs/**",
-  ".github/workflows/**",
   "**/.env*",
   "**/.claude/settings*.json",
   "**/.claude/hooks/**",

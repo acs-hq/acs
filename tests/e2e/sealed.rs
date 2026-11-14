@@ -28,6 +28,57 @@ fn setup() -> World {
     world
 }
 
+/// Decision 0042: example env files and CI workflows are not sealed by default; real env files
+/// are, and a repository can seal its workflows again.
+#[test]
+fn example_env_files_and_workflows_are_writable_until_a_repository_seals_them() {
+    let world = setup();
+    let agent = Agent::new(&world, "claude-code", "s1");
+    agent.start();
+    for path in [
+        ".env.example",
+        "config/.env.sample",
+        ".env.template",
+        ".env.dist",
+        "apps/web/.env.local.example",
+        ".github/workflows/ci.yml",
+    ] {
+        let d = agent.pre_edit(path);
+        assert_eq!(d.outcome, Outcome::Allow, "{path}: {d:?}");
+    }
+    assert_eq!(
+        agent.pre_shell("cp .env .env.example").outcome,
+        Outcome::Allow
+    );
+    for path in [
+        ".env",
+        ".env.local",
+        ".env.production",
+        "apps/web/.env.development.local",
+    ] {
+        assert_sealed(path, &agent.pre_edit(path));
+    }
+    assert_sealed("copy over", &agent.pre_shell("cp .env.example .env"));
+
+    // The repository seals its workflows again.
+    world.write(
+        ".acs/policy/guards.toml",
+        "sealed = [\".github/workflows/**\"]\n",
+    );
+    let other = Agent::new(&world, "claude-code", "s2");
+    other.start();
+    let d = other.pre_edit(".github/workflows/release.yml");
+    assert_sealed("re-sealed workflow", &d);
+    assert!(d.message.contains("`.github/workflows/**`"), "{d:?}");
+    assert_sealed(
+        "re-sealed workflow, shell",
+        &other.pre_shell("echo x > .github/workflows/ci.yml"),
+    );
+    // The defaults still apply next to the repository's own list.
+    assert_sealed(".env.local", &other.pre_edit(".env.local"));
+    assert_eq!(other.pre_edit("docs/.env.example").outcome, Outcome::Allow);
+}
+
 #[test]
 fn file_tools_cannot_reach_a_sealed_path_by_any_spelling() {
     let world = setup();
@@ -50,7 +101,6 @@ fn file_tools_cannot_reach_a_sealed_path_by_any_spelling() {
         ".claude/settings.local.json",
         "packages/app/.claude/settings.json",
         ".claude/hooks/check.sh",
-        ".github/workflows/ci.yml",
         ".husky/pre-commit",
     ] {
         assert_sealed(path, &agent.pre_edit(path));
@@ -131,7 +181,7 @@ fn shell_commands_cannot_write_a_sealed_path() {
         "cd .acs && echo x > policy/config.toml",
         "echo x > ./.acs/../.acs/policy/config.toml",
         "true && echo x > .claude/settings.json",
-        "echo x > .github/workflows/ci.yml; true",
+        "echo x > .env.local; true",
     ] {
         assert_sealed(command, &agent.pre_shell(command));
     }

@@ -9,6 +9,7 @@ use acs_core::gate::{ClaimSource, HeldClaim, PathLocation};
 use acs_core::{
     ClaimId, ClaimOrigin, ClaimScope, Feature, Outcome, Phase, ReasonCode, ReleaseReason, RepoPath,
     SELF_PROTECTION_SEALED, SeatId, SpecVersion, Timestamp, Tool, ToolEvent, ToolKind,
+    sealed_exception,
 };
 use acs_store::{Collision, FLAG_GATE_OFF, LastDecision, NewEvent, SeatInfo, StateDb, StoreError};
 use serde::Serialize;
@@ -293,7 +294,14 @@ impl StatusView {
             lines.push(format!("Claimed by others: {text}."));
         }
         if !self.sealed.is_empty() {
-            let shown = self.sealed.iter().take(4).map(|g| format!("`{g}`"));
+            let shown = self
+                .sealed
+                .iter()
+                .take(4)
+                .map(|g| match sealed_exception(g) {
+                    Some(except) => format!("`{g}` (except `{except}`)"),
+                    None => format!("`{g}`"),
+                });
             let mut text = shown.collect::<Vec<_>>().join(", ");
             if self.sealed.len() > 4 {
                 text.push_str(&format!(" and {} more", self.sealed.len() - 4));

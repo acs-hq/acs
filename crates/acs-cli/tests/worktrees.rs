@@ -95,10 +95,10 @@ fn sealed_paths_hold_inside_a_nested_worktree() {
     nested_worktree(&world);
     let agent = Agent::new(&world, "claude-code", "c1");
     agent.start();
-    let denied = agent.pre_edit(".claude/worktrees/wp/.github/workflows/ci.yml");
+    let denied = agent.pre_edit(".claude/worktrees/wp/.husky/pre-commit");
     assert_eq!(denied.outcome, Outcome::Deny, "{denied:?}");
     assert_eq!(denied.reason_code, ReasonCode::SealedPath);
-    let denied = agent.pre_shell("rm .claude/worktrees/wp/.github/workflows/ci.yml");
+    let denied = agent.pre_shell("rm .claude/worktrees/wp/.husky/pre-commit");
     assert_eq!(denied.outcome, Outcome::Deny, "{denied:?}");
 }
 
