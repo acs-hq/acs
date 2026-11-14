@@ -22,7 +22,8 @@ pub const CRASH_AFTER: std::time::Duration = std::time::Duration::from_secs(3600
 /// harness is known to go quiet for longer).
 pub const CRASH_AFTER_ENV: &str = "ACS_CRASH_AFTER_SECS";
 
-fn crash_after_secs() -> i64 {
+/// How long a silent agent seat is given before it counts as crashed, in seconds.
+pub(crate) fn crash_after_secs() -> i64 {
     std::env::var(CRASH_AFTER_ENV)
         .ok()
         .and_then(|v| v.parse::<u32>().ok())

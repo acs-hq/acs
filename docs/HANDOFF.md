@@ -95,6 +95,19 @@ switch; add a row for a new one. **Reinstall `acs` after merging**, and run
 `acs plugin install antigravity` again where Antigravity is used; no schema change. No real-agent
 run was made.
 
+**`acs hook` ends early where no feature needs the call (2026-11-14, decision 0035).**
+`hook::unneeded` names the tool events nothing needs (before a read with `lore` off; after a
+read with `claims` and `sync` off; after any other tool with `history`, `claims` and `sync`
+off) and `hook::skip` handles them: no seat is created and no event is recorded. A skipped
+event still marks a live seat as seen once it has been silent for five minutes
+(`hook::keep_alive`), so a session that only reads is not recorded as crashed. Prompt submit
+creates no seat any more, and session end always ends the seat but records its event only
+where claims, history or sync is on. **A new feature that needs an event `unneeded` skips must
+be added there**, and to the table in `a_read_is_recorded_only_where_a_feature_needs_it`
+(`crates/acs-cli/tests/features.rs`). The process still starts for every call; issue 70 stays
+open for that. `benches/hook_paths.rs` now also measures these calls, without budgets.
+**Reinstall `acs` after merging**; no schema change.
+
 ## 1. Where things stand
 
 - `main` has Phase 0, Phase 1, **Phase 2 (WP2.1–WP2.6)**, **Phase 3 (WP3.1)**, including the rule
