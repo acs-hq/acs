@@ -23,9 +23,9 @@
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use acs_core::{Outcome, Phase, Timestamp};
+use acs_core::{Feature, Outcome, Phase, Timestamp};
 use acs_mcp::{
-    Backend, BackendError, BindingSettings, Caller, ClaimInfo, ClaimReply, ClaimRequest,
+    Available, Backend, BackendError, BindingSettings, Caller, ClaimInfo, ClaimReply, ClaimRequest,
     DecisionInfo, IntentReply, IntentRequest, LoreProposeReply, LoreProposeRequest, ReleaseReply,
     ReleaseRequest, SeatInfo, ServerOptions, StatusReply, WhyReply,
 };
@@ -293,6 +293,14 @@ fn status_reply(view: &StatusView, call_note: Option<String>, caller: &Caller) -
         branch: view.branch.clone(),
         target_branch: view.target_branch.clone(),
         gate_off: view.gate_off,
+        claims_off: view.features_off.contains(&Feature::Claims),
+        // Sync is not the agent's concern, and it is off by default.
+        also_off: view
+            .features_off
+            .iter()
+            .filter(|f| !matches!(f, Feature::Claims | Feature::Sync))
+            .map(|f| f.key().to_owned())
+            .collect(),
         seat: view.seat.as_ref().map(|s| SeatInfo {
             seat_id: s.seat_id.clone(),
             session_id: s.session_id.clone(),
@@ -308,6 +316,20 @@ fn status_reply(view: &StatusView, call_note: Option<String>, caller: &Caller) -
 }
 
 impl Backend for RuntimeBackend {
+    fn available(&self) -> Available {
+        // A repository that cannot be opened lists everything; the tools explain when called.
+        self.open().map_or_else(
+            |_| Available::default(),
+            |ctx| {
+                let features = ctx.features();
+                Available {
+                    claims: features.claims,
+                    lore: features.lore,
+                }
+            },
+        )
+    }
+
     fn status(&self, caller: &Caller) -> Result<StatusReply, BackendError> {
         let call = self.start(caller)?;
         let seat = call.bound.as_ref().map(|b| &b.info);

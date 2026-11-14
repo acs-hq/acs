@@ -92,6 +92,13 @@ pub struct StatusReply {
     pub target_branch: String,
     /// `acs off` is active: claims are not enforced (sealed paths still are).
     pub gate_off: bool,
+    /// Claims are switched off in this repository: nothing is claimed and nothing needs to be.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub claims_off: bool,
+    /// The other parts of ACS switched off here that an agent would notice (`lore`, `guards`,
+    /// ...), by their `[features]` key.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub also_off: Vec<String>,
     /// The caller's seat; absent when no session is bound yet.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub seat: Option<SeatInfo>,
@@ -219,11 +226,40 @@ pub struct LoreProposeReply {
     pub reviewer: Option<String>,
 }
 
+/// Which switchable parts of ACS the repository has on, as far as the tools are concerned.
+///
+/// The tool list and the server's instructions follow it (decision 0034): a tool whose feature
+/// is off is not listed, so nothing tells an agent to claim where claims are off.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Available {
+    /// Claims are on: `acs_claim` and `acs_release` are listed.
+    pub claims: bool,
+    /// Lore is on: `acs_lore_propose` is listed.
+    pub lore: bool,
+}
+
+impl Default for Available {
+    /// Everything on, which is also the answer when the repository cannot be read.
+    fn default() -> Self {
+        Self {
+            claims: true,
+            lore: true,
+        }
+    }
+}
+
 /// What the six tools need from ACS.
 ///
 /// A [`BackendError::NoSession`] from any method means the caller has no seat yet; `status`
 /// instead answers with `seat: None` and a note, since the repository view is still useful.
 pub trait Backend: Send + Sync + 'static {
+    /// Which features are on, read when the harness asks for the instructions and the tool
+    /// list. Never fails: a repository that cannot be read counts as everything on, and the
+    /// tools then explain the problem when called.
+    fn available(&self) -> Available {
+        Available::default()
+    }
+
     /// `acs_status`: claims, sealed paths and notes, from the caller's point of view.
     ///
     /// # Errors
