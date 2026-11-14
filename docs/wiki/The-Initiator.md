@@ -96,24 +96,4 @@ On your own machine, ACS keeps its state in `~/.acs` (or the folder in `ACS_HOME
 
 ## Removing ACS
 
-One command takes ACS out of a repository. Look first:
-
-```bash
-acs uninstall --dry-run
-```
-
-Then, in your own terminal:
-
-```bash
-acs uninstall
-```
-
-It always removes what `acs init` and `acs plugin install` added to your clone: the ACS block in each git hook (a hook of yours that ACS moved aside is put back), the git setting that fetches claims, the local claim refs, and the ACS entries in `.claude/settings.json`. Your hooks and settings end up exactly as they were.
-
-It asks before deleting three more things, each on its own:
-
-- the policy in `.acs/policy/`, which is your team's (`--policy`);
-- this repository's history and claims in ACS's folder on your machine, shared by every clone of it there (`--state`);
-- the claim and session refs on the remote, which your teammates see (`--remote-refs`).
-
-`--all` says yes to all three; `--json` asks nothing and keeps them unless you pass the flags. Commit what it changed in the repository (`.acs/policy/`, `.claude/settings.json`, `.husky/`) so teammates stop using ACS too. `acs init` sets ACS up again. The `acs` program itself stays installed.
+One command takes ACS out again: `acs uninstall`. See [Removing ACS](Removing-ACS).

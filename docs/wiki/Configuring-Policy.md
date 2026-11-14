@@ -23,7 +23,7 @@ Look for `loads without warnings` on the `Policy` line. If a file is invalid, AC
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `spec` | required | Leave it as `"acs/0.1"` |
-| `default_target_branch` | `"main"` | The branch your work ends up in |
+| `default_target_branch` | `"main"`, or the main branch `acs init` found | The branch your work ends up in. See [The main branch](#the-main-branch). |
 | `claim_ttl_secs` | `900` | Seconds of silence before a session loses its claims. See [Claims](Working-with-ACS#claims). |
 | `sync_interval_secs` | `30` | Seconds between syncs of claims with the git remote |
 | `[lore] max_inject_chars` | `4000` | The most characters of lore one tool call adds to an agent's context. See [Lore](Lore). |
@@ -39,6 +39,28 @@ sync_interval_secs = 60
 ```
 
 The file also has a commented `[ledger]` section. Leave it as it is.
+
+### The main branch
+
+`default_target_branch` names the branch your work ends up in, usually `main`, `master` or `develop`. ACS uses it to decide which sessions can collide: two sessions only block each other over a file when they work towards the same target branch. If it names the wrong branch, sessions that should block each other may not.
+
+**You do not usually set it yourself.** When `acs init` creates `config.toml`, it looks for the repository's main branch: first the branch the remote's `HEAD` points at (`origin/HEAD`, set when you clone), then the current branch if it is called `main`, `master` or `develop`. If that branch is not `main`, `acs init` writes it into the file and also adds it to `protected_branches` in `guards.toml`, so agents cannot rewrite its history. Its output says what it found on the `Main branch` line:
+
+```text
+Main branch
+  master (origin/HEAD): set as default_target_branch in config.toml, added to
+  protected_branches in guards.toml
+```
+
+**You can change it at any time.** Edit `.acs/policy/config.toml` yourself, from your own terminal (agents cannot edit `.acs/`), and commit it so every clone uses the same value:
+
+```toml
+default_target_branch = "develop"
+```
+
+If you change it, check `protected_branches` in `guards.toml` too (see [guards.toml](#guardstoml)): the two settings are separate, and changing one does not change the other.
+
+`acs init` never changes a `config.toml` that already exists. If the file names a different branch from the one it finds, it prints a warning and leaves the file alone. `acs doctor` warns on its `Target branch` line when `default_target_branch` names a branch that exists neither locally nor on a remote.
 
 ### Switching features on and off
 
@@ -90,7 +112,7 @@ Some protection is not a feature and stays on whatever you switch off: agents ca
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `sealed` | The built-in list, shown in the comments of the file | Paths no agent may write, on top of the built-in list |
-| `protected_branches` | `["main", "release/*"]` | Branches where agents cannot rewrite history or force push |
+| `protected_branches` | `["main", "release/*"]`, plus the main branch `acs init` found if it is not `main` | Branches where agents cannot rewrite history or force push |
 | `protect_outside_repo` | `false` | Ask you before an agent writes or deletes anything outside the repository |
 | `[destructive] max_files_deleted_outside_claims` | `0` | How many files outside its claims a command may delete |
 | `[destructive] max_files_deleted_per_command` | `50` | Above this, one command needs your approval |

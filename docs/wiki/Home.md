@@ -44,3 +44,4 @@ ACS looks at each tool call an agent makes, before it runs, and allows or blocks
 | [Lore](Lore) | You want agents to know your conventions for part of the repository. |
 | [History and undo](History-and-Undo) | You want to see what an agent session did, who wrote a line, or undo a session. |
 | [Troubleshooting and limits](Troubleshooting-and-Limits) | Something looks wrong, or you want to know what ACS cannot do. |
+| [Removing ACS](Removing-ACS) | You want to take ACS out of a repository. |
