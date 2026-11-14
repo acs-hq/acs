@@ -79,6 +79,8 @@ acs features claims off
 
 Then commit `.acs/policy/config.toml`, so the switch holds for everyone working in the repository. A switch you leave out of the file keeps its default.
 
+Agents are told what is on. For example, with `claims = false` an agent's session has no `acs_claim` or `acs_release` tool and nothing asks it to claim; with `lore = false` it has no `acs_lore_propose` tool. The other switched-off parts are named when the session starts and in the agent's `acs_status` reply. A session picks this up when it starts, so a session that was already running when you flipped a switch keeps its old tools until it is restarted; it is told the feature is off if it uses one.
+
 Some protection is not a feature and stays on whatever you switch off: agents can never change `.acs/`, the git hooks or the harness's hook settings, and can never run the `acs` commands that change ACS, `acs features <name> on|off` included. Only a person can flip a switch.
 
 `acs off` is different: it stops claims on your machine only, until you run `acs on`, and changes no file.
