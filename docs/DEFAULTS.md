@@ -128,6 +128,7 @@ hooks and plugins under `.agents/` and `.agent/`. `acs status --sealed` prints i
 | --- | --- |
 | Largest file ACS keeps a copy of for undo | 32 MB |
 | Most files copied for one tool call | 2,000 |
+| Total size of the copies kept for undo, per repository | 500 MiB (oldest ended sessions removed first, during `acs sync`; decision 0037) |
 | Collisions shown in `acs status` | Last 24 hours |
 | An unused override lapses after | `claim_ttl_secs` |
 | A fetched view of others' claims goes stale after | 3 sync intervals |
@@ -138,9 +139,8 @@ hooks and plugins under `.agents/` and `.agent/`. `acs status --sealed` prints i
 
 ## 9. Found while checking
 
-- **Copies kept for undo look as if they are never cleaned up.** The snapshot store has a cleanup
-  routine with a size budget, but I found no code outside tests that calls it, so `ACS_HOME` would
-  grow without limit. Not confirmed by a run. Worth an issue before testers use it for weeks.
+- **Copies kept for undo were never cleaned up** (issue 68; confirmed by a run, fixed by decision
+  0037: `acs sync` now trims them to 500 MiB per repository).
 - **A repository on `master` gets two wrong defaults at once** (`default_target_branch` and
   `protected_branches`), with no warning.
 - **`store_prompts` is a setting with no effect.**
