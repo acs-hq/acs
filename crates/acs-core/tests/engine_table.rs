@@ -174,7 +174,7 @@ fn cases() -> Vec<Case> {
         // sealed_path
         case(
             "sealed default glob",
-            Fixture::edit(".github/workflows/ci.yml"),
+            Fixture::edit(".husky/pre-commit"),
             plain(),
             Deny,
             R::SealedPath,
@@ -216,8 +216,7 @@ fn cases() -> Vec<Case> {
         ),
         case(
             "sealed file inside a recursive delete",
-            Fixture::new(ToolKind::Shell)
-                .with(delete("tmp").recursive(&["tmp/a", ".github/workflows/ci.yml"])),
+            Fixture::new(ToolKind::Shell).with(delete("tmp").recursive(&["tmp/a", "tmp/.env"])),
             plain().budgets(10, 10),
             Deny,
             R::SealedPath,

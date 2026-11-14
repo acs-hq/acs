@@ -182,9 +182,12 @@ fn guards_template(branch: Option<&str>) -> String {
         "\
 # ACS guards: paths and commands agents may never touch.
 # Without this file (or a key in it) the built-in defaults below apply. Setting a key REPLACES
-# its default, so copy the defaults you want to keep.
+# its default, so copy the defaults you want to keep; `sealed` is the exception (see below).
 
-# Globs of paths no agent may write.
+# Globs of paths no agent may write. Globs listed here are added to the built-in ones below,
+# which always apply. The built-in `**/.env*` leaves out example files, whose names end in
+# .example, .sample, .template or .dist (such as .env.example). CI workflows are not sealed by
+# default; to keep agents out of them, add \".github/workflows/**\" to this list.
 # sealed = [
 {sealed}# ]
 

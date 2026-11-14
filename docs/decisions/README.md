@@ -46,7 +46,7 @@ Every new record says who decided, in its status line: `Decided by: the human` o
 | [0028](0028-human-claims-from-editors.md) | Human claims from editors | Claude; the release rule and the `notify` crate are yours | Publishing the extension |
 | [0029](0029-lore.md) | Lore | Claude | |
 | [0030](0030-session-records-undo-verify.md) | Session records, log, blame, undo, verify, stats | Claude | |
-| [0031](0031-first-testers-and-first-run-defaults.md) | First testers before the spec; first-run defaults | You | Territory prompt at init, workflow and `.env` seals, commit trailer toggle |
+| [0031](0031-first-testers-and-first-run-defaults.md) | First testers before the spec; first-run defaults | You | Territory prompt at init, commit trailer toggle (the workflow and `.env` seals: settled by 0042) |
 | [0032](0032-calls-are-judged-in-the-work-tree-of-their-files.md) | A call is judged in the work tree its files are in | Claude | Four cases not covered (issue 69) |
 | [0033](0033-feature-switches.md) | Feature switches: `[features]` in `config.toml`, `acs features` | You for the idea and the seven switches; Claude for what each covers and what is never off | Set `sync = true` here if this repository should keep syncing |
 | [0034](0034-what-agents-are-told-follows-the-switches.md) | What agents are told (MCP tools, instructions, rule, skill) follows the feature switches | You for the rule and for covering every switch; Claude for the details | A real-agent run; hook cost (issue 70) |
@@ -56,3 +56,5 @@ Every new record says who decided, in its status line: `Decided by: the human` o
 | [0038](0038-help-flags-are-read-only.md) | `acs <subcommand> --help` is allowed to agents when help is all the command does | Claude | None |
 | [0039](0039-acs-uninstall.md) | `acs uninstall`: hooks, refspecs, refs and plugin entries always; policy, local state and remote refs on request | Claude, on the scope issue 63 set | None |
 | [0040](0040-the-main-branch-is-detected-at-init.md) | `acs init` writes the main branch when it is not `main`; `acs doctor` warns about a missing target branch | Claude, on the rule issue 67 set | None |
+| [0041](0041-acs-undo-last.md) | `acs undo --last` picks the last agent session that changed files, and stops if it is still running | Claude, on the scope issue 64 set | None |
+| [0042](0042-workflows-unsealed-and-example-env-files-writable.md) | `.github/workflows/**` is not sealed by default; `**/.env*` leaves out example files | You for both changes; Claude for building the `.env` change as a built-in exception (`**/.env*.{example,sample,template,dist}`) | Add `.github/workflows/**` to this repository's `guards.toml` if agents here should stay out of workflows |

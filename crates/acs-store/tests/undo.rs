@@ -408,3 +408,78 @@ fn seats_are_found_by_session_id_or_unique_prefix() {
     // `ses_` matches both: the caller reports the ambiguity.
     assert_eq!(db.seats_by_session_prefix("ses_").unwrap().len(), 2);
 }
+
+#[test]
+fn seats_that_changed_files_come_most_recent_first() {
+    let tmp = tempfile::tempdir().unwrap();
+    let home = AcsHome::at(tmp.path().join("acs")).unwrap();
+    let repo = home.repo(&RepoId::from_path(&tmp.path().join("repo")));
+    let db = StateDb::open(&repo).unwrap();
+    let new = |harness: &'static str, session: &'static str| NewSeat {
+        harness,
+        harness_session_id: session,
+        pilot: "sara@example.com",
+        worktree: "/w",
+        branch: Some("main"),
+        target_branch: "main",
+    };
+    let changed = |seat: &SeatId, at: i64| {
+        db.record_attributions(
+            seat,
+            &[acs_store::Attribution {
+                path: rp("a.txt"),
+                pre_hash: None,
+                post_hash: None,
+            }],
+            AttributionSource::Tool,
+            t(at),
+        )
+        .unwrap();
+    };
+    assert!(db.seats_that_changed_files(10).unwrap().is_empty());
+
+    // Started first, ended last.
+    let (early, _) = db
+        .get_or_create_seat_info(&new("claude-code", "early"), t(10))
+        .unwrap();
+    changed(&early.seat.seat_id, 11);
+    // Started later, ended earlier.
+    let (late, _) = db
+        .get_or_create_seat_info(&new("claude-code", "late"), t(20))
+        .unwrap();
+    changed(&late.seat.seat_id, 21);
+    db.end_seat(&late.seat.seat_id, t(30)).unwrap();
+    db.end_seat(&early.seat.seat_id, t(40)).unwrap();
+    // Changed nothing: never picked.
+    let (idle, _) = db
+        .get_or_create_seat_info(&new("claude-code", "idle"), t(50))
+        .unwrap();
+    db.end_seat(&idle.seat.seat_id, t(60)).unwrap();
+    // A person's own seat: never picked.
+    let (person, _) = db
+        .get_or_create_seat_info(&new("human", "sara"), t(70))
+        .unwrap();
+    changed(&person.seat.seat_id, 71);
+
+    let found: Vec<SessionId> = db
+        .seats_that_changed_files(10)
+        .unwrap()
+        .into_iter()
+        .map(|s| s.session_id)
+        .collect();
+    assert_eq!(
+        found,
+        vec![early.session_id.clone(), late.session_id.clone()]
+    );
+
+    // A seat that has not ended counts from when it was last seen.
+    let (running, _) = db
+        .get_or_create_seat_info(&new("codex", "running"), t(80))
+        .unwrap();
+    changed(&running.seat.seat_id, 81);
+    db.touch_seat(&running.seat.seat_id, t(90)).unwrap();
+    let found = db.seats_that_changed_files(1).unwrap();
+    assert_eq!(found.len(), 1);
+    assert_eq!(found[0].session_id, running.session_id);
+    assert!(found[0].ended_at.is_none());
+}

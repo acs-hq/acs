@@ -298,6 +298,19 @@ mod tests {
     }
 
     #[test]
+    fn undo_needs_a_session_or_last_but_not_both() {
+        assert!(parse(&["undo"]).is_err());
+        assert!(parse(&["undo", "--apply"]).is_err());
+        assert!(parse(&["undo", "ses_1", "--last"]).is_err());
+        assert!(parse(&["undo", "ses_1", "--apply", "--json"]).is_ok());
+        let cli = parse(&["undo", "--last", "--apply"]).unwrap();
+        let Command::Undo(args) = cli.command else {
+            unreachable!("not an undo command")
+        };
+        assert!(args.last && args.apply && args.session.is_none());
+    }
+
+    #[test]
     fn claim_and_release_need_paths_and_release_all_takes_none() {
         assert!(parse(&["claim"]).is_err());
         assert!(parse(&["release"]).is_err());

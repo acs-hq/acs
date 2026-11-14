@@ -9,6 +9,7 @@ use std::time::Instant;
 
 use acs_core::gate::PolicyView;
 use acs_core::{Config, DEFAULT_SEALED, Guards, Owner, RepoPath, Territory, ZoneKind};
+use acs_policy::glob::Glob;
 use acs_policy::{
     CACHE_FILE, CompiledPolicy, DEFAULT_BAN, LoadOptions, Origin, PolicyError, PolicyFile,
     ProblemKind, builtin_guards, load, load_cached, policy_hash,
@@ -78,9 +79,12 @@ fn default_guards() {
         (".git/config", ".git/**"),
         (".git", ".git/**"),
         (".acs/policy/guards.toml", ".acs/**"),
-        (".github/workflows/ci.yml", ".github/workflows/**"),
         (".env", "**/.env*"),
+        (".env.local", "**/.env*"),
+        (".env.development.local", "**/.env*"),
         ("services/api/.env.production", "**/.env*"),
+        (".envrc", "**/.env*"),
+        (".env.example.local", "**/.env*"),
         (".claude/settings.json", "**/.claude/settings*.json"),
         (".claude/settings.local.json", "**/.claude/settings*.json"),
         (
@@ -105,6 +109,15 @@ fn default_guards() {
         "src/main.rs",
         "docs/env.md",
         ".github/CODEOWNERS",
+        // CI workflows are not sealed by default (decision 0042).
+        ".github/workflows/ci.yml",
+        // Example env files are left out of `**/.env*` (decision 0042).
+        ".env.example",
+        ".env.sample",
+        ".env.template",
+        ".env.dist",
+        ".env.local.example",
+        "services/api/.env.production.sample",
         ".claude/other.json",
         ".claude/worktrees/wp/src/main.rs",
         ".mcp.json",
@@ -112,7 +125,7 @@ fn default_guards() {
     ] {
         assert_eq!(policy.sealed_match(&rp(path)), None, "{path}");
     }
-    assert_eq!(DEFAULT_SEALED.len(), 13, "update the table above");
+    assert_eq!(DEFAULT_SEALED.len(), 12, "update the table above");
 
     // Protected branches.
     for branch in ["main", "release/1.0", "release/v2"] {
@@ -190,6 +203,52 @@ fn guards_file_adds_to_sealed_and_keeps_defaults_for_absent_fields() {
     // Absent fields keep their defaults.
     assert!(policy.is_protected_branch("main"));
     assert_eq!(policy.destructive().ban, DEFAULT_BAN);
+}
+
+#[test]
+fn a_repository_can_seal_workflows_and_example_env_files_again() {
+    let policy = load_ok(
+        &[(
+            "guards.toml",
+            "sealed = [\".github/workflows/**\", \"**/.env*.example\"]\n",
+        )],
+        CS,
+    );
+    assert_eq!(
+        policy.sealed_match(&rp(".github/workflows/ci.yml")),
+        Some(".github/workflows/**")
+    );
+    // The repository's own glob has no exception.
+    assert_eq!(
+        policy.sealed_match(&rp(".env.example")),
+        Some("**/.env*.example")
+    );
+    // Example files it did not name stay writable; real env files stay sealed by the default.
+    assert_eq!(policy.sealed_match(&rp(".env.sample")), None);
+    assert_eq!(policy.sealed_match(&rp(".env")), Some("**/.env*"));
+}
+
+#[test]
+fn the_example_env_exception_follows_case_sensitivity() {
+    let ci = load_ok(&[], CI);
+    assert_eq!(ci.sealed_match(&rp("app/.ENV.Example")), None);
+    assert_eq!(ci.sealed_match(&rp("app/.ENV.local")), Some("**/.env*"));
+    let cs = load_ok(&[], CS);
+    assert_eq!(cs.sealed_match(&rp("app/.env.example")), None);
+    // Case-sensitive: `.ENV` is not an env file to `**/.env*` at all.
+    assert_eq!(cs.sealed_match(&rp("app/.ENV")), None);
+}
+
+#[test]
+fn every_built_in_exception_compiles() {
+    for (glob, except) in acs_core::DEFAULT_SEALED_EXCEPTIONS {
+        for ci in [false, true] {
+            Glob::new(glob, ci).unwrap();
+            let except = Glob::new(except, ci).unwrap();
+            assert!(!except.is_match(".env"), "{glob}");
+            assert!(except.is_match("x/.env.example"), "{glob}");
+        }
+    }
 }
 
 #[test]
@@ -1190,7 +1249,7 @@ fn corrupt_or_foreign_cache_is_ignored() {
 
     // A different format or version is silently stale.
     let entry = fs::read_to_string(&path).unwrap();
-    fs::write(&path, entry.replace("\"format\":3", "\"format\":99")).unwrap();
+    fs::write(&path, entry.replace("\"format\":4", "\"format\":99")).unwrap();
     let outcome = load_cached(policy.path(), cache.path(), CS);
     assert_eq!(outcome.origin, Origin::Fresh);
     assert!(outcome.warnings.is_empty());

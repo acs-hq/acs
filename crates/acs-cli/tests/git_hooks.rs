@@ -237,6 +237,37 @@ fn sealed_paths_stop_an_agent_commit_but_not_a_person() {
 }
 
 #[test]
+fn an_agent_may_commit_example_env_files_and_workflows_but_not_real_env_files() {
+    let world = world_with_hooks();
+    let agent = Agent::new(&world, "claude-code", "c1");
+    agent.start();
+    for path in [".env.example", ".github/workflows/ci.yml"] {
+        let d = agent.pre_edit(path);
+        assert_eq!(d.outcome, acs_core::Outcome::Allow, "{path}: {d:?}");
+        world.write(path, "x\n");
+        agent.post_edit(path);
+    }
+    git_ok(
+        &world,
+        &world.repo,
+        &["add", ".env.example", ".github/workflows/ci.yml"],
+    );
+    agent.pre_shell("git commit -m examples");
+    let out = git(&world, &world.repo, &["commit", "-q", "-m", "examples"]);
+    assert!(out.status.success(), "{}", stderr(&out));
+
+    agent.pre_shell("git commit -m secrets");
+    stage(&world, ".env.local", "TOKEN=1\n");
+    let out = git(&world, &world.repo, &["commit", "-q", "-m", "secrets"]);
+    assert!(!out.status.success());
+    let text = stderr(&out);
+    assert!(
+        text.contains("`.env.local` is sealed by `**/.env*`"),
+        "{text}"
+    );
+}
+
+#[test]
 fn a_human_commit_of_a_file_claimed_in_another_worktree_is_rejected() {
     let world = world_with_hooks();
     git_ok(

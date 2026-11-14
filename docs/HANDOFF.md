@@ -122,6 +122,23 @@ creates (`commands/init/branch.rs`), and `acs doctor` has a `target_branch` chec
 (passed 2026-11-14). The interactive questions of `acs uninstall` have no automated test (they
 need a terminal). **Reinstall `acs` after merging**; no schema change.
 
+**`acs undo --last` and the seal defaults (2026-11-14, decisions 0041 and 0042, issues 64 and
+62; branch `undo-last-seal-defaults`).** `acs undo --last` picks the agent seat that most recently
+changed files (`StateDb::seats_that_changed_files`: it has attributions, not `human`, ordered by
+`coalesce(ended_at, last_seen_at)`), names it with its intent and end time, and exits 1 with
+`session_live` (dry run too) when that seat is live, naming the last ended one instead.
+Self-protection needed no change: `--apply` anywhere in `acs undo`'s words is denied.
+`.github/workflows/**` left `DEFAULT_SEALED` (12 globs now), and `**/.env*` carries the built-in
+exception `**/.env*.{example,sample,template,dist}` (`DEFAULT_SEALED_EXCEPTIONS` and
+`sealed_exception` in `acs-core`, applied by `Seal` in `acs-policy`'s `compiled.rs`;
+`CACHE_FORMAT` 4). **A new built-in exception goes in that list**, never in
+`SELF_PROTECTION_SEALED` globs, and SPEC section 5.2 must state it (`spec_doc.rs` checks).
+`acs status`, the session-start summary and the MCP status note show the exception. **After the
+reinstall, agents here can edit `.github/workflows/`** unless the human adds
+`sealed = [".github/workflows/**"]` to this repository's `.acs/policy/guards.toml`.
+`README.md` (line 115) still says CI workflows are sealed; it was left alone because the human
+had uncommitted edits in it. **Reinstall `acs` after merging**; no schema change.
+
 ## 1. Where things stand
 
 - `main` has Phase 0, Phase 1, **Phase 2 (WP2.1–WP2.6)**, **Phase 3 (WP3.1)**, including the rule
@@ -179,7 +196,7 @@ Commands: `acs hook --canonical <phase>`, `acs hook <claude-code|antigravity|can
 `acs mcp [--harness]`, `acs git-hook <name>`, `acs init|status|claim|release|off|on|doctor|sync`
 `acs lore list|show <path>...|stale [--all]|review [--list|--accept <id> [--body-file F] [--owner O]|--reject <id>]`,
 `acs log [--pilot] [--harness] [--since] [--path] [--limit]`, `acs blame <path>`,
-`acs undo <session> [--apply]`, `acs verify [--pilot] [--require-signed] [--accept-history]`,
+`acs undo <session>|--last [--apply]`, `acs verify [--pilot] [--require-signed] [--accept-history]`,
 `acs stats [--pilot] [--since]`,
 `acs override --path <glob> --once|--session` / `--revoke <id>`, `acs watch [--idle <secs>]` (JSON
 Lines with `--json`) and `acs plugin install <harness>` (each with `--json`). `acs init` also takes `--yes`, `--min-share` and `--min-commits` for its
@@ -512,7 +529,8 @@ skipped when no binary exists. SPEC section 6.2 states the rule for editor integ
   strict mode that makes Claude Code fail closed too is noted in decision 0013, not enabled. The cloud environment's network setting for `antigravity.google` only
   matters if a cloud session ever needs the docs; this machine reads them.
 - Dogfooding (started 2026-11-08): agents cannot edit `.acs/**`, `.github/workflows/**` or the
-  Claude settings files, so those changes fall to the human. After WP7 merges: reinstall `acs`
+  Claude settings files, so those changes fall to the human. (Workflows stay sealed here after
+  decision 0042 only if this repository's `guards.toml` adds them; see the top of this file.) After WP7 merges: reinstall `acs`
   (`cargo install --path crates/acs-cli --locked`). The new build migrates the state to schema 5, and
   older builds then report it unavailable. This repository's `.acs/policy/territory.toml` still has
   the comment "ACS does not enforce `owned` zones yet"; it is sealed, so the human must edit it.

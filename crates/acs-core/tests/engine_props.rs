@@ -35,7 +35,7 @@ const SEALED: &[&str] = &[
     "config/.env.local",
     ".git/hooks/pre-commit",
     ".acs/policy/guards.toml",
-    ".github/workflows/ci.yml",
+    ".husky/pre-commit",
     "vault/keys.txt",
 ];
 

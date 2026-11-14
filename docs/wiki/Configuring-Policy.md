@@ -118,7 +118,20 @@ Some protection is not a feature and stays on whatever you switch off: agents ca
 | `[destructive] max_files_deleted_per_command` | `50` | Above this, one command needs your approval |
 | `[destructive] ban` | `["git push --force*", "git reset --hard*", "git clean -f*"]` | Commands that are always denied |
 
-**`sealed` adds to the built-in list.** List only the paths you want to add. The built-in paths cannot be removed, even if you leave them out, so `.acs/**` always stays sealed. The comment at the top of `guards.toml` says setting a key replaces its default, but that is not true for `sealed`. `acs status --sealed` shows the full list.
+**`sealed` adds to the built-in list.** List only the paths you want to add. The built-in paths cannot be removed, even if you leave them out, so `.acs/**` always stays sealed. Files written by older versions of `acs init` say at the top that setting a key replaces its default; that was never true for `sealed`. `acs status --sealed` shows the full list.
+
+**The built-in list** keeps agents away from ACS itself and from your secrets:
+
+- `.git/**`, `.acs/**`, `.husky/**` and the harness's hook and settings files (`**/.claude/settings*.json`, `**/.claude/hooks/**`, and six patterns for Antigravity under `.agents/` and `.agent/`), so that no agent can switch ACS off.
+- `**/.env*`, environment files in any folder, except example files: a file whose name ends in `.example`, `.sample`, `.template` or `.dist` stays writable. So `.env`, `.env.local`, `.env.production`, `.env.development.local` and `.envrc` are sealed, and `.env.example`, `.env.sample` and `.env.local.example` are not.
+
+CI workflows are not sealed by default, so an agent can fix a failing workflow when you ask it to. To keep agents out of them, add them to `sealed`:
+
+```toml
+sealed = [".github/workflows/**"]
+```
+
+To seal example env files too, add a pattern that names them, such as `"**/.env*.example"`.
 
 **ACS guards the repository, not the rest of your machine.** By default an agent writing outside the repository (a temp folder, another project) is not ACS's business, and your harness's own permission prompts still apply. ACS still asks when it cannot tell where a path leads, or when a path outside leads back into the repository through a link, and it always refuses writes to its own state and to your harness's settings. Set `protect_outside_repo = true` to be asked about every write outside the repository.
 
@@ -254,6 +267,6 @@ Paths are relative to the root of the repository.
 | `**/.env*` | Any file starting with `.env`, in any folder. A pattern only matches at any depth if it says so. |
 | `{src,lib}/generated/**` | Both `src/generated/` and `lib/generated/` |
 
-There is no way to exclude a path from a pattern. Use a more specific zone instead.
+There is no way to exclude a path from a pattern. Use a more specific zone instead. (The built-in `**/.env*` seal leaving out example files is an exception built into ACS; see [guards.toml](#guardstoml).)
 
 Banned commands work differently: there, `*` matches anything, including spaces and `/`.

@@ -14,7 +14,7 @@ use clap::Args;
 use serde_json::{Value, json};
 
 use super::support::{
-    CliError, OutputArgs, WIDTH, finish, open_repo, print_json, short_duration, wrap,
+    CliError, OutputArgs, WIDTH, finish, open_repo, print_json, short_duration, when, wrap,
 };
 use crate::runtime::records::{self, LedgerRecord};
 
@@ -222,11 +222,6 @@ fn plural(n: usize, one: &str, many: &str) -> String {
 }
 
 /// `2026-11-10 08:05Z`.
-fn when(at: Timestamp) -> String {
-    let text = at.to_string();
-    format!("{} {}Z", &text[..10], &text[11..16])
-}
-
 fn render(items: &[&LedgerRecord], total: usize, invalid: usize) -> String {
     let mut out = String::new();
     if total == 0 {

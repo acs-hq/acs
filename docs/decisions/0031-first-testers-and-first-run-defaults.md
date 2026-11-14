@@ -40,7 +40,8 @@ without asking.
 
 - Whether `acs init` still offers its territory proposal, or never asks.
 - Whether `.github/workflows/**` stays a flat deny, becomes an ask, or is unsealed by default, and
-  what to do about `**/.env*` also matching `.env.example`.
+  what to do about `**/.env*` also matching `.env.example`. *(Settled by decision 0042: unsealed
+  by default, and example env files are left out of `**/.env*`.)*
 - Whether the `ACS-Session` commit trailer can be switched off.
 
 ## Consequences

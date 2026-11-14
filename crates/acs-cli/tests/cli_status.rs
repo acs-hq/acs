@@ -77,6 +77,10 @@ fn status_shows_my_claims_and_other_agents_in_text_and_json() {
     for glob in DEFAULT_SEALED {
         assert!(all.contains(glob), "{glob} missing from {all}");
     }
+    assert!(
+        all.contains("**/.env*                        except **/.env*.{example,"),
+        "{all}"
+    );
     assert_fits_80(&all);
 }
 

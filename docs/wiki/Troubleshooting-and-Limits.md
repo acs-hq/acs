@@ -49,6 +49,12 @@ acs sync
 **Your own commit is rejected as "made by agent session".**
 If an agent's commit was stopped by another git hook in the last 10 minutes, ACS can mistake your commit for the agent's. Wait and try again.
 
+**An agent may not change an env file, or it may change one you wanted protected.**
+`**/.env*` is sealed, except example files: names ending in `.example`, `.sample`, `.template` or `.dist`. So an agent can update `.env.example` but not `.env` or `.env.local`. An example file with another name (`.env.defaults`) is sealed: change it yourself. To seal example files too, add a pattern such as `"**/.env*.example"` to `sealed` in `guards.toml`.
+
+**An agent changed a CI workflow.**
+`.github/workflows/` is not sealed by default, so that an agent asked to fix CI can do it. To keep agents out, add `".github/workflows/**"` to `sealed` in `guards.toml` (see [guards.toml](Configuring-Policy#guardstoml)).
+
 **A session was blocked halfway through a task.**
 It can leave uncommitted changes in the work tree. Check `git status` before you start something else there.
 

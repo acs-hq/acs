@@ -17,8 +17,8 @@ differ, the change is **not built yet** and the issue is named.
 | Territory prompt at `acs init` | Asks once in a terminal | No question at init | No, issue 61. Whether the proposal is still printed is open |
 | Territories (`owned`, `open`, `sealed` zones) | Enforced when written in `territory.toml` | Same: available and enforced when configured by hand | Yes |
 | Self-protection seals (`.git`, `.acs`, harness settings and hooks, `.husky`) | On, cannot be removed | On | Yes |
-| `**/.env*` seal | On, also matches `.env.example` | On; the `.env.example` case is open | Issue 62, your decision |
-| `.github/workflows/**` seal | Deny | Open: deny, ask or off | Issue 62, your decision |
+| `**/.env*` seal | On, except example files (names ending in `.example`, `.sample`, `.template` or `.dist`) | Same | Yes (decision 0042, issue 62) |
+| `.github/workflows/**` seal | Off: not in the built-in list; a repository adds it to `sealed` | Same | Yes (decision 0042, issue 62) |
 | Banned commands, protected branches | On | On | Yes |
 | Bulk delete limit | Ask above 50 files per command | Same | Yes |
 | "Cannot tell which files" prompt | On | On; first to switch off if testers complain (issue 22) | Yes |
@@ -73,7 +73,7 @@ which is a change to the frozen policy types and schemas; `claims` is a boolean 
 
 | Key | Default | Verdict |
 | --- | --- | --- |
-| `sealed` | Adds to the built-in list of 13 patterns; the built-ins cannot be removed | Keep, except the two cases in issue 62 |
+| `sealed` | Adds to the built-in list of 12 patterns; the built-ins cannot be removed | Keep. **Done (decision 0042):** workflows left out, example env files excepted |
 | `protected_branches` | `["main", "release/*"]` | **Done (decision 0040):** `acs init` adds the detected main branch to the defaults when it is not `main` |
 | `protect_outside_repo` | `false` | Keep (decision 0027) |
 | `[destructive] max_files_deleted_outside_claims` | `0` | Keep for enforce mode; not enforced in observe mode |
@@ -82,9 +82,12 @@ which is a change to the frozen policy types and schemas; `claims` is a boolean 
 
 Setting `protected_branches` or `ban` replaces the default list; setting `sealed` adds to it.
 
-The built-in sealed list: `.git/**`, `.acs/**`, `.github/workflows/**`, `**/.env*`,
-`**/.claude/settings*.json`, `**/.claude/hooks/**`, `.husky/**`, and six patterns for Antigravity's
-hooks and plugins under `.agents/` and `.agent/`. `acs status --sealed` prints it.
+The built-in sealed list: `.git/**`, `.acs/**`, `**/.env*`, `**/.claude/settings*.json`,
+`**/.claude/hooks/**`, `.husky/**`, and six patterns for Antigravity's hooks and plugins under
+`.agents/` and `.agent/`. `**/.env*` has one built-in exception: paths matching
+`**/.env*.{example,sample,template,dist}` are not sealed by it. `.github/workflows/**` left the
+list on 2026-11-14 (decision 0042); a repository that wants it adds it to `sealed`.
+`acs status --sealed` prints the list.
 
 ## 4. `territory.toml` and lore files
 

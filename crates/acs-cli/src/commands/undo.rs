@@ -4,6 +4,10 @@
 //! took on this machine; changes others made to the same files afterwards are kept (a three-way
 //! merge), and anything unclear is left alone and reported. History is never rewritten: when the
 //! session's changes were already committed, the restored files are committed in one new commit.
+//!
+//! The session is named by its id, or picked with `--last`: the agent session on this machine
+//! that most recently changed files in this repository, by when it ended. If that session is still
+//! running, `--last` says so and stops instead of picking an older one.
 
 use std::collections::HashMap;
 use std::fmt::Write as _;
@@ -13,21 +17,36 @@ use acs_core::{RepoPath, SessionId, Timestamp};
 use acs_git::merge::{CommitOutcome, MergeOutcome};
 use acs_store::SeatInfo;
 use acs_store::undo::{self, Applied, MergeResult, PlanInputs, UndoAction, UndoPlan};
-use clap::Args;
+use clap::{ArgGroup, Args};
 use serde_json::{Value, json};
 
 use super::support::{
-    CliError, OutputArgs, WIDTH, age, ellipsize_start, finish, open_repo, print_json, wrap,
+    CliError, OutputArgs, WIDTH, age, ellipsize_end, ellipsize_start, finish, open_repo,
+    print_json, when, wrap,
 };
 use crate::runtime::{OpError, RepoContext};
 
 /// Arguments of `acs undo`.
 #[derive(Debug, Args)]
-#[command(after_help = "Examples:\n  acs undo ses_4f9k2\n  acs undo ses_4f9k2 --apply")]
+#[command(
+    group(ArgGroup::new("which").required(true).args(["session", "last"])),
+    after_help = "Examples:\n  \
+                  acs undo --last                the session that last changed files here\n  \
+                  acs undo --last --apply\n  \
+                  acs undo ses_4f9k2\n  \
+                  acs undo ses_4f9k2 --apply\n\n\
+                  `--last` picks the agent session on this machine that most recently changed \
+                  files in this repository, by when it ended, and names it with its intent. If \
+                  that session is still running, it says so and stops."
+)]
 pub struct UndoArgs {
     /// The session to undo: a `ses_` id, or a unique prefix of one (see `acs log`).
     #[arg(value_name = "SESSION")]
-    pub session: String,
+    pub session: Option<String>,
+    /// Undo the session on this machine that most recently changed files here, instead of
+    /// naming one.
+    #[arg(long)]
+    pub last: bool,
     /// Carry out the plan. Without it nothing is changed and the plan is printed.
     #[arg(long)]
     pub apply: bool,
@@ -36,15 +55,100 @@ pub struct UndoArgs {
     pub output: OutputArgs,
 }
 
-/// Runs `acs undo`. Exit 1 when the session is unknown, or `--apply` left a conflict or a
-/// failure behind.
+/// Runs `acs undo`. Exit 1 when the session is unknown, `--last` finds no session or a running
+/// one, or `--apply` left a conflict or a failure behind.
 #[must_use]
 pub fn run(args: &UndoArgs) -> ExitCode {
     finish(args.output.json, execute(args))
 }
 
+/// How the session was chosen.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Pick {
+    /// By its id or a prefix of it.
+    Id,
+    /// With `--last`.
+    Last,
+}
+
+impl Pick {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Id => "id",
+            Self::Last => "last",
+        }
+    }
+}
+
+/// How many recent sessions `--last` reads: the most recent one, and an ended one to suggest
+/// when the most recent is still running.
+const LAST_CANDIDATES: usize = 20;
+
 fn state_error(why: &str) -> CliError {
     CliError::from(OpError::Unavailable(why.to_owned()))
+}
+
+/// The session `--last` picks: the most recent one that changed files. An error when there is
+/// none, or when it may still be running.
+fn find_last(ctx: &RepoContext, now: Timestamp) -> Result<SeatInfo, CliError> {
+    let db = ctx.db().map_err(state_error)?;
+    let mut seats = db
+        .seats_that_changed_files(LAST_CANDIDATES)
+        .map_err(OpError::from)?;
+    if seats.is_empty() {
+        return Err(CliError::new(
+            "no_session",
+            "No session has changed files in this repository on this machine, so `--last` has \
+             nothing to undo. `acs undo` is local: it needs the snapshots this machine took while \
+             a session ran. `acs log` lists sessions.",
+        ));
+    }
+    let last = seats.remove(0);
+    if !is_live(ctx, &last, now) {
+        return Ok(last);
+    }
+    let mut message = format!(
+        "The most recent session, {} ({}), may still be running: it has not ended and was seen \
+         {} ago. `--last` stops here rather than pick an older session. Wait for it to end, or \
+         stop the agent, then run this again; `acs undo {}` shows its plan now.",
+        last.session_id,
+        who_and_intent(&last),
+        age(now, last.seat.last_seen_at),
+        last.session_id,
+    );
+    if let Some(ended) = seats.iter().find(|seat| !is_live(ctx, seat, now)) {
+        let _ = write!(
+            message,
+            " The most recent session that has ended is {} ({}, {}): `acs undo {}`.",
+            ended.session_id,
+            who_and_intent(ended),
+            ended_phrase(ended, now),
+            ended.session_id,
+        );
+    }
+    Err(CliError::new("session_live", message))
+}
+
+/// `claude-code, "Fix the parser"`, or `claude-code, no intent given`.
+fn who_and_intent(seat: &SeatInfo) -> String {
+    match &seat.intent {
+        Some(intent) => format!("{}, \"{}\"", seat.seat.harness, ellipsize_end(intent, 60)),
+        None => format!("{}, no intent given", seat.seat.harness),
+    }
+}
+
+/// When the seat ended, or, for a seat that never reported its end, when it was last seen.
+fn ended(seat: &SeatInfo) -> (&'static str, Timestamp) {
+    match seat.ended_at {
+        Some(at) => ("ended", at),
+        None => ("last seen", seat.seat.last_seen_at),
+    }
+}
+
+/// `ended 3m ago`, or `last seen 3m ago` for a seat that never reported its end.
+fn ended_phrase(seat: &SeatInfo, now: Timestamp) -> String {
+    let (what, at) = ended(seat);
+    format!("{what} {} ago", age(now, at))
 }
 
 /// Finds the one seat of the session.
@@ -115,7 +219,10 @@ fn execute(args: &UndoArgs) -> Result<ExitCode, CliError> {
         "no copies of files are kept any more; only sessions from before can be undone",
     );
     let now = Timestamp::now();
-    let seat = find_seat(&ctx, &args.session)?;
+    let (seat, pick) = match &args.session {
+        Some(wanted) if !args.last => (find_seat(&ctx, wanted)?, Pick::Id),
+        _ => (find_last(&ctx, now)?, Pick::Last),
+    };
     let db = ctx.db().map_err(state_error)?;
     let store = ctx.snapshots().map_err(state_error)?;
     let session: SessionId = seat.session_id.clone();
@@ -200,15 +307,19 @@ fn execute(args: &UndoArgs) -> Result<ExitCode, CliError> {
     let failed =
         args.apply && (failures > 0 || conflicts > 0 || matches!(committed, Committed::Failed(_)));
 
+    let view = View {
+        seat: &seat,
+        pick,
+        plan: &plan,
+        applied: &applied,
+        committed: &committed,
+        apply: args.apply,
+        live,
+    };
     if args.output.json {
-        print_json(&json_view(
-            &seat, &plan, &applied, &committed, args.apply, live,
-        ));
+        print_json(&json_view(&view));
     } else {
-        print!(
-            "{}",
-            render(&seat, &plan, &applied, &committed, args.apply, live, now)
-        );
+        print!("{}", render(&view, now));
     }
     Ok(if failed {
         ExitCode::from(1)
@@ -278,14 +389,27 @@ fn counts(plan: &UndoPlan) -> Value {
     Value::Object(map)
 }
 
-fn json_view(
-    seat: &SeatInfo,
-    plan: &UndoPlan,
-    applied: &[Applied],
-    committed: &Committed,
+/// Everything the output shows.
+struct View<'a> {
+    seat: &'a SeatInfo,
+    pick: Pick,
+    plan: &'a UndoPlan,
+    applied: &'a [Applied],
+    committed: &'a Committed,
     apply: bool,
     live: bool,
-) -> Value {
+}
+
+fn json_view(view: &View<'_>) -> Value {
+    let View {
+        seat,
+        pick,
+        plan,
+        applied,
+        committed,
+        apply,
+        live,
+    } = *view;
     let files: Vec<Value> = plan
         .items
         .iter()
@@ -308,8 +432,12 @@ fn json_view(
     json!({
         "ok": true,
         "session": plan.session,
+        "picked_by": pick.as_str(),
         "harness": seat.seat.harness,
         "pilot": seat.seat.pilot,
+        "intent": seat.intent,
+        "ended_at": seat.ended_at,
+        "last_seen_at": seat.seat.last_seen_at,
         "live": live,
         "applied": apply,
         "files": files,
@@ -318,29 +446,40 @@ fn json_view(
     })
 }
 
-fn render(
-    seat: &SeatInfo,
-    plan: &UndoPlan,
-    applied: &[Applied],
-    committed: &Committed,
-    apply: bool,
-    live: bool,
-    now: Timestamp,
-) -> String {
+fn render(view: &View<'_>, now: Timestamp) -> String {
+    let View {
+        seat,
+        pick,
+        plan,
+        applied,
+        committed,
+        apply,
+        live,
+    } = *view;
     let mut out = String::new();
     let _ = writeln!(
         out,
-        "{} session {}",
+        "{} {} {}",
         if apply { "Undo of" } else { "Undo plan for" },
+        match pick {
+            Pick::Id => "session",
+            Pick::Last => "the last session,",
+        },
         plan.session,
     );
-    let _ = writeln!(
-        out,
-        "  {} {}, last seen {} ago",
-        seat.seat.harness,
-        ellipsize_start(&seat.seat.pilot, 40),
-        age(now, seat.seat.last_seen_at)
-    );
+    let pilot = ellipsize_start(&seat.seat.pilot, 40);
+    let seen = if live {
+        format!("last seen {} ago", age(now, seat.seat.last_seen_at))
+    } else {
+        format!("{} ({})", ended_phrase(seat, now), when(ended(seat).1))
+    };
+    out.push_str(&wrap(
+        &format!("{} {pilot}, {seen}", seat.seat.harness),
+        "  ",
+        "    ",
+    ));
+    let intent = seat.intent.as_deref().unwrap_or("none given");
+    out.push_str(&wrap(&format!("Intent: {intent}"), "  ", "    "));
     if live {
         out.push_str(&wrap(
             "!! This session may still be running. This is the plan only; `--apply` \

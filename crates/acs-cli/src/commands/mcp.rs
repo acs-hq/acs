@@ -288,6 +288,11 @@ fn status_reply(view: &StatusView, call_note: Option<String>, caller: &Caller) -
         );
     }
     notes.extend(view.policy_warnings.iter().cloned());
+    notes.extend(view.sealed.iter().filter_map(|glob| {
+        acs_core::sealed_exception(glob).map(|except| {
+            format!("`{glob}` does not cover `{except}`: those example files are writable.")
+        })
+    }));
     StatusReply {
         worktree: view.worktree.clone(),
         branch: view.branch.clone(),

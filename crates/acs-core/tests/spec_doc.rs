@@ -5,7 +5,7 @@
 use std::fs;
 use std::path::PathBuf;
 
-use acs_core::{DEFAULT_SEALED, Guards, Outcome, ReasonCode, pilot_id};
+use acs_core::{DEFAULT_SEALED, DEFAULT_SEALED_EXCEPTIONS, Guards, Outcome, ReasonCode, pilot_id};
 
 fn spec() -> String {
     fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../spec/SPEC.md"))
@@ -72,6 +72,11 @@ fn default_sealed_list_matches_the_code_and_the_example() {
     .unwrap();
     let guards: Guards = toml::from_str(&example).unwrap();
     assert_eq!(guards.sealed, DEFAULT_SEALED);
+
+    for (glob, except) in DEFAULT_SEALED_EXCEPTIONS {
+        let sentence = format!("`{except}` is not sealed by the default glob `{glob}`");
+        assert!(spec.contains(&sentence), "SPEC.md lacks: {sentence}");
+    }
 }
 
 #[test]

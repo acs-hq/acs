@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use acs_core::gate::{PolicyView, ZoneMatch};
 use acs_core::{
     Config, ContentHash, Destructive, Guards, Owner, RepoPath, SELF_PROTECTION_SEALED, Territory,
-    ZoneKind,
+    ZoneKind, sealed_exception,
 };
 
 use crate::error::{PolicyError, PolicyFile, Problem, ProblemKind};
@@ -66,6 +66,27 @@ impl Found {
     }
 }
 
+/// One sealed glob, with the built-in exception it carries, if any
+/// ([`acs_core::DEFAULT_SEALED_EXCEPTIONS`]).
+#[derive(Debug)]
+struct Seal {
+    glob: Glob,
+    except: Option<Glob>,
+}
+
+impl Seal {
+    fn new(glob: Glob, pattern: &str, case_insensitive: bool) -> Self {
+        // The exceptions are constants; a unit test compiles each of them.
+        let except = sealed_exception(pattern).and_then(|g| Glob::new(g, case_insensitive).ok());
+        Self { glob, except }
+    }
+
+    fn is_match(&self, segs: &[&str]) -> bool {
+        let hit = |glob: &Glob| glob.alts().iter().any(|alt| alt.is_match(segs));
+        hit(&self.glob) && !self.except.as_ref().is_some_and(hit)
+    }
+}
+
 /// One glob of one zone, ready for lookup.
 #[derive(Debug)]
 struct ZoneEntry {
@@ -96,7 +117,7 @@ pub struct CompiledPolicy {
     case_insensitive: bool,
     /// One per entry of `files.guards.sealed`; `None` for a seal that is not in force because
     /// the `guards` feature is off.
-    sealed: Vec<Option<Glob>>,
+    sealed: Vec<Option<Seal>>,
     protected: Vec<Glob>,
     bans: Vec<BanPattern>,
     /// Zone globs, most specific first.
@@ -253,7 +274,7 @@ impl CompiledPolicy {
             .zip(&files.guards.sealed)
             .map(|(glob, pattern)| {
                 (features.guards || SELF_PROTECTION_SEALED.contains(&pattern.as_str()))
-                    .then_some(glob)
+                    .then(|| Seal::new(glob, pattern, case_insensitive))
             })
             .collect();
         let (protected, bans) = if features.guards {
@@ -322,10 +343,9 @@ impl PolicyView for CompiledPolicy {
 
     fn sealed_match(&self, path: &RepoPath) -> Option<&str> {
         let index = with_segments(path.as_str(), self.case_insensitive, |segs| {
-            self.sealed.iter().position(|glob| {
-                glob.as_ref()
-                    .is_some_and(|glob| glob.alts().iter().any(|alt| alt.is_match(segs)))
-            })
+            self.sealed
+                .iter()
+                .position(|seal| seal.as_ref().is_some_and(|seal| seal.is_match(segs)))
         })?;
         Some(self.files.guards.sealed[index].as_str())
     }

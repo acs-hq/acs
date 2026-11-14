@@ -166,7 +166,9 @@ pub fn render(view: &StatusView, now: Timestamp, all_sealed: bool) -> String {
         SEALED_SHOWN.min(view.sealed.len())
     };
     for glob in &view.sealed[..shown] {
-        out.push_str(&row(glob, ""));
+        let except = acs_core::sealed_exception(glob)
+            .map_or_else(String::new, |except| format!("except {except}"));
+        out.push_str(&row(glob, &except));
         out.truncate(out.trim_end().len());
         out.push('\n');
     }

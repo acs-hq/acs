@@ -16,12 +16,13 @@ use crate::ids::LoreId;
 use crate::values::SpecVersion;
 
 /// The default sealed globs: paths no agent may write, so that an agent cannot switch ACS off or
-/// rewrite its own configuration. Adapters extend this list with their harness's hook and
-/// settings files.
+/// rewrite its own configuration, nor touch the repository's secrets. Adapters extend this list
+/// with their harness's hook and settings files. `**/.env*` leaves out example files (see
+/// [`DEFAULT_SEALED_EXCEPTIONS`]). CI workflows are not sealed by default (decision 0042); a
+/// repository adds `.github/workflows/**` to `sealed` in `guards.toml` to seal them.
 pub const DEFAULT_SEALED: &[&str] = &[
     ".git/**",
     ".acs/**",
-    ".github/workflows/**",
     "**/.env*",
     "**/.claude/settings*.json",
     "**/.claude/hooks/**",
@@ -33,6 +34,25 @@ pub const DEFAULT_SEALED: &[&str] = &[
     "**/.agent/plugins.json",
     ".husky/**",
 ];
+
+/// Built-in exceptions to sealed globs, as `(sealed glob, exception glob)` pairs: a path that
+/// matches the exception is not sealed by that glob (another sealed glob may still cover it).
+/// The one exception keeps example env files writable (`.env.example`, `.env.sample`,
+/// `.env.template`, `.env.dist`, `.env.local.example`, ...): they hold no secrets, and agents
+/// edit them as part of ordinary work (decision 0042). The glob dialect has no negation, so the
+/// exception cannot be written into the sealed glob itself.
+pub const DEFAULT_SEALED_EXCEPTIONS: &[(&str, &str)] =
+    &[("**/.env*", "**/.env*.{example,sample,template,dist}")];
+
+/// The built-in exception to the sealed glob `sealed`, if it has one (see
+/// [`DEFAULT_SEALED_EXCEPTIONS`]).
+#[must_use]
+pub fn sealed_exception(sealed: &str) -> Option<&'static str> {
+    DEFAULT_SEALED_EXCEPTIONS
+        .iter()
+        .find(|(glob, _)| *glob == sealed)
+        .map(|(_, except)| *except)
+}
 
 /// The part of [`DEFAULT_SEALED`] that keeps ACS itself in place: its policy and state, git's
 /// hooks and config, and the harness files that load the ACS hooks. These stay sealed when
@@ -627,6 +647,19 @@ mod tests {
         for glob in SELF_PROTECTION_SEALED {
             assert!(DEFAULT_SEALED.contains(glob), "{glob}");
         }
+    }
+
+    #[test]
+    fn exceptions_belong_to_default_seals_but_never_to_self_protection() {
+        for (glob, _) in DEFAULT_SEALED_EXCEPTIONS {
+            assert!(DEFAULT_SEALED.contains(glob), "{glob}");
+            assert!(!SELF_PROTECTION_SEALED.contains(glob), "{glob}");
+        }
+        assert_eq!(
+            sealed_exception("**/.env*"),
+            Some("**/.env*.{example,sample,template,dist}")
+        );
+        assert_eq!(sealed_exception(".git/**"), None);
     }
 
     #[test]
