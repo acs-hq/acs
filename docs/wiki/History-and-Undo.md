@@ -63,7 +63,7 @@ Undo works only on the machine where the session ran, because that is where the 
 
 ### Which session `--last` picks
 
-`--last` picks the agent session on this machine that most recently changed files in this repository, by when it ended. Sessions that only read files are skipped, and so are your own claims. It prints the session's id, what its agent said it was doing and when it ended, so you can check it is the one you mean before you apply.
+`--last` picks the agent session on this machine that most recently changed files in this repository, by when it ended. Sessions that changed no files are skipped, and so is the seat that holds your own claims (`acs claim`, `acs watch`, the VS Code extension): `--last` only picks agent sessions. It prints the session's id, what its agent said it was doing and when it ended, so you can check it is the one you mean before you apply.
 
 If that session may still be running (it has not ended and was active within the claim time-to-live, 15 minutes by default), `--last` says so and stops, for the dry run too, and names the most recent session that has ended. An agent that is still open can keep changing those files, so end it first (exit the agent), or name a session by its id. The dry run tells you to apply by the id rather than with `--last` again, so a session that ends in between cannot take its place.
 
