@@ -581,4 +581,9 @@ fn the_plugin_hooks_run_this_adapter_with_known_phases() {
     let rule = fs::read_to_string(path.join("rules/acs.md")).unwrap();
     assert!(rule.starts_with("---\ntrigger: always_on\n"));
     assert!(rule.contains("acs_status") && rule.contains("acs_intent"));
+    // The rule is the same file in every repository, so it names no tool that a feature
+    // switch can take away (decision 0034): `acs_status` says what applies.
+    for tool in ["acs_claim", "acs_release", "acs_lore_propose"] {
+        assert!(!rule.contains(tool), "{tool}");
+    }
 }
