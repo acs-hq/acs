@@ -2,7 +2,9 @@
 //! can be repaired safely.
 //!
 //! Checks: `ACS_HOME` and its permissions, repository id, the state database (opens, passes
-//! `integrity_check`), the size of the copies kept for undo against their budget, the policy files, the compiled-policy cache, git hooks, `acs` on `PATH`,
+//! `integrity_check`), the size of the copies kept for undo against their budget, the policy files,
+//! whether `default_target_branch` names a branch that exists, the compiled-policy cache, git
+//! hooks, `acs` on `PATH`,
 //! the plugin of each detected harness, and whether the gate is off.
 //!
 //! Exit status is 1 when any check fails (after repairs), 0 otherwise; warnings do not fail.
@@ -26,8 +28,10 @@ use clap::Args;
 use serde::Serialize;
 use serde_json::json;
 
+use super::init::branch;
 use super::init::harness::{PluginState, detect, plugin_state};
 use super::init::hooks::{self, HooksHealth, HooksInstall};
+use super::init::policy::DEFAULT_TARGET_BRANCH;
 use super::support::{CliError, OutputArgs, find_on_path, finish, print_json, wrap};
 use crate::runtime::cleanup;
 
@@ -180,6 +184,7 @@ pub fn run_checks(cwd: &Path, fix: bool) -> Vec<Check> {
     };
     if policy_valid {
         checks.push(check_features(&layout, &policy_dir));
+        checks.extend(check_target_branch(&layout, &policy_dir));
     }
     if let Some(repo) = &repo_home {
         checks.push(check_policy_cache(repo, &policy_dir, policy_valid, fix));
@@ -568,6 +573,42 @@ fn check_features(layout: &RepoLayout, policy_dir: &Path) -> Check {
             format!("switched off: {} (see `acs features`)", off.join(", ")),
         )
     }
+}
+
+/// Whether `default_target_branch` names a branch that exists here or on a remote (decision
+/// 0040). Claims only conflict between sessions with the same target branch, so a wrong name
+/// changes which sessions collide. `None` when the branches cannot be listed.
+fn check_target_branch(layout: &RepoLayout, policy_dir: &Path) -> Option<Check> {
+    const ID: &str = "target_branch";
+    const TITLE: &str = "Target branch";
+    let case_insensitive = PathResolver::new(&layout.work_tree).is_ok_and(|r| r.case_insensitive());
+    let target = load(policy_dir, LoadOptions { case_insensitive })
+        .map(|loaded| loaded.policy.files().config.default_target_branch.clone())
+        .unwrap_or_else(|_| DEFAULT_TARGET_BRANCH.to_owned());
+    let known = branch::known_branches(&layout.work_tree)?;
+    if known.contains(&target) {
+        return Some(Check::pass(
+            ID,
+            TITLE,
+            format!("default_target_branch = \"{target}\" exists"),
+        ));
+    }
+    let mut message = format!(
+        "default_target_branch = \"{target}\", but no branch of that name exists here or on a \
+         remote. Claims only conflict between sessions with the same target branch."
+    );
+    if let Some(found) = branch::detect(&layout.work_tree) {
+        let _ = write!(
+            message,
+            " The main branch looks like `{}` ({}).",
+            found.name,
+            found.source.describe()
+        );
+    }
+    Some(
+        Check::warn(ID, TITLE, message)
+            .hint("set default_target_branch in .acs/policy/config.toml to the main branch"),
+    )
 }
 
 fn check_policy(layout: &RepoLayout, policy_dir: &Path) -> (Check, bool) {

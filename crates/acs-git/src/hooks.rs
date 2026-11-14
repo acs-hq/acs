@@ -588,22 +588,37 @@ fn wrap(path: &Path, name: &str) -> Result<Action, HooksError> {
 ///
 /// [`HooksError`] when a file cannot be read or written.
 pub fn uninstall(layout: &RepoLayout) -> Result<Vec<HookRemoval>, HooksError> {
+    remove(layout, true)
+}
+
+/// What [`uninstall`] would do, without changing anything.
+///
+/// # Errors
+///
+/// [`HooksError`] when hooks are disabled or a hook file cannot be read.
+pub fn uninstall_plan(layout: &RepoLayout) -> Result<Vec<HookRemoval>, HooksError> {
+    remove(layout, false)
+}
+
+fn remove(layout: &RepoLayout, apply: bool) -> Result<Vec<HookRemoval>, HooksError> {
     let location = locate(layout)?;
     let mut removals = Vec::new();
     for name in HOOK_NAMES {
         let path = location.scripts_dir.join(name);
-        let action = uninstall_one(name, &path)?;
+        let action = uninstall_one(name, &path, apply)?;
         removals.push(HookRemoval { name, path, action });
     }
     Ok(removals)
 }
 
-fn uninstall_one(name: &str, path: &Path) -> Result<RemoveAction, HooksError> {
+fn uninstall_one(name: &str, path: &Path, apply: bool) -> Result<RemoveAction, HooksError> {
     let orig = orig_path(path, name);
     match inspect(path)? {
         Existing::Missing => {
             if fs::symlink_metadata(&orig).is_ok() {
-                fs::rename(&orig, path).map_err(|e| HooksError::io("restoring", &orig, e))?;
+                if apply {
+                    fs::rename(&orig, path).map_err(|e| HooksError::io("restoring", &orig, e))?;
+                }
                 return Ok(RemoveAction::Restored);
             }
             Ok(RemoveAction::NotInstalled)
@@ -615,9 +630,12 @@ fn uninstall_one(name: &str, path: &Path) -> Result<RemoveAction, HooksError> {
                 return Ok(RemoveAction::NotInstalled);
             };
             if is_wrapper(&text) {
-                fs::remove_file(path).map_err(|e| HooksError::io("removing", path, e))?;
-                if fs::symlink_metadata(&orig).is_ok() {
-                    fs::rename(&orig, path).map_err(|e| HooksError::io("restoring", &orig, e))?;
+                if apply {
+                    fs::remove_file(path).map_err(|e| HooksError::io("removing", path, e))?;
+                    if fs::symlink_metadata(&orig).is_ok() {
+                        fs::rename(&orig, path)
+                            .map_err(|e| HooksError::io("restoring", &orig, e))?;
+                    }
                 }
                 return Ok(RemoveAction::Restored);
             }
@@ -630,10 +648,15 @@ fn uninstall_one(name: &str, path: &Path) -> Result<RemoveAction, HooksError> {
                 .iter()
                 .all(|l| l.trim().is_empty() || l.trim_end() == "#!/bin/sh");
             if only_ours {
-                fs::remove_file(path).map_err(|e| HooksError::io("removing", path, e))?;
+                if apply {
+                    fs::remove_file(path).map_err(|e| HooksError::io("removing", path, e))?;
+                }
                 Ok(RemoveAction::Deleted)
             } else {
-                fs::write(path, rest.concat()).map_err(|e| HooksError::io("writing", path, e))?;
+                if apply {
+                    fs::write(path, rest.concat())
+                        .map_err(|e| HooksError::io("writing", path, e))?;
+                }
                 Ok(RemoveAction::Removed)
             }
         }

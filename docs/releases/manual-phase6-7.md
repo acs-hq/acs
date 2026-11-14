@@ -29,6 +29,9 @@ is a test of its own (T8), not of the feature.
 
 ## 0. Clean out the old ACS and start fresh
 
+**Since issue 63, `acs uninstall --all` does steps 3 to 7 in one command** (decision 0039). The
+steps below still work and show what it does.
+
 Close every Claude Code session in the repository first. Run everything in Git Bash, from the
 repository root, on `main`.
 

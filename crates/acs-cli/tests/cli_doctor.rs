@@ -321,3 +321,23 @@ fn doctor_detects_an_outdated_or_stripped_hook_block() {
             .contains("ACS block is missing")
     );
 }
+
+#[test]
+fn a_target_branch_that_does_not_exist_is_a_warning() {
+    let world = started();
+    let doc = json(&acs(&world, &["doctor", "--json"]));
+    assert_eq!(status_of(&doc, "target_branch"), "pass");
+
+    common::git(
+        &world.repo,
+        &world.git_config,
+        &["branch", "-m", "main", "master"],
+    );
+    let out = acs(&world, &["doctor", "--json"]);
+    assert_success(&out);
+    let doc = json(&out);
+    assert_eq!(status_of(&doc, "target_branch"), "warn");
+    let message = check(&doc, "target_branch")["message"].to_string();
+    assert!(message.contains("looks like `master`"), "{message}");
+    assert_fits_80(&stdout(&acs(&world, &["doctor"])));
+}

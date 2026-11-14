@@ -14,6 +14,7 @@
 //!
 //! Running it again without `--yes` changes nothing.
 
+pub mod branch;
 pub mod harness;
 pub mod hooks;
 pub mod policy;
@@ -25,12 +26,14 @@ use std::io::{BufRead as _, IsTerminal as _, Write as _};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
+use acs_core::gate::PolicyView as _;
 use acs_core::{Feature, Features, ZoneKind};
 use acs_paths::PathResolver;
 use acs_policy::{LoadOptions, load};
 use clap::Args;
 use serde::Serialize;
 
+use self::branch::DefaultBranch;
 use self::harness::{Detected, detect};
 use self::hooks::{HooksInstall, install as install_hooks};
 use self::policy::{
@@ -95,6 +98,8 @@ pub struct InitReport {
     pub policy_files: Vec<PolicyFileReport>,
     /// The features switched off in `config.toml` (`sync` is, unless the repository opted in).
     pub features_off: Vec<Feature>,
+    /// The repository's main branch and what the policy says about it.
+    pub default_branch: BranchReport,
     /// One entry per configured remote; empty while team sync is off.
     pub remotes: Vec<RemoteReport>,
     /// The git hook step.
@@ -109,6 +114,40 @@ pub struct InitReport {
     pub warnings: Vec<String>,
     /// Steps that failed.
     pub errors: Vec<String>,
+}
+
+/// The main-branch step of the report (decision 0040).
+#[derive(Debug, Clone, Serialize)]
+pub struct BranchReport {
+    /// The main branch found, if one was.
+    pub found: Option<DefaultBranch>,
+    /// The policy files this run wrote it into (none when it is `main` or the files existed).
+    pub written_to: Vec<&'static str>,
+    /// `default_target_branch` in the policy as it is now.
+    pub target_branch: String,
+    /// Whether the branch found matches `protected_branches` (true when none was found).
+    pub protected: bool,
+}
+
+/// The warning for a policy that does not name the main branch found.
+fn branch_mismatch(found: &DefaultBranch, report: &BranchReport) -> String {
+    let mut problems = Vec::new();
+    if found.name != report.target_branch {
+        problems.push(format!(
+            "config.toml has default_target_branch = \"{}\"",
+            report.target_branch
+        ));
+    }
+    if !report.protected {
+        problems.push("guards.toml's protected_branches does not cover it".to_owned());
+    }
+    format!(
+        "this repository's main branch looks like `{}` ({}), but {}. Edit .acs/policy/ if that \
+         is wrong.",
+        found.name,
+        found.source.describe(),
+        problems.join(", and ")
+    )
 }
 
 /// What `init` did about `territory.toml`.
@@ -268,8 +307,13 @@ pub fn initialize(
     let new_territory = proposed
         .as_deref()
         .filter(|_| plan.file == TerritoryFile::Missing);
-    let mut policy_files = write_missing(&policy_dir, new_territory)
-        .map_err(|err| format!("cannot write {}: {err}", policy_dir.display()))?;
+    let detected_branch = branch::detect(work_tree);
+    let mut policy_files = write_missing(
+        &policy_dir,
+        new_territory,
+        detected_branch.as_ref().map(|b| b.name.as_str()),
+    )
+    .map_err(|err| format!("cannot write {}: {err}", policy_dir.display()))?;
     let mut warnings = Vec::new();
     let mut errors = Vec::new();
 
@@ -321,9 +365,33 @@ pub fn initialize(
     // Validate what is on disk now (ours or the team's); a broken policy is reported, not fatal.
     let case_insensitive = PathResolver::new(work_tree).is_ok_and(|r| r.case_insensitive());
     let mut features = Features::default();
+    let mut default_branch = BranchReport {
+        found: detected_branch.clone(),
+        written_to: Vec::new(),
+        target_branch: policy::DEFAULT_TARGET_BRANCH.to_owned(),
+        protected: true,
+    };
+    if let Some(found) = &detected_branch
+        && found.name != policy::DEFAULT_TARGET_BRANCH
+    {
+        default_branch.written_to = policy_files
+            .iter()
+            .filter(|f| f.action == FileAction::Created && f.file != "territory.toml")
+            .map(|f| f.file)
+            .collect();
+    }
     match load(&policy_dir, LoadOptions { case_insensitive }) {
         Ok(loaded) => {
             features = loaded.policy.files().config.features;
+            default_branch
+                .target_branch
+                .clone_from(&loaded.policy.files().config.default_target_branch);
+            if let Some(found) = &detected_branch {
+                default_branch.protected = loaded.policy.is_protected_branch(&found.name);
+                if found.name != default_branch.target_branch || !default_branch.protected {
+                    warnings.push(branch_mismatch(found, &default_branch));
+                }
+            }
             warnings.extend(loaded.warnings);
         }
         Err(err) => warnings.push(format!(
@@ -383,6 +451,7 @@ pub fn initialize(
         policy_dir: ".acs/policy",
         policy_files,
         features_off: features.off(),
+        default_branch,
         remotes: remote_reports,
         git_hooks,
         harnesses,
@@ -493,6 +562,42 @@ pub fn render(report: &InitReport) -> String {
         "  ",
         "  ",
     ));
+
+    out.push_str("\nMain branch\n");
+    let branch = &report.default_branch;
+    let line = match &branch.found {
+        None => format!(
+            "not found (no remote HEAD, and the current branch is not main, master or develop), \
+             so default_target_branch stays \"{}\". Set it in config.toml if that is wrong.",
+            branch.target_branch
+        ),
+        Some(found) if !branch.written_to.is_empty() => {
+            let mut places = Vec::new();
+            if branch.written_to.contains(&"config.toml") {
+                places.push("set as default_target_branch in config.toml");
+            }
+            if branch.written_to.contains(&"guards.toml") {
+                places.push("added to protected_branches in guards.toml");
+            }
+            format!(
+                "{} ({}): {}",
+                found.name,
+                found.source.describe(),
+                places.join(", ")
+            )
+        }
+        Some(found) if found.name == branch.target_branch && branch.protected => format!(
+            "{} ({}), as the policy says",
+            found.name,
+            found.source.describe()
+        ),
+        Some(found) => format!(
+            "{} ({}), which the policy does not match: see the warning below",
+            found.name,
+            found.source.describe()
+        ),
+    };
+    out.push_str(&wrap(&line, "  ", "  "));
 
     out.push_str("\nFetch refspec for claims shared through git\n");
     if report.features_off.contains(&Feature::Sync) {

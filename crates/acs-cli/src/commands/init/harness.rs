@@ -134,26 +134,44 @@ fn user_home() -> Option<PathBuf> {
     std::env::home_dir().filter(|p| !p.as_os_str().is_empty())
 }
 
-fn claude_code_plugin_enabled(work_tree: &Path) -> bool {
-    let mut files = vec![
+/// The project and local Claude Code settings files of a work tree, which the project and
+/// local plugin scopes write.
+#[must_use]
+pub fn claude_code_project_settings(work_tree: &Path) -> [PathBuf; 2] {
+    [
         work_tree.join(".claude/settings.json"),
         work_tree.join(".claude/settings.local.json"),
-    ];
+    ]
+}
+
+/// The user's Claude Code settings file (`$CLAUDE_CONFIG_DIR/settings.json`, else
+/// `~/.claude/settings.json`).
+#[must_use]
+pub fn claude_code_user_settings() -> Option<PathBuf> {
     match std::env::var_os("CLAUDE_CONFIG_DIR").filter(|v| !v.is_empty()) {
-        Some(dir) => files.push(PathBuf::from(dir).join("settings.json")),
-        None => files.extend(user_home().map(|h| h.join(".claude/settings.json"))),
+        Some(dir) => Some(PathBuf::from(dir).join("settings.json")),
+        None => user_home().map(|h| h.join(".claude/settings.json")),
     }
-    files.iter().any(|file| {
-        std::fs::read(file)
-            .ok()
-            .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
-            .and_then(|json| {
-                json.get("enabledPlugins")?
-                    .get(CLAUDE_CODE_PLUGIN)?
-                    .as_bool()
-            })
-            == Some(true)
-    })
+}
+
+/// Whether the settings file enables the ACS plugin.
+#[must_use]
+pub fn settings_enable_acs(file: &Path) -> bool {
+    std::fs::read(file)
+        .ok()
+        .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
+        .and_then(|json| {
+            json.get("enabledPlugins")?
+                .get(CLAUDE_CODE_PLUGIN)?
+                .as_bool()
+        })
+        == Some(true)
+}
+
+fn claude_code_plugin_enabled(work_tree: &Path) -> bool {
+    let mut files = claude_code_project_settings(work_tree).to_vec();
+    files.extend(claude_code_user_settings());
+    files.iter().any(|file| settings_enable_acs(file))
 }
 
 fn antigravity_plugin_present(work_tree: &Path) -> bool {

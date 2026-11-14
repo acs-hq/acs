@@ -23,8 +23,19 @@ const READ_ONLY: &[&str] = &[
 /// program (`xargs acs off`, `cargo run --bin acs -- off`), only these count, so that
 /// `grep -r acs src` is not mistaken for running ACS.
 const STATEFUL: &[&str] = &[
-    "hook", "init", "claim", "release", "off", "on", "plugin", "mcp", "git-hook", "override",
-    "watch", "undo",
+    "hook",
+    "init",
+    "uninstall",
+    "claim",
+    "release",
+    "off",
+    "on",
+    "plugin",
+    "mcp",
+    "git-hook",
+    "override",
+    "watch",
+    "undo",
 ];
 
 /// Paths inside the repository that a command with unknown effects must not mention: ACS's
@@ -403,6 +414,9 @@ mod tests {
             ("acs claim a.rs", "acs claim"),
             ("acs release --all", "acs release"),
             ("acs init --yes", "acs init"),
+            ("acs uninstall --all", "acs uninstall"),
+            ("acs uninstall --dry-run", "acs uninstall"),
+            ("xargs acs uninstall", "acs uninstall"),
             ("acs plugin install claude-code", "acs plugin"),
             ("acs hook --canonical pre_tool", "acs hook"),
             ("acs mcp", "acs mcp"),
