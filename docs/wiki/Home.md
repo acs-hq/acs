@@ -11,7 +11,7 @@ Open two Claude Code sessions in one repository and neither knows the other exis
 ACS looks at each tool call an agent makes, before it runs, and allows or blocks it.
 
 - **One writer per file.** The first session to edit a file holds it. Other sessions are told who holds it and can work on something else.
-- **Protected paths.** Some paths, such as ACS's own settings and your CI workflows, are off limits to agents. People can still change them.
+- **Protected paths.** Some paths, such as ACS's own settings and your `.env` files, are off limits to agents, and you can add your own, such as your CI workflows. People can still change them.
 - **Dangerous commands.** Commands such as `git push --force` and deleting files the agent does not hold are blocked.
 - **A check at commit time.** Git hooks catch what slipped past, such as an agent committing a file that another session holds.
 - **Team sharing.** With a git remote, ACS shares who holds what with your teammates' machines on its own.

@@ -60,7 +60,7 @@ The agent receives a message that says what is blocked and what to do next. It s
 | The message says | What it means | What to do |
 | --- | --- | --- |
 | `` `src/api.ts` is claimed by sara@example.com (claude-code, active just now) `` | Another session holds the file. | Let the agent do other work, or arrange a handover: end the other session, ask its agent to release the file, or wait for the claim to expire. |
-| `` `.env` (sealed by `**/.env*`) is protected by ACS `` | The path is sealed: no agent may change it. | Make the change yourself. |
+| `` `.env` (sealed by `**/.env*`) is protected by ACS `` | The path is sealed: no agent may change it. Example files such as `.env.example` are not sealed. | Make the change yourself. |
 | `This would delete 1 file that you have not claimed` | The agent tried to delete a file it does not hold. | If you want it deleted, tell the agent to claim it first. |
 | `` The command `git reset --hard HEAD~1` is banned by this repository's policy `` | The command is banned. | Ask the agent for a safer way, or run it yourself if you mean it. |
 | `` `git rebase`, which rewrites history, would change protected branch `main` `` | Agents cannot rewrite history or force push on a protected branch. | Have the agent work on a feature branch, or do it yourself. |
@@ -119,12 +119,12 @@ Recent collisions (1 in the last 24 h):
     `src/api.ts` is claimed by sara@example.com (claude-code, active just now).
     Work on other files, or ask your pilot to coordinate.
 
-Sealed paths no agent may write (13):
+Sealed paths no agent may write (12):
   .git/**
   .acs/**
-  .github/workflows/**
-  **/.env*
-  and 9 more (`acs status --sealed` lists all)
+  **/.env*                        except **/.env*.{example,sample,template,dist}
+  **/.claude/settings*.json
+  and 8 more (`acs status --sealed` lists all)
 ```
 
 - **Your claims** are the ones you made with `acs claim`.

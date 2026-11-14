@@ -1,6 +1,9 @@
 # 0017 — Harness configuration in the default sealed list
 
-Date: 2026-10-30. Status: accepted (orchestrator).
+Date: 2026-10-30. Status: accepted (orchestrator). **Amended by decision 0042 (2026-11-14):**
+`.github/workflows/**` is no longer in `DEFAULT_SEALED` (12 globs), and `**/.env*` no longer
+covers example files (`**/.env*.{example,sample,template,dist}`); `CACHE_FORMAT` 4. The harness
+entries below are unchanged.
 
 ## Context
 
