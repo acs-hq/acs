@@ -2,7 +2,7 @@
 //! can be repaired safely.
 //!
 //! Checks: `ACS_HOME` and its permissions, repository id, the state database (opens, passes
-//! `integrity_check`), the policy files, the compiled-policy cache, git hooks, `acs` on `PATH`,
+//! `integrity_check`), the size of the copies kept for undo against their budget, the policy files, the compiled-policy cache, git hooks, `acs` on `PATH`,
 //! the plugin of each detected harness, and whether the gate is off.
 //!
 //! Exit status is 1 when any check fails (after repairs), 0 otherwise; warnings do not fail.
@@ -19,7 +19,8 @@ use acs_git::RepoLayout;
 use acs_paths::PathResolver;
 use acs_policy::{LoadOptions, load};
 use acs_store::{
-    AcsHome, DbConfig, FLAG_GATE_OFF, HomeError, RepoHome, RepoIdentity, StateDb, StoreError,
+    AcsHome, DbConfig, FLAG_GATE_OFF, HomeError, RepoHome, RepoIdentity, SnapshotStore, StateDb,
+    StoreError,
 };
 use clap::Args;
 use serde::Serialize;
@@ -28,6 +29,7 @@ use serde_json::json;
 use super::init::harness::{PluginState, detect, plugin_state};
 use super::init::hooks::{self, HooksHealth, HooksInstall};
 use super::support::{CliError, OutputArgs, find_on_path, finish, print_json, wrap};
+use crate::runtime::cleanup;
 
 /// Arguments of `acs doctor`.
 #[derive(Debug, Args)]
@@ -168,6 +170,7 @@ pub fn run_checks(cwd: &Path, fix: bool) -> Vec<Check> {
         let (check, usable) = check_state_db(repo, fix);
         db_usable = usable;
         checks.push(check);
+        checks.extend(check_snapshots(repo));
     }
     let policy_dir = layout.work_tree.join(".acs").join("policy");
     let policy_valid = {
@@ -489,6 +492,65 @@ fn quarantine_db(repo: &RepoHome) -> Result<String, String> {
 
 /// Which features the policy switches off. Informational: a feature that is off explains why
 /// something a person expects (a blocked edit, a session in `acs log`) does not happen.
+/// The copies kept for undo: their size against the budget. Doctor does not clean; `acs sync`
+/// does, and it never removes the copies of a running session, which is the one reason a store
+/// stays over budget.
+fn check_snapshots(repo: &RepoHome) -> Option<Check> {
+    const ID: &str = "snapshots";
+    const TITLE: &str = "Copies kept for undo";
+    // Nothing captured yet: do not create the store just to look at it.
+    if !repo.snapshots_dir().join("index.db").exists() {
+        return None;
+    }
+    let used = match SnapshotStore::open(repo).and_then(|store| store.stored_bytes()) {
+        Ok(used) => used,
+        Err(err) => {
+            return Some(Check::warn(
+                ID,
+                TITLE,
+                format!("cannot read the store: {err}"),
+            ));
+        }
+    };
+    let budget = cleanup::snapshot_budget();
+    let message = format!(
+        "{} used of {} per repository",
+        human_bytes(used),
+        human_bytes(budget)
+    );
+    Some(if used > budget {
+        Check::warn(
+            ID,
+            TITLE,
+            format!(
+                "{message}: over budget. Copies of ended sessions are removed, oldest first, \
+                 when `acs sync` runs; copies of a running session are never removed, so a \
+                 long session can keep the store above the budget"
+            ),
+        )
+        .hint("run `acs sync`; if it stays over budget, end the running sessions and run it again")
+    } else {
+        Check::pass(ID, TITLE, message)
+    })
+}
+
+/// A size for people: `1.5 MiB`, `500 MiB`, `120 KiB`, `34 B`.
+fn human_bytes(bytes: u64) -> String {
+    const UNITS: [&str; 4] = ["B", "KiB", "MiB", "GiB"];
+    #[allow(clippy::cast_precision_loss)]
+    let mut value = bytes as f64;
+    let mut unit = 0;
+    while value >= 1024.0 && unit < UNITS.len() - 1 {
+        value /= 1024.0;
+        unit += 1;
+    }
+    if unit == 0 || (value - value.round()).abs() < 0.05 {
+        format!("{value:.0} {}", UNITS[unit])
+    } else {
+        format!("{value:.1} {}", UNITS[unit])
+    }
+}
+
 fn check_features(layout: &RepoLayout, policy_dir: &Path) -> Check {
     const ID: &str = "features";
     const TITLE: &str = "Features";

@@ -344,7 +344,7 @@ fn an_evicted_pre_image_makes_the_file_unknown() {
         p.items[0]
             .detail
             .as_deref()
-            .is_some_and(|d| d.contains("evicted")),
+            .is_some_and(|d| d.contains("removed to save space")),
         "{:?}",
         p.items[0].detail
     );

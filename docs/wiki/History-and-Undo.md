@@ -40,6 +40,8 @@ For each file the session changed, ACS compares three versions: before the sessi
 - **Held by another session right now:** left alone. Run undo again once it is released.
 - **No copy from before the session:** left alone and reported. This happens for files over 32 MB and for files a shell command changed that git did not track.
 
+- **The copy was removed to save space:** left alone and reported. ACS keeps copies of up to 500 MiB per repository. Past that, `acs sync` (which hooks start in the background, including when a session ends) removes the copies of the oldest ended sessions first; those of a running session are never removed. `acs doctor` shows how much is used.
+
 Undo works only on the machine where the session ran, because that is where the copies are kept. It refuses to apply while the session is still running.
 
 ## Signing
