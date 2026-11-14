@@ -137,6 +137,9 @@ fn shown(sub: &str, rest: &[&str]) -> String {
 /// Whether running `acs <sub> <rest>` is denied. As the program itself (`direct`), anything but a
 /// read-only subcommand is; as an argument of another program, only a known stateful one.
 fn denied_sub(sub: &str, rest: &[&str], direct: bool) -> bool {
+    if asks_for_help_only(rest) {
+        return false;
+    }
     let sub = sub.to_ascii_lowercase();
     if sub == "doctor" {
         return rest.contains(&"--fix");
@@ -173,6 +176,33 @@ fn denied_sub(sub: &str, rest: &[&str], direct: bool) -> bool {
     } else {
         STATEFUL.contains(&sub.as_str())
     }
+}
+
+/// Whether the words after `acs` do nothing but print help (decision 0038): one or more
+/// subcommand names (plain words, no leading `-`, so no option can take the next word as its
+/// value) and then exactly one `--help` or `-h` as the last word. Clap prints help as soon as it
+/// reaches the flag, before it reads any value or runs anything. Anything else is not help-only:
+/// an option before the flag (`--path --help` gives `--help` as a value), `--`, `--path=--help`,
+/// a word after the flag, a path or other operand. `acs git-hook` takes the rest of its line as
+/// arguments with hyphen values allowed (`acs git-hook pre-commit --help` runs the hook), so only
+/// `acs git-hook --help` counts there.
+fn asks_for_help_only(rest: &[&str]) -> bool {
+    let Some((last, names)) = rest.split_last() else {
+        return false;
+    };
+    if !matches!(*last, "--help" | "-h") || names.is_empty() {
+        return false;
+    }
+    let plain = |word: &&str| {
+        word.starts_with(|c: char| c.is_ascii_alphanumeric())
+            && word
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    };
+    if !names.iter().all(plain) {
+        return false;
+    }
+    !(names[0].eq_ignore_ascii_case("git-hook") && names.len() > 1)
 }
 
 /// `cargo run -p acs-cli`, `cargo run --bin acs` and their `=` spellings.
@@ -345,6 +375,14 @@ mod tests {
             "acs lore show src/a.rs",
             "acs lore stale --all",
             "acs lore help review",
+            "acs claim --help",
+            "acs claim -h",
+            "acs override --help",
+            "acs lore review --help",
+            "acs plugin install -h",
+            "acs git-hook --help",
+            "xargs acs claim --help",
+            "cargo run -p acs-cli -- claim --help",
             "acs log --json",
             "acs blame src/a.rs",
             "acs stats",
@@ -378,6 +416,24 @@ mod tests {
             ("xargs acs lore review --reject", "acs lore review"),
             ("cargo run -p acs-cli -- lore review", "acs lore review"),
             ("acs future-command", "acs future-command"),
+            ("acs override --path --help", "acs override"),
+            ("acs override --path --help --once", "acs override"),
+            ("acs override --path=--help", "acs override"),
+            ("acs claim -- --help", "acs claim"),
+            ("acs claim --help --json", "acs claim"),
+            ("acs claim --help --help", "acs claim"),
+            ("acs claim --json --help", "acs claim"),
+            ("acs claim src/lib.rs --help", "acs claim"),
+            ("acs claim --help=x", "acs claim"),
+            ("acs claim -hx", "acs claim"),
+            ("acs claim help", "acs claim"),
+            ("acs --help claim", "acs claim"),
+            ("acs git-hook pre-commit --help", "acs git-hook"),
+            ("acs lore review --accept --help", "acs lore review"),
+            ("acs undo --apply --help", "acs undo"),
+            ("acs doctor --fix --help", "acs doctor"),
+            ("xargs acs claim --json --help", "acs claim"),
+            ("cargo run -p acs-cli -- override --path --help", "acs override"),
             ("/usr/local/bin/acs off", "acs off"),
             ("C:\\tools\\ACS.EXE off", "acs off"),
             ("./target/debug/acs.exe override", "acs override"),
