@@ -98,8 +98,10 @@ the `"hooks"` object; in a plugin it is `hooks/hooks.json` with the same object 
 - `if` (permission-rule filter), `async`, `once`, `statusMessage`, `shell`, `onFailure` are
   further optional handler fields **[docs]**. ACS uses none except possibly `onFailure`.
 
-Events ACS registers: `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`,
-`PostToolUseFailure`, `SessionEnd`. Events deliberately not registered: `Stop`, `StopFailure`,
+Events ACS registers: `SessionStart`, `PreToolUse`, `PostToolUse`, `PostToolUseFailure`,
+`SessionEnd`. `UserPromptSubmit` was registered until decision 0036 (2026-11-14): the adapter
+still parses and renders it, but nothing creates a notice to deliver before Phase 8, so the
+plugin does not ask for it. Events deliberately not registered: `Stop`, `StopFailure`,
 `SubagentStart`, `SubagentStop`, `PostToolBatch`, `PermissionRequest`, `PermissionDenied`,
 `Notification`, `PreCompact`, `PostCompact`, `CwdChanged`, `FileChanged`, `InstructionsLoaded`,
 `ConfigChange` and the rest. (`SessionStart` with `source: "compact"` is the compaction hook we

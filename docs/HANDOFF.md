@@ -382,6 +382,13 @@ New in Phase 4:
 
 ## 3. Must-know items for the next phases
 
+**WP8.2 and WP8.3 (notices)** — the Claude Code plugin does not register
+`UserPromptSubmit` any more (decision 0036): nothing creates a notice yet. The first work
+package that creates one adds the block back to `integrations/claude-code/hooks/hooks.json`
+and to the event list in `the_plugin_registers_exactly_the_events_the_adapter_parses`
+(`crates/acs-adapters/src/claude_code.rs`). Antigravity's `PreInvocation` hook stays: it is
+that harness's session start.
+
 **WP8.3 (deferred edits)** — build on undo's pieces: `acs_git::merge::merge_file` for the 3-way
 merge, `acs_store::undo` for "what was the base", and count queued edits in `acs stats` (the
 bucket is left out until then). **WP9.2 (`acs verify --base --head`)** extends
