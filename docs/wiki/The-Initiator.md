@@ -22,6 +22,7 @@ acs doctor
 
 - `acs plugin install claude-code` turns on the ACS plugin for this repository by writing `.claude/settings.json`. Keep the default scope, `project`: it is the one that reaches your team when you commit it. `--scope user` would apply ACS to every repository you open, including ones that never adopted it.
 - `acs init` writes the policy files to `.acs/policy/`, adds a git setting for sharing claims and installs git hooks. A claim is one session's temporary hold on one file. It is safe to run `acs init` again.
+- If your main branch is not called `main` (for example `master` or `develop`), `acs init` finds it from the remote's `HEAD` and writes it into the policy, so claims are compared on the right branch and agents cannot rewrite its history. Its output has a `Main branch` line; check it.
 - `acs init` also proposes zones for `territory.toml` from folder names and recent git history, and prints them. It writes them only if you run `acs init --yes` or answer yes when it asks. See [Zones acs init proposes](Configuring-Policy#zones-acs-init-proposes).
 - `acs doctor` checks the result. Look for `0 failure(s)` and no warning on the `Claude Code plugin` line.
 
@@ -92,3 +93,27 @@ Claims travel through hidden refs (`refs/acs/*`), not through your commits.
 - Normal clones and pulls do not fetch them. After `acs init` they appear in `git branch -r` as `origin/acs/claims/<id>`. That is expected.
 
 On your own machine, ACS keeps its state in `~/.acs` (or the folder in `ACS_HOME`), outside the repository. It holds claims, an event log and snapshots, and it is shared by all clones and worktrees of a repository on that machine.
+
+## Removing ACS
+
+One command takes ACS out of a repository. Look first:
+
+```bash
+acs uninstall --dry-run
+```
+
+Then, in your own terminal:
+
+```bash
+acs uninstall
+```
+
+It always removes what `acs init` and `acs plugin install` added to your clone: the ACS block in each git hook (a hook of yours that ACS moved aside is put back), the git setting that fetches claims, the local claim refs, and the ACS entries in `.claude/settings.json`. Your hooks and settings end up exactly as they were.
+
+It asks before deleting three more things, each on its own:
+
+- the policy in `.acs/policy/`, which is your team's (`--policy`);
+- this repository's history and claims in ACS's folder on your machine, shared by every clone of it there (`--state`);
+- the claim and session refs on the remote, which your teammates see (`--remote-refs`).
+
+`--all` says yes to all three; `--json` asks nothing and keeps them unless you pass the flags. Commit what it changed in the repository (`.acs/policy/`, `.claude/settings.json`, `.husky/`) so teammates stop using ACS too. `acs init` sets ACS up again. The `acs` program itself stays installed.

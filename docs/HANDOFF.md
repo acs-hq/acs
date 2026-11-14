@@ -108,6 +108,20 @@ be added there**, and to the table in `a_read_is_recorded_only_where_a_feature_n
 open for that. `benches/hook_paths.rs` now also measures these calls, without budgets.
 **Reinstall `acs` after merging**; no schema change.
 
+**`acs uninstall` and main-branch detection (2026-11-14, decisions 0039 and 0040, issues 63
+and 67).** `acs uninstall` always removes the hook blocks, the fetch refspecs, local
+`refs/acs/*`, the plugin entries in `.claude/settings*.json` and `.agents/plugins/acs/`; it
+removes `.acs/policy/`, the local state and the remote refs only with `--policy`, `--state`,
+`--remote-refs` (or `--all`), or a yes in a terminal. Settings files are edited entry by entry
+with `serde_json`'s `raw_value` (`commands/uninstall/settings.rs`), so the rest stays byte for
+byte. **Anything new that `acs init` or `acs plugin install` writes must be removed by
+`acs uninstall` too**, and `crates/acs-cli/tests/cli_uninstall.rs` checks byte identity: extend
+its setup. `acs init` now writes a main branch other than `main` into the policy files it
+creates (`commands/init/branch.rs`), and `acs doctor` has a `target_branch` check.
+`tests/e2e/real/uninstall.sh` runs both against the real `claude` CLI without model calls
+(passed 2026-11-14). The interactive questions of `acs uninstall` have no automated test (they
+need a terminal). **Reinstall `acs` after merging**; no schema change.
+
 ## 1. Where things stand
 
 - `main` has Phase 0, Phase 1, **Phase 2 (WP2.1–WP2.6)**, **Phase 3 (WP3.1)**, including the rule

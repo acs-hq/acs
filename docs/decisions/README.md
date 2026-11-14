@@ -54,3 +54,5 @@ Every new record says who decided, in its status line: `Decided by: the human` o
 | [0036](0036-no-prompt-submit-hook-until-notices-exist.md) | The Claude Code plugin registers no prompt-submit hook until notices exist | You; leaving Antigravity's hook in place is Claude's (it is that harness's session start) | Register it again when Phase 8 builds the first notice |
 | [0037](0037-snapshot-cleanup-runs-in-sync.md) | The copies kept for undo are trimmed to 500 MiB per repository during `acs sync` | Claude (budget, when it runs, crashed seats not counted as live) | Whether the budget should become a setting |
 | [0038](0038-help-flags-are-read-only.md) | `acs <subcommand> --help` is allowed to agents when help is all the command does | Claude | None |
+| [0039](0039-acs-uninstall.md) | `acs uninstall`: hooks, refspecs, refs and plugin entries always; policy, local state and remote refs on request | Claude, on the scope issue 63 set | None |
+| [0040](0040-the-main-branch-is-detected-at-init.md) | `acs init` writes the main branch when it is not `main`; `acs doctor` warns about a missing target branch | Claude, on the rule issue 67 set | None |

@@ -56,7 +56,7 @@ file at once, how `acs off` relates to it, and what remote claims do.
 | Key | Default | Verdict | Why |
 | --- | --- | --- | --- |
 | `spec` | `"acs/0.1"` (required) | Keep | Not a choice |
-| `default_target_branch` | `"main"` | **Change how it is set** | A repository whose main branch is `master` or `develop` gets a wrong value silently. `acs init` should read the remote's default branch and write it. The value itself can stay `main` when nothing can be detected |
+| `default_target_branch` | `"main"` | **Done (decision 0040)** | `acs init` reads the remote's `HEAD` (else a current branch named `main`, `master` or `develop`) and writes it when it is not `main`; `acs doctor` warns when the branch does not exist. The value stays `main` when nothing can be detected |
 | `claim_ttl_secs` | `900` (15 minutes) | Keep | It measures silence, not how long a file is held. Shorter loses claims during long test runs; longer keeps a crashed session's files held. In observe mode nothing is blocked, so a wrong value costs little. For enforce mode the fix is issue 32 (one long command loses all claims), not a different number |
 | `sync_interval_secs` | `30` | Keep | Only matters once sync is switched on. Claims are pushed about every 3 minutes whatever this says (a heartbeat is published after a quarter of the TTL); the interval mostly sets how fresh the fetched view is |
 | `[ledger] store_prompts` | `false` | Keep, and **remove from the template** | Nothing in the code reads it: prompts are never stored either way (issue 46). A commented key that does nothing invites someone to set it |
@@ -74,7 +74,7 @@ which is a change to the frozen policy types and schemas; `claims` is a boolean 
 | Key | Default | Verdict |
 | --- | --- | --- |
 | `sealed` | Adds to the built-in list of 13 patterns; the built-ins cannot be removed | Keep, except the two cases in issue 62 |
-| `protected_branches` | `["main", "release/*"]` | **Add the detected default branch.** A repository on `master` has no protected branch today |
+| `protected_branches` | `["main", "release/*"]` | **Done (decision 0040):** `acs init` adds the detected main branch to the defaults when it is not `main` |
 | `protect_outside_repo` | `false` | Keep (decision 0027) |
 | `[destructive] max_files_deleted_outside_claims` | `0` | Keep for enforce mode; not enforced in observe mode |
 | `[destructive] max_files_deleted_per_command` | `50` | Keep |
@@ -141,6 +141,6 @@ hooks and plugins under `.agents/` and `.agent/`. `acs status --sealed` prints i
 
 - **Copies kept for undo were never cleaned up** (issue 68; confirmed by a run, fixed by decision
   0037: `acs sync` now trims them to 500 MiB per repository).
-- **A repository on `master` gets two wrong defaults at once** (`default_target_branch` and
-  `protected_branches`), with no warning.
+- **A repository on `master` got two wrong defaults at once** (`default_target_branch` and
+  `protected_branches`), with no warning (issue 67; fixed by decision 0040).
 - **`store_prompts` is a setting with no effect.**
