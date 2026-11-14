@@ -382,3 +382,204 @@ fn denials_name_no_tool_whose_feature_is_off() {
     assert!(!d.message.contains("acs_lore_propose"), "{}", d.message);
     assert!(d.message.contains("lore is switched off"), "{}", d.message);
 }
+
+// Decision 0035: a tool event that no switched-on feature needs ends early.
+
+fn read_event(agent: &Agent<'_>, phase: &str) -> acs_core::Decision {
+    agent.send(
+        phase,
+        serde_json::json!({"tool": {"name": "Read", "kind": "read"}, "paths": ["src/lib.rs"]}),
+    )
+}
+
+/// How many events of `phase` the seat of `agent` has recorded.
+fn recorded(agent: &Agent<'_>, phase: acs_core::Phase) -> usize {
+    let events = agent.world.db().seat_events(&agent.seat_id()).unwrap();
+    events.iter().filter(|e| e.phase == phase).count()
+}
+
+fn has_seat(agent: &Agent<'_>) -> bool {
+    let db = agent.world.db();
+    db.seat_by_session(agent.harness, &agent.session)
+        .unwrap()
+        .is_some()
+}
+
+fn tool_markers(world: &World) -> usize {
+    fs::read_dir(world.repo_home().pending_dir().join("tool")).map_or(0, Iterator::count)
+}
+
+#[test]
+fn a_read_is_recorded_only_where_a_feature_needs_it() {
+    use acs_core::Phase::{PostTool, PreTool};
+    // (switches, pre-tool read recorded, post-tool read recorded)
+    for (features, before, after) in [
+        ("", 1, 1),
+        ("lore = false", 0, 1),
+        ("claims = false", 1, 0),
+        ("lore = false\nclaims = false", 0, 0),
+        // Sync checks after a read whether it is due.
+        ("claims = false\nsync = true", 1, 1),
+    ] {
+        let world = world_with(features);
+        let agent = Agent::new(&world, "claude-code", "c1");
+        agent.start();
+        assert!(allowed(&read_event(&agent, "pre_tool")), "{features}");
+        assert!(allowed(&read_event(&agent, "post_tool")), "{features}");
+        assert_eq!(recorded(&agent, PreTool), before, "pre-tool, {features:?}");
+        assert_eq!(recorded(&agent, PostTool), after, "post-tool, {features:?}");
+    }
+}
+
+#[test]
+fn a_skipped_event_creates_no_seat() {
+    let world = world_with("lore = false\nclaims = false");
+    let agent = Agent::new(&world, "antigravity", "g1");
+    assert!(allowed(&agent.send("prompt_submit", serde_json::json!({}))));
+    assert!(allowed(&read_event(&agent, "pre_tool")));
+    assert!(allowed(&read_event(&agent, "post_tool")));
+    assert!(!has_seat(&agent), "nothing needed a seat yet");
+    // The first event that is never skipped creates it.
+    assert!(allowed(&agent.pre_edit("src/lib.rs")));
+    assert!(has_seat(&agent));
+
+    // With every switch at its default a prompt alone creates no seat either: nothing can be
+    // waiting for a session that has none.
+    let world = World::new();
+    let agent = Agent::new(&world, "antigravity", "g1");
+    assert!(allowed(&agent.send("prompt_submit", serde_json::json!({}))));
+    assert!(!has_seat(&agent));
+}
+
+#[test]
+fn after_a_write_or_a_command_nothing_is_recorded_with_history_claims_and_sync_off() {
+    use acs_core::Phase::PostTool;
+    let run = |features: &str| {
+        let world = world_with(features);
+        let agent = Agent::new(&world, "claude-code", "c1");
+        agent.start();
+        assert!(allowed(&agent.pre_edit("src/lib.rs")));
+        agent.post_edit("src/lib.rs");
+        assert!(allowed(&agent.pre_shell("./build.sh")));
+        assert_eq!(tool_markers(&world), 1, "the running command, {features:?}");
+        agent.post_shell("./build.sh");
+        // The marker is used up either way, or `acs watch` would see a command that never ends.
+        assert_eq!(tool_markers(&world), 0, "{features:?}");
+        recorded(&agent, PostTool)
+    };
+    assert_eq!(run("history = false\nclaims = false"), 0);
+    assert_eq!(
+        run("history = false"),
+        2,
+        "claims refresh after a tool call"
+    );
+    assert_eq!(run("claims = false"), 2, "history attributes the change");
+}
+
+#[test]
+fn self_protection_and_the_status_message_are_never_skipped() {
+    let world = world_with(
+        "claims = false\nguards = false\nterritory = false\nlore = false\nhistory = false\n\
+         commit_checks = false",
+    );
+    let agent = Agent::new(&world, "claude-code", "c1");
+    let context = agent.start().context.join("\n");
+    assert!(context.contains("switched off"), "{context}");
+    assert!(has_seat(&agent));
+    let d = agent.pre_edit(".acs/policy/config.toml");
+    assert_eq!(
+        (d.outcome, d.reason_code),
+        (Outcome::Deny, ReasonCode::SealedPath)
+    );
+    assert_eq!(agent.pre_shell("acs off").outcome, Outcome::Deny);
+    // What `acs_why` reads is still recorded: the denied calls and the last decision.
+    assert_eq!(recorded(&agent, acs_core::Phase::PreTool), 2);
+    let last = world.db().last_decision(&agent.seat_id()).unwrap().unwrap();
+    assert_eq!(last.outcome, Outcome::Deny);
+}
+
+#[test]
+fn session_end_always_ends_the_seat() {
+    use acs_core::Phase::SessionEnd;
+    let run = |features: &str| {
+        let world = world_with(features);
+        let agent = Agent::new(&world, "claude-code", "c1");
+        agent.start();
+        assert!(allowed(&agent.pre_shell("./build.sh")));
+        agent.end();
+        assert!(agent.info().ended_at.is_some(), "{features:?}");
+        assert!(world.db().live_seats().unwrap().is_empty(), "{features:?}");
+        assert_eq!(tool_markers(&world), 0, "{features:?}");
+        recorded(&agent, SessionEnd)
+    };
+    assert_eq!(run(""), 1);
+    assert_eq!(run("claims = false"), 1, "history records the session");
+    assert_eq!(run("claims = false\nhistory = false"), 0);
+}
+
+/// A session that only reads, in a repository where no feature needs a read, must not look
+/// dead: after an hour of silence `acs sync` would record it as crashed, and the MCP server
+/// would stop taking it for the most recently active session.
+#[test]
+fn a_session_whose_events_are_skipped_stays_alive() {
+    use acs_core::{Phase, Timestamp};
+    let world = world_with("lore = false\nclaims = false");
+    let adapter = acs_adapters::by_name("canonical").unwrap();
+    let agent = Agent::new(&world, "claude-code", "c1");
+    let send = |phase: Phase, name: &str, extra: Value, at: Timestamp| {
+        let env = acs_cli::hook::HookEnv {
+            process_cwd: world.repo.clone(),
+            home: Ok(world.acs_home()),
+            scan: acs_git::status::ScanOptions::default(),
+            now: at,
+        };
+        let payload = agent.event(name, extra).to_string();
+        let _ = acs_cli::hook::run(adapter, Some(phase), payload.as_bytes(), env);
+    };
+    let read = serde_json::json!({"tool": {"name": "Read", "kind": "read"}, "paths": ["a.txt"]});
+    let start = Timestamp::now().as_second();
+    let at = |minutes: i64| Timestamp::from_second(start + minutes * 60).unwrap();
+    let last_seen = || agent.info().seat.last_seen_at.as_second();
+
+    send(
+        Phase::SessionStart,
+        "session_start",
+        serde_json::json!({}),
+        at(0),
+    );
+    // Reading for seventy minutes, one file every ten.
+    for minutes in (10..=70).step_by(10) {
+        send(Phase::PreTool, "pre_tool", read.clone(), at(minutes));
+        send(Phase::PostTool, "post_tool", read.clone(), at(minutes));
+    }
+    assert_eq!(
+        recorded(&agent, Phase::PreTool),
+        0,
+        "the reads were skipped"
+    );
+    assert_eq!(
+        recorded(&agent, Phase::PostTool),
+        0,
+        "the reads were skipped"
+    );
+    assert_eq!(last_seen(), at(70).as_second());
+    let crashed_before = Timestamp::from_second(at(70).as_second() - 3600).unwrap();
+    let stale = world.db().stale_live_seats(crashed_before).unwrap();
+    assert!(
+        stale.is_empty(),
+        "the session is not taken for a crashed one"
+    );
+
+    // The seat is not written on every skipped event: within five minutes it is left alone.
+    send(Phase::PreTool, "pre_tool", read.clone(), at(72));
+    assert_eq!(last_seen(), at(70).as_second());
+    send(
+        Phase::PromptSubmit,
+        "prompt_submit",
+        serde_json::json!({}),
+        at(74),
+    );
+    assert_eq!(last_seen(), at(70).as_second());
+    send(Phase::PostTool, "post_tool", read, at(75));
+    assert_eq!(last_seen(), at(75).as_second());
+}
