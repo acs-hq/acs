@@ -535,7 +535,7 @@ fn check_policy(layout: &RepoLayout, policy_dir: &Path) -> (Check, bool) {
             (Check::warn(ID, TITLE, message), true)
         }
         Err(err) => (
-            Check::warn(
+            Check::fail(
                 ID,
                 TITLE,
                 format!(
