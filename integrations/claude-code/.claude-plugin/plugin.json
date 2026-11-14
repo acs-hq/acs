@@ -5,6 +5,6 @@
   "author": { "name": "ACS contributors" },
   "homepage": "https://github.com/acs-hq/acs",
   "repository": "https://github.com/acs-hq/acs",
-  "license": "MIT OR Apache-2.0",
+  "license": "Apache-2.0",
   "keywords": ["coordination", "claims", "multi-agent", "git"]
 }
