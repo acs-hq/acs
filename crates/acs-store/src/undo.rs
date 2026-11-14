@@ -264,6 +264,18 @@ fn blob_of(store: &SnapshotStore, key: Option<&ContentHash>) -> Result<Vec<u8>, 
     key.map_or_else(|| Ok(Vec::new()), |hash| store.read_blob(hash))
 }
 
+/// Why a copy cannot be used, in words for the person reading the plan. A copy that cleanup
+/// removed says so, and that it was to save space.
+fn why_unusable(err: &SnapshotError) -> String {
+    match err {
+        SnapshotError::Evicted { .. } => {
+            "the copy ACS kept of this file was removed to save space, so it cannot be put back"
+                .to_owned()
+        }
+        other => other.to_string(),
+    }
+}
+
 fn item(
     path: &RepoPath,
     action: UndoAction,
@@ -407,7 +419,7 @@ fn plan_path(
             FileState::File { hash, mode, .. } => {
                 // Check the blob now, so a dry run knows it will be there.
                 if let Err(err) = store.read_blob(hash) {
-                    return Ok(unknown(&format!("{err}"), current_key));
+                    return Ok(unknown(&why_unusable(&err), current_key));
                 }
                 Effect::Restore {
                     hash: hash.clone(),
@@ -442,7 +454,7 @@ fn plan_path(
         blob_of(store, pre_key.as_ref()),
     ) {
         (Ok(post), Ok(pre)) => (post, pre),
-        (Err(err), _) | (_, Err(err)) => return Ok(unknown(&format!("{err}"), current_key)),
+        (Err(err), _) | (_, Err(err)) => return Ok(unknown(&why_unusable(&err), current_key)),
     };
     Ok(match merge(current_bytes, &post_bytes, &pre_bytes) {
         MergeResult::Clean(bytes) => item(

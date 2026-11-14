@@ -9,11 +9,13 @@
 //! - [`gate`] runs the decision engine against the current claims and acquires the claims.
 //! - [`ops`] holds the operations later work packages call: [`status`], [`claim_paths`],
 //!   [`release_paths`], [`set_intent`] and [`last_decision`].
+//! - [`cleanup`] keeps the copies kept for undo within their size budget, from `acs sync`.
 //! - [`sync`] starts detached syncs and holds the lock that keeps one running at a time.
 //! - [`protect`] supplies the overrides in force for a seat and the locations outside the
 //!   repository that agents may never write.
 //! - [`lore`] picks the lore a seat has not been shown yet for the paths of a tool call.
 
+pub mod cleanup;
 mod context;
 pub mod gate;
 pub mod lore;

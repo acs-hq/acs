@@ -12,7 +12,7 @@ use serde_json::json;
 
 use super::support::{CliError, OutputArgs, finish, open_repo, print_json, wrap};
 use crate::runtime::records::{self, FinalizeReport};
-use crate::runtime::{OpError, sync};
+use crate::runtime::{OpError, cleanup, sync};
 
 /// Arguments of `acs sync`.
 #[derive(Debug, Args)]
@@ -67,6 +67,12 @@ fn execute(args: &SyncArgs) -> Result<ExitCode, CliError> {
         warnings: vec![format!("could not write session records: {err}")],
         ..FinalizeReport::default()
     });
+    // Then the copies kept for undo are trimmed to their budget, whatever team sync is doing and
+    // never on a hook's path. With `history` off nothing new is captured, so the store is left
+    // as it is and what is in it stays usable. A failure here must not stop the sync.
+    if ctx.features().history {
+        let _ = cleanup::clean_snapshots(&ctx, Timestamp::now());
+    }
     if !ctx.features().sync {
         say(
             json,
