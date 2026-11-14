@@ -20,6 +20,7 @@ deny: acs hook --canonical session_end
 deny: acs mcp
 deny: acs doctor --fix
 deny: acs undo ses_abc --apply
+deny: acs undo --last --apply
 deny: acs lore review
 deny: acs lore review --accept prop_abc
 deny: acs lore review --reject prop_abc --json
@@ -139,6 +140,7 @@ allow: acs blame src/lib.rs
 allow: acs stats
 allow: acs verify
 allow: acs undo ses_abc
+allow: acs undo --last
 allow: acs --version
 allow: acs claim --help
 allow: acs claim -h

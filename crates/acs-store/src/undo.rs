@@ -204,6 +204,35 @@ impl StateDb {
         }
         Ok(seats)
     }
+
+    /// The agent seats that changed files (they have attributions), most recent first: by when
+    /// the seat ended, or, for a seat that has not ended, when it was last seen. Seats of the
+    /// `human` pseudo-harness are left out. At most `limit` seats. `acs undo --last` takes the
+    /// first.
+    ///
+    /// # Errors
+    ///
+    /// Any [`StoreError`].
+    pub fn seats_that_changed_files(&self, limit: usize) -> Result<Vec<SeatInfo>, StoreError> {
+        let ids: Vec<String> = {
+            let mut stmt = self.conn.prepare_cached(
+                "SELECT seat_id FROM seats s WHERE harness <> 'human' \
+                 AND EXISTS (SELECT 1 FROM attributions a WHERE a.seat_id = s.seat_id) \
+                 ORDER BY coalesce(ended_at, last_seen_at) DESC, last_seen_at DESC, seat_id \
+                 LIMIT ?1",
+            )?;
+            let limit = i64::try_from(limit).unwrap_or(i64::MAX);
+            stmt.query_map(params![limit], |row| row.get(0))?
+                .collect::<Result<_, _>>()?
+        };
+        let mut seats = Vec::new();
+        for id in ids {
+            if let Some(info) = self.seat_info(&id_from_db(id)?)? {
+                seats.push(info);
+            }
+        }
+        Ok(seats)
+    }
 }
 
 /// The key of a state for comparisons: its content hash, `None` for an absent file.

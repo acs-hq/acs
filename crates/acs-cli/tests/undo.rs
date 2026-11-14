@@ -303,6 +303,177 @@ fn a_rejected_undo_commit_leaves_the_files_restored_and_exits_1() {
     assert_eq!(read(&world, "a.txt"), "a\n");
 }
 
+fn stderr(out: &Output) -> String {
+    String::from_utf8_lossy(&out.stderr).into_owned()
+}
+
+/// Two sessions that changed files: `first` started first but ended last.
+fn two_sessions(world: &World) -> (String, String) {
+    let first = Agent::new(world, "claude-code", "first");
+    first.start();
+    world
+        .db()
+        .set_seat_intent(&first.seat_id(), "Rename the config loader")
+        .unwrap();
+    edit(&first, "a.txt", "changed by first\n");
+    let second = Agent::new(world, "claude-code", "second");
+    second.start();
+    edit(&second, "src/lib.rs", "pub fn second() {}\n");
+    world.tick();
+    second.end();
+    world.tick();
+    first.end();
+    (session_id(&first), session_id(&second))
+}
+
+#[test]
+fn last_picks_the_session_that_ended_most_recently_and_names_it() {
+    let world = World::new();
+    let (first, second) = two_sessions(&world);
+    let out = undo(&world, &["--last"]);
+    assert!(out.status.success(), "{out:?}");
+    let shown = text(&out);
+    assert!(
+        shown.starts_with(&format!("Undo plan for the last session, {first}\n")),
+        "{shown}"
+    );
+    assert!(!shown.contains(&second), "{shown}");
+    assert!(
+        shown.contains("Intent: Rename the config loader"),
+        "{shown}"
+    );
+    assert!(shown.contains(", ended "), "{shown}");
+    assert!(shown.contains("a.txt"), "{shown}");
+    assert!(!shown.contains("src/lib.rs"), "{shown}");
+    // The dry run names the id to apply, so a session that ends in between cannot slip in.
+    assert!(
+        shown.contains(&format!("acs undo {first} --apply")),
+        "{shown}"
+    );
+    assert!(shown.lines().all(|l| l.chars().count() <= 80), "{shown}");
+    assert_eq!(read(&world, "a.txt"), "changed by first\n");
+}
+
+#[test]
+fn last_with_apply_undoes_that_session() {
+    let world = World::new();
+    let (first, _) = two_sessions(&world);
+    let out = undo(&world, &["--last", "--apply"]);
+    assert!(out.status.success(), "{out:?}");
+    let shown = text(&out);
+    assert!(
+        shown.starts_with(&format!("Undo of the last session, {first}\n")),
+        "{shown}"
+    );
+    assert_eq!(read(&world, "a.txt"), "a\n");
+    // The other session's change is left alone.
+    assert_eq!(read(&world, "src/lib.rs"), "pub fn second() {}\n");
+}
+
+#[test]
+fn last_says_which_session_it_picked_in_json() {
+    let world = World::new();
+    let (first, _) = two_sessions(&world);
+    let out = undo(&world, &["--last", "--json"]);
+    assert!(out.status.success(), "{out:?}");
+    let view: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(view["session"], first.as_str());
+    assert_eq!(view["picked_by"], "last");
+    assert_eq!(view["intent"], "Rename the config loader");
+    assert!(view["ended_at"].is_string(), "{view}");
+    assert_eq!(view["live"], false);
+    assert_eq!(view["applied"], false);
+
+    let by_id = undo(&world, &[&first, "--json"]);
+    let view: Value = serde_json::from_slice(&by_id.stdout).unwrap();
+    assert_eq!(view["picked_by"], "id");
+}
+
+#[test]
+fn last_skips_sessions_that_changed_nothing() {
+    let world = World::new();
+    let sid = finished_session(&world);
+    let reader = Agent::new(&world, "claude-code", "reader");
+    reader.start();
+    reader.end();
+    // A running session that has not changed anything does not stop `--last` either.
+    let idle = Agent::new(&world, "claude-code", "idle");
+    idle.start();
+    let out = undo(&world, &["--last", "--json"]);
+    assert!(out.status.success(), "{out:?}");
+    let view: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(view["session"], sid.as_str());
+}
+
+#[test]
+fn last_stops_when_the_most_recent_session_is_still_running() {
+    let world = World::new();
+    let ended = finished_session(&world);
+    world.tick();
+    let running = Agent::new(&world, "claude-code", "running");
+    running.start();
+    world
+        .db()
+        .set_seat_intent(&running.seat_id(), "Tidy the README")
+        .unwrap();
+    edit(&running, "src/util.rs", "pub fn running() {}\n");
+    let live = session_id(&running);
+
+    for args in [vec!["--last"], vec!["--last", "--apply"]] {
+        let out = undo(&world, &args);
+        assert_eq!(out.status.code(), Some(1), "{args:?}: {out:?}");
+        assert!(text(&out).is_empty(), "{args:?}: {}", text(&out));
+        let err = stderr(&out);
+        assert!(err.contains("may still be running"), "{err}");
+        assert!(err.contains(&live), "{err}");
+        assert!(err.contains("\"Tidy the README\""), "{err}");
+        assert!(err.contains(&format!("`acs undo {ended}`")), "{err}");
+    }
+    assert_eq!(read(&world, "src/util.rs"), "pub fn running() {}\n");
+    assert_eq!(read(&world, "a.txt"), "a changed by the session\n");
+
+    let out = undo(&world, &["--last", "--apply", "--json"]);
+    assert_eq!(out.status.code(), Some(1));
+    let view: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(view["error"]["code"], "session_live");
+
+    // Once it has ended, `--last` takes it.
+    running.end();
+    let out = undo(&world, &["--last", "--apply"]);
+    assert!(out.status.success(), "{out:?}");
+    assert_eq!(read(&world, "src/util.rs"), "pub fn util() {}\n");
+    assert_eq!(read(&world, "a.txt"), "a changed by the session\n");
+}
+
+#[test]
+fn last_without_a_session_that_changed_files_says_so() {
+    let world = World::new();
+    let reader = Agent::new(&world, "claude-code", "reader");
+    reader.start();
+    reader.end();
+    let out = undo(&world, &["--last"]);
+    assert_eq!(out.status.code(), Some(1), "{out:?}");
+    assert!(stderr(&out).contains("nothing to undo"), "{out:?}");
+    let out = undo(&world, &["--last", "--json"]);
+    let view: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(view["error"]["code"], "no_session");
+}
+
+#[test]
+fn last_and_a_session_id_exclude_each_other_and_one_is_needed() {
+    let world = World::new();
+    let sid = finished_session(&world);
+    let neither = undo(&world, &[]);
+    assert_eq!(neither.status.code(), Some(2), "{neither:?}");
+    assert!(stderr(&neither).contains("--last"), "{neither:?}");
+    let both = undo(&world, &[&sid, "--last"]);
+    assert_eq!(both.status.code(), Some(2), "{both:?}");
+    assert!(stderr(&both).contains("cannot be used with"), "{both:?}");
+    let apply_only = undo(&world, &["--apply"]);
+    assert_eq!(apply_only.status.code(), Some(2), "{apply_only:?}");
+    assert_eq!(read(&world, "a.txt"), "a changed by the session\n");
+}
+
 #[test]
 fn json_lists_every_file_with_its_outcome() {
     let world = World::new();

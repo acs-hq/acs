@@ -248,6 +248,13 @@ pub fn age(now: Timestamp, at: Timestamp) -> String {
     short_duration(now.as_second().saturating_sub(at.as_second()))
 }
 
+/// A timestamp to the minute in UTC, as `2026-11-14 09:30Z`.
+#[must_use]
+pub fn when(at: Timestamp) -> String {
+    let text = at.to_string();
+    format!("{} {}Z", &text[..10], &text[11..16])
+}
+
 // ---------------------------------------------------------------------------------------------
 // PATH
 // ---------------------------------------------------------------------------------------------
