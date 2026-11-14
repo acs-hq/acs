@@ -921,6 +921,9 @@ mod tests {
         let hooks = hooks["hooks"].as_object().expect("hooks object");
         let mut events: Vec<&str> = hooks.keys().map(String::as_str).collect();
         events.sort_unstable();
+        // `UserPromptSubmit` is parsed but not registered (decision 0036): its only job is
+        // delivering notices, and nothing creates a notice before Phase 8 (WP8.2, WP8.3).
+        // Whoever builds the first notice adds it back here and in `hooks.json`.
         assert_eq!(
             events,
             [
@@ -928,8 +931,7 @@ mod tests {
                 "PostToolUseFailure",
                 "PreToolUse",
                 "SessionEnd",
-                "SessionStart",
-                "UserPromptSubmit"
+                "SessionStart"
             ]
         );
         for (event, groups) in hooks {

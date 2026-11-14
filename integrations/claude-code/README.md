@@ -2,9 +2,10 @@
 
 Bundles the ACS hooks, the ACS MCP server and the `acs-setup` and `acs-usage` skills for Claude Code.
 
-- `hooks/hooks.json` runs `acs hook claude-code` on SessionStart, UserPromptSubmit, PreToolUse,
-  PostToolUse, PostToolUseFailure and SessionEnd. The hooks deny a tool call that would overwrite
-  a file another agent has claimed and tell Claude who holds it.
+- `hooks/hooks.json` runs `acs hook claude-code` on SessionStart, PreToolUse, PostToolUse,
+  PostToolUseFailure and SessionEnd. The hooks deny a tool call that would overwrite a file
+  another agent has claimed and tell Claude who holds it. UserPromptSubmit is not registered
+  until ACS has notices to deliver (decision 0036).
 - `.mcp.json` registers `acs mcp --harness claude-code` as the MCP server `acs`.
 - `skills/` holds copies of the canonical skills in the repository's `skills/` directory. Edit
   those and copy them here; a test fails if they differ.
