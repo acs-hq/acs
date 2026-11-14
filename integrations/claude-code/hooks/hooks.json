@@ -7,13 +7,6 @@
         ]
       }
     ],
-    "UserPromptSubmit": [
-      {
-        "hooks": [
-          { "type": "command", "command": "acs", "args": ["hook", "claude-code"], "timeout": 20 }
-        ]
-      }
-    ],
     "PreToolUse": [
       {
         "hooks": [

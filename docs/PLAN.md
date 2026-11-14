@@ -26,6 +26,7 @@ model), and the rest of WP10.1 and WP10.2. No release has been tagged.
 | 2026-11-13 | Every feature can be switched on or off per repository (`[features]` in `config.toml`, `acs features`); sync off by default is built | 0033 |
 | 2026-11-14 | What agents are told follows the switches: `acs mcp` lists only the tools of features that are on, and the plugin's rule and skill no longer assume claims | 0034 |
 | 2026-11-14 | `acs hook` ends early for a tool call that no switched-on feature needs (a read with lore off, and so on); the process still starts for every call | 0035 |
+| 2026-11-14 | The Claude Code plugin no longer runs `acs` on every user message; the hook comes back when Phase 8 builds the first notice (WP8.2, WP8.3) | 0036 |
 
 Open work is in GitHub issues, not in this file. Decisions are in `docs/decisions/`.
 
