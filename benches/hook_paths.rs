@@ -13,6 +13,10 @@
 //!   the same repository and with an `ACS_HOME` of its own, and the run fails when this build's p99
 //!   is over 20% worse and that costs over 15% of the path's p99 budget. Taking turns on one machine
 //!   keeps most runner noise out of the comparison.
+//!
+//! The calls of decision 0035 (tool calls that no switched-on feature needs) are measured too,
+//! without budgets.
+//!
 //! - `ACS_PERF_NO_ASSERT=1`: print the numbers without failing.
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]
@@ -36,6 +40,9 @@ const MAX_REGRESSION: f64 = 1.20;
 /// The share of a path's p99 budget a regression must also cost to count. A p99 of a few hundred
 /// calls is one of the slowest few, and the same code moves it by more than 20% between runs.
 const MIN_REGRESSION_OF_BUDGET: f64 = 0.15;
+
+/// The budget of a path that has none: it is measured to be compared, not judged.
+const NO_BUDGET: f64 = f64::INFINITY;
 
 /// A build of `acs` under test, with its own state.
 struct Build {
@@ -289,15 +296,126 @@ fn status(criterion: &mut Criterion) -> Measured {
     )
 }
 
+fn read() -> Value {
+    json!({"tool": {"name": "Read", "kind": "read"}, "paths": ["src/lib.rs"]})
+}
+
+/// Tool calls that no switched-on feature needs (decision 0035), next to what they are compared
+/// with: starting the process, and the same read where every switch is at its default. They have
+/// no budgets. With `ACS_PERF_BASE_BIN` the base build shows what the call cost before.
+fn unneeded_calls(criterion: &mut Criterion) -> Vec<Measured> {
+    const SAMPLES: usize = 200;
+    let budget = (NO_BUDGET, NO_BUDGET);
+    let world_with = |features: &str| {
+        let world = World::new();
+        world.write(
+            ".acs/policy/config.toml",
+            &format!(
+                "spec = \"acs/0.1\"
+
+[features]
+{features}
+"
+            ),
+        );
+        let builds = builds(&world);
+        for build in &builds {
+            hook(&world, build, "perf", "session_start", json!({}));
+            // The first call writes the policy cache.
+            hook(&world, build, "perf", "pre_tool", edit("src/util.rs"));
+        }
+        (world, builds)
+    };
+    let mut measured = Vec::new();
+    let mut round = 0;
+
+    let (world, builds) = world_with("");
+    measured.push(bench(
+        criterion,
+        "process start (acs --version)",
+        budget,
+        SAMPLES,
+        &builds,
+        |builds| {
+            round += 1;
+            turn_about(builds, round, |build| {
+                timed(&world, build, &["--version"], b"")
+            })
+        },
+    ));
+    for phase in ["pre_tool", "post_tool"] {
+        measured.push(bench(
+            criterion,
+            &format!("{phase} read, every switch at its default"),
+            budget,
+            SAMPLES,
+            &builds,
+            |builds| {
+                round += 1;
+                turn_about(builds, round, |build| {
+                    hook(&world, build, "perf", phase, read())
+                })
+            },
+        ));
+    }
+
+    let (world, builds) = world_with(
+        "lore = false
+claims = false",
+    );
+    for phase in ["pre_tool", "post_tool"] {
+        measured.push(bench(
+            criterion,
+            &format!("{phase} read, lore and claims off"),
+            budget,
+            SAMPLES,
+            &builds,
+            |builds| {
+                round += 1;
+                turn_about(builds, round, |build| {
+                    hook(&world, build, "perf", phase, read())
+                })
+            },
+        ));
+    }
+
+    let (world, builds) = world_with(
+        "history = false
+claims = false",
+    );
+    measured.push(bench(
+        criterion,
+        "post_tool shell, history and claims off",
+        budget,
+        SAMPLES,
+        &builds,
+        |builds| {
+            round += 1;
+            turn_about(builds, round, |build| {
+                hook(&world, build, "perf", "pre_tool", shell());
+                hook(&world, build, "perf", "post_tool", shell())
+            })
+        },
+    ));
+    measured
+}
+
 /// Prints one path and returns what is wrong with it.
 fn judge(path: &Measured) -> Vec<String> {
     let (p50, p99) = (percentile(&path.head, 0.50), percentile(&path.head, 0.99));
     let label = &path.label;
     let (p50_budget, p99_budget) = (path.p50_budget_ms, path.p99_budget_ms);
-    println!(
-        "{label}: n={} p50 {p50:.1} ms (budget {p50_budget}) p99 {p99:.1} ms (budget {p99_budget})",
-        path.head.len()
-    );
+    if p50_budget.is_finite() {
+        println!(
+            "{label}: n={} p50 {p50:.1} ms (budget {p50_budget}) p99 {p99:.1} ms (budget {p99_budget})",
+            path.head.len()
+        );
+    } else {
+        println!(
+            "{label}: n={} p50 {p50:.1} ms p99 {p99:.1} ms",
+            path.head.len()
+        );
+    }
     let mut problems = Vec::new();
     if p50 >= p50_budget {
         problems.push(format!("{label}: p50 {p50:.1} ms is over {p50_budget} ms"));
@@ -321,11 +439,12 @@ fn judge(path: &Measured) -> Vec<String> {
 
 fn main() -> ExitCode {
     let mut criterion = Criterion::default().configure_from_args();
-    let measured = [
+    let mut measured = vec![
         pre_tool_file_edit(&mut criterion),
         post_tool_shell(&mut criterion),
         status(&mut criterion),
     ];
+    measured.extend(unneeded_calls(&mut criterion));
     criterion.final_summary();
     let problems: Vec<String> = measured.iter().flat_map(judge).collect();
     for problem in &problems {
