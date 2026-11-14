@@ -54,4 +54,6 @@ Without the `acs` program on your `PATH`, the plugin's hooks do nothing and say 
 
 With team sync on, after `acs init`, `git branch -r` lists entries such as `origin/acs/claims/<id>`. These are not branches anyone works on: they are how ACS shares claims. See [How claims reach your team](The-Initiator#how-claims-reach-your-team).
 
+To take ACS out of your clone again, run `acs uninstall` (see [Removing ACS](Removing-ACS)).
+
 Next: [Working with ACS](Working-with-ACS).
