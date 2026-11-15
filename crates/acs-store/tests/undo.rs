@@ -71,13 +71,11 @@ impl Fixture {
             .unwrap();
     }
 
-    /// What the hook does around a file tool: a pre-image if the file exists, the change, a
-    /// post-image, and the attribution of the change.
+    /// What the hook does around a file tool: a pre-image (absent when the file does not exist
+    /// yet), the change, a post-image, and the attribution of the change.
     fn tool_write(&mut self, path: &str, bytes: Option<&[u8]>) {
         let pre = fs::read(self.abs(path)).ok();
-        if pre.is_some() {
-            self.capture(SnapshotKind::Pre, path);
-        }
+        self.capture(SnapshotKind::Pre, path);
         match bytes {
             Some(bytes) => self.write(path, bytes),
             None => fs::remove_file(self.abs(path)).unwrap(),
@@ -295,6 +293,27 @@ fn a_file_without_a_pre_image_is_unknown_and_never_touched() {
     assert_eq!(action(&p, "ghost.txt"), UndoAction::Unknown);
     assert!(apply(&f.store, &f.work, &p).is_empty());
     assert_eq!(f.read("sh.txt"), b"after");
+}
+
+#[test]
+fn a_tool_change_whose_pre_tool_step_never_ran_is_unknown_not_a_creation() {
+    // The file existed, but the pre-tool step took no image (the hook failed open or timed out):
+    // the post-tool step records a change with no before-hash. Deleting the file would destroy
+    // the person's content (W1 in docs/security/write-paths.md).
+    let mut f = fixture();
+    f.write("notes.txt", b"the person's notes");
+    fs::write(f.abs("notes.txt"), b"the person's notes, edited").unwrap();
+    f.capture(SnapshotKind::Post, "notes.txt");
+    f.attribute(
+        "notes.txt",
+        None,
+        Some(b"the person's notes, edited"),
+        AttributionSource::Tool,
+    );
+    let p = f.plan();
+    assert_eq!(action(&p, "notes.txt"), UndoAction::Unknown);
+    assert!(apply(&f.store, &f.work, &p).is_empty());
+    assert!(f.abs("notes.txt").exists());
 }
 
 #[test]

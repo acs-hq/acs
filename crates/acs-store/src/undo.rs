@@ -27,7 +27,7 @@ use acs_core::{ContentHash, RepoPath, SessionId};
 use rusqlite::params;
 use serde::Serialize;
 
-use crate::attributions::{AttributionSource, StoredAttribution};
+use crate::attributions::StoredAttribution;
 use crate::db::{StateDb, StoreError, id_from_db};
 use crate::seats::SeatInfo;
 use crate::snapshots::{
@@ -243,31 +243,26 @@ fn key(state: &FileState) -> Option<ContentHash> {
     }
 }
 
-/// The state of the session's first change's "before": the first pre-image, unless the session
-/// created the file (its first post-image came before any pre-image and the file tool recorded no
-/// before-hash), in which case the file was absent.
-fn before_state(
-    entries: &[&SnapshotEntry],
-    attributions: &[&StoredAttribution],
-) -> Option<FileState> {
+/// The state of the session's first change's "before": the first pre-image, if it was taken before
+/// the first post-image. The pre-tool step records a file that does not exist yet as
+/// [`FileState::Absent`], so a creation has a pre-image too.
+///
+/// Without such a pre-image the before-state is unknown, even when the first attribution has no
+/// before-hash: that is also what a change looks like whose pre-tool step never ran (the hook
+/// failed open or timed out, the state was busy, `history` was switched on in between), and
+/// taking it for a creation made undo delete a file that existed before the session (W1 in
+/// `docs/security/write-paths.md`).
+fn before_state(entries: &[&SnapshotEntry]) -> Option<FileState> {
     let first = |kind: SnapshotKind| {
         entries
             .iter()
             .filter(|e| e.kind == kind)
             .min_by_key(|e| e.seq)
     };
-    let pre = first(SnapshotKind::Pre);
-    let post = first(SnapshotKind::Post);
-    if let Some(pre) = pre
-        && post.is_none_or(|post| pre.seq < post.seq)
-    {
-        return Some(pre.state.clone());
-    }
-    // A file tool's pre-tool step takes no image of a file that does not exist, so a tool-made
-    // first change with no earlier before-hash created the file.
-    let first_attribution = attributions.iter().min_by_key(|a| a.id)?;
-    (first_attribution.via == AttributionSource::Tool && first_attribution.pre_hash.is_none())
-        .then_some(FileState::Absent)
+    let pre = first(SnapshotKind::Pre)?;
+    first(SnapshotKind::Post)
+        .is_none_or(|post| pre.seq < post.seq)
+        .then(|| pre.state.clone())
 }
 
 /// The state after the session's last change: the last post-image, or the hash the last
@@ -403,7 +398,7 @@ fn plan_path(
         )
     };
 
-    let Some(pre) = before_state(entries, attributions) else {
+    let Some(pre) = before_state(entries) else {
         return Ok(unknown(
             "no pre-image: ACS could not tell what the file was before the session",
             current_key,
