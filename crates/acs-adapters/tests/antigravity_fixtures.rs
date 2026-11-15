@@ -340,6 +340,132 @@ fn real_captures_parse_as_expected() {
     }
 }
 
+/// Payloads captured from a real `agy` 1.5.9 run on Windows (`real159_*.json`, 2026-11-15).
+/// Since 1.5.4 every payload names its event (`hookEventName`) and the agent's working
+/// directory (`cwd`, with backslashes), and a tool call carries an `id`.
+#[test]
+fn real_1_5_9_captures_parse_as_expected() {
+    let w = "C:\\Users\\dev\\proj";
+    let main = "3093fe1b-a936-4ac7-9f42-d281c9c52fbf";
+    let sub = "901d6e15-935c-4982-89db-058d7880d349";
+    let cases = [
+        (
+            "real159_pre_tool_read_file",
+            Phase::PreTool,
+            "read_file",
+            ToolKind::Read,
+            Some("C:\\Users\\dev\\proj\\src\\a.rs"),
+            main,
+        ),
+        (
+            "real159_pre_tool_edit_file",
+            Phase::PreTool,
+            "edit_file",
+            ToolKind::Edit,
+            Some("C:\\Users\\dev\\proj\\src\\a.rs"),
+            main,
+        ),
+        (
+            "real159_post_tool_edit_file",
+            Phase::PostTool,
+            "edit_file",
+            ToolKind::Edit,
+            Some("C:\\Users\\dev\\proj\\src\\a.rs"),
+            main,
+        ),
+        (
+            "real159_pre_tool_run_command",
+            Phase::PreTool,
+            "run_command (powershell)",
+            SHELL,
+            None,
+            main,
+        ),
+        (
+            "real159_pre_tool_invoke_subagent",
+            Phase::PreTool,
+            "invoke_subagent",
+            ToolKind::Other,
+            None,
+            main,
+        ),
+        (
+            "real159_pre_tool_manage_subagents",
+            Phase::PreTool,
+            "manage_subagents",
+            ToolKind::Other,
+            None,
+            main,
+        ),
+        // A subagent's calls carry its own conversation id and nothing that names its parent.
+        (
+            "real159_pre_tool_write_file_subagent",
+            Phase::PreTool,
+            "write_file",
+            ToolKind::Write,
+            Some("C:\\Users\\dev\\proj\\src\\b.rs"),
+            sub,
+        ),
+        (
+            "real159_pre_tool_send_message_subagent",
+            Phase::PreTool,
+            "send_message",
+            ToolKind::Other,
+            None,
+            sub,
+        ),
+    ];
+    for (file, phase, tool, kind, path, session) in cases {
+        // With the phase from the command line, and from `hookEventName` alone.
+        for given in [Some(phase), None] {
+            let event = parse(file, given);
+            assert_eq!(event.phase, phase, "{file}");
+            let t = event.tool.as_ref().unwrap();
+            assert_eq!((t.name.as_str(), t.kind), (tool, kind), "{file}");
+            assert_eq!(event.paths, path.into_iter().collect::<Vec<_>>(), "{file}");
+            assert_eq!(event.cwd, w, "{file}");
+            assert_eq!(event.harness_session_id, session, "{file}");
+            assert!(
+                event.raw["toolCall"]["id"]
+                    .as_str()
+                    .is_some_and(|id| id.starts_with("call_")),
+                "{file}"
+            );
+        }
+    }
+    // One call has the same id before and after.
+    assert_eq!(
+        parse("real159_pre_tool_edit_file", None).raw["toolCall"]["id"],
+        parse("real159_post_tool_edit_file", None).raw["toolCall"]["id"]
+    );
+    assert!(
+        parse("real159_post_tool_edit_file", None)
+            .result
+            .unwrap()
+            .success
+    );
+
+    // The counters are as in 1.4.12: a new conversation's first call has one initial step, a
+    // subagent's has none, and both are session starts, also without `--phase`.
+    for given in [Some(Phase::PromptSubmit), None] {
+        let first = parse("real159_pre_invocation_first", given);
+        assert_eq!(first.phase, Phase::SessionStart);
+        assert_eq!(first.harness_session_id, main);
+        let subagent = parse("real159_pre_invocation_subagent_first", given);
+        assert_eq!(subagent.phase, Phase::SessionStart);
+        assert_eq!(subagent.harness_session_id, sub);
+    }
+    assert_eq!(
+        parse("real159_session_start", None).phase,
+        Phase::SessionStart
+    );
+    // `Stop` ends a turn, not the session: it names no phase, and ACS registers no hook for it.
+    assert!(Antigravity.parse(None, &read("real159_stop")).is_err());
+    let stop = parse("real159_stop", Some(Phase::SessionEnd));
+    assert_eq!(stop.raw["fullyIdle"], false);
+    assert_eq!(stop.cwd, w);
+}
+
 #[test]
 fn edit_fixtures_carry_old_and_new_text() {
     let new = parse("pre_tool_edit_file", Some(Phase::PreTool))
@@ -520,6 +646,18 @@ fn every_fixture_is_covered_by_a_test() {
         "real_pre_tool_invoke_subagent",
         "real_pre_invocation_resumed_turn",
         "real_pre_invocation_subagent_first",
+        "real159_session_start",
+        "real159_pre_invocation_first",
+        "real159_pre_invocation_subagent_first",
+        "real159_pre_tool_read_file",
+        "real159_pre_tool_edit_file",
+        "real159_post_tool_edit_file",
+        "real159_pre_tool_run_command",
+        "real159_pre_tool_invoke_subagent",
+        "real159_pre_tool_manage_subagents",
+        "real159_pre_tool_write_file_subagent",
+        "real159_pre_tool_send_message_subagent",
+        "real159_stop",
         // Replayed by the MCP server tests (`crates/acs-cli/tests/mcp.rs`), not by the adapter.
         "mcp_tools_call.documented",
     ];

@@ -1,0 +1,21 @@
+{
+  "artifactDirectoryPath": "C:/Users/dev/.gemini/antigravity-cli/brain/901d6e15-935c-4982-89db-058d7880d349",
+  "conversationId": "901d6e15-935c-4982-89db-058d7880d349",
+  "cwd": "C:\\Users\\dev\\proj",
+  "hookEventName": "PreToolUse",
+  "lastUserInput": "",
+  "modelName": "gemini-3.8-flash-medium",
+  "stepIdx": 12,
+  "toolCall": {
+    "args": {
+      "Message": "I have appended `// sub` to `C:\\Users\\dev\\proj\\src\\b.rs`. The task is completed.",
+      "Recipient": "3093fe1b-a936-4ac7-9f42-d281c9c52fbf"
+    },
+    "id": "call_10744690628532176141",
+    "name": "send_message"
+  },
+  "transcriptPath": "C:/Users/dev/.gemini/antigravity-cli/brain/901d6e15-935c-4982-89db-058d7880d349/.system_generated/logs/transcript_full.jsonl",
+  "workspacePaths": [
+    "C:/Users/dev/proj"
+  ]
+}
