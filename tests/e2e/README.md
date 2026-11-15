@@ -28,3 +28,13 @@ cargo test -p acs-cli --test e2e_scenarios
 throwaway repository, for the manual check before each release (plan section 9.1). It spends real
 model calls, so CI does not run it. `real/check.mjs` judges the run from Claude Code's own logs, and
 the result goes in `docs/releases/`.
+
+Three more real-agent scripts cover what a first tester does. Each takes an empty scratch
+directory, prints one line per check and exits 1 when a check fails; `real/common.sh` holds what
+they share.
+
+| Script | What it checks |
+| --- | --- |
+| `real/first_run.sh` | `acs init --yes` and nothing else: an edit and a commit go through with the trailer, `.env` and a banned command hold, nothing reaches the remote, and `acs uninstall --all` leaves git's config, hooks and remote byte-identical |
+| `real/history.sh` | `acs log`, `acs blame`, `acs stats`, `acs verify`; `acs undo --last` keeps the other session's work byte-identical; a committed session is undone with a new commit; a person's commit against a live claim is rejected |
+| `real/guards.sh` | An agent asked to delete a folder, force-push, `git clean`, change `.env`, run `acs off` and commit with `--no-verify` is refused each time; `.env.example` and `.github/workflows/` stay writable. On Windows it runs again through the PowerShell tool |
