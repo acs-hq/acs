@@ -416,6 +416,28 @@ fn is_shell_script(text: &str) -> bool {
     )
 }
 
+/// In the begin line of a block: install added a newline to the line before the block (the file
+/// did not end in one), and removal takes it away again.
+const ADDED_NEWLINE: &str = "+nl";
+
+/// [`block`], marked with [`ADDED_NEWLINE`] when `added_newline`.
+fn block_marked(name: &str, added_newline: bool) -> String {
+    let text = block(name);
+    if !added_newline {
+        return text;
+    }
+    let version = format!(" v{BLOCK_VERSION} ");
+    text.replacen(&version, &format!(" v{BLOCK_VERSION}{ADDED_NEWLINE} "), 1)
+}
+
+/// Whether a block's begin line carries [`ADDED_NEWLINE`].
+fn has_added_newline(begin_line: &str, name: &str) -> bool {
+    begin_line
+        .strip_prefix(&begin_prefix(name))
+        .and_then(|rest| rest.split_whitespace().next())
+        .is_some_and(|version| version.ends_with(ADDED_NEWLINE))
+}
+
 /// The line index where the block goes: after the shebang, and after a `husky.sh` line near the
 /// top (so `HUSKY=0` still turns the hooks off before ACS runs).
 fn injection_point(lines: &[&str]) -> usize {
@@ -540,9 +562,9 @@ fn install_one(location: &HooksLocation, name: &str, path: &Path) -> Result<Acti
                 return wrap(path, name);
             }
             let lines: Vec<&str> = text.split_inclusive('\n').collect();
-            let wanted = block(name);
-            let mut out = String::with_capacity(text.len() + wanted.len());
+            let mut out = String::with_capacity(text.len() + block(name).len());
             let action = if let Some((start, stop)) = find_block(&lines, name) {
+                let wanted = block_marked(name, has_added_newline(lines[start], name));
                 let current: String = lines[start..=stop].concat();
                 if current == wanted {
                     return Ok(Action::Unchanged);
@@ -554,10 +576,11 @@ fn install_one(location: &HooksLocation, name: &str, path: &Path) -> Result<Acti
             } else {
                 let at = injection_point(&lines);
                 lines[..at].iter().for_each(|l| out.push_str(l));
-                if !out.is_empty() && !out.ends_with('\n') {
+                let add_newline = !out.is_empty() && !out.ends_with('\n');
+                if add_newline {
                     out.push('\n');
                 }
-                out.push_str(&wanted);
+                out.push_str(&block_marked(name, add_newline));
                 lines[at..].iter().for_each(|l| out.push_str(l));
                 Action::Injected
             };
@@ -661,11 +684,14 @@ fn uninstall_one(name: &str, path: &Path, apply: bool) -> Result<RemoveAction, H
                 }
                 return Ok(RemoveAction::Restored);
             }
-            let rest: Vec<&str> = lines[..start]
-                .iter()
-                .chain(&lines[stop + 1..])
-                .copied()
-                .collect();
+            let mut before = lines[..start].to_vec();
+            if has_added_newline(lines[start], name) {
+                // Install added this newline; the file had none there.
+                if let Some(last) = before.last_mut() {
+                    *last = last.strip_suffix('\n').unwrap_or(last);
+                }
+            }
+            let rest: Vec<&str> = before.iter().chain(&lines[stop + 1..]).copied().collect();
             let only_ours = rest
                 .iter()
                 .all(|l| l.trim().is_empty() || l.trim_end() == "#!/bin/sh");
@@ -722,7 +748,8 @@ pub fn status(layout: &RepoLayout) -> Result<HooksStatus, HooksError> {
                 let lines: Vec<&str> = text.split_inclusive('\n').collect();
                 if let Some((start, stop)) = find_block(&lines, name) {
                     entry.installed = true;
-                    entry.up_to_date = lines[start..=stop].concat() == block(name);
+                    entry.up_to_date = lines[start..=stop].concat()
+                        == block_marked(name, has_added_newline(lines[start], name));
                     entry.chained = if is_wrapper(&text) {
                         fs::symlink_metadata(orig_path(&path, name)).is_ok()
                     } else {
