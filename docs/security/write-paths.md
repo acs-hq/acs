@@ -17,11 +17,11 @@ altered by mistake), **surprising** (harmless, but not what the person expects).
 | Id | Surface | What happens | Severity | State |
 | --- | --- | --- | --- | --- |
 | W1 | `acs undo --apply` | A file that existed before the session, of which ACS took no pre-image, is taken for a file the session created and **deleted**, untracked content included | data loss | Fixed (decision 0044) |
-| W2 | `acs undo --apply` | A session that edited files in a linked worktree is undone in the work tree `acs undo` runs in: it reports "already undone", or merges into the wrong copy, and the worktree keeps the change | surprising (wrong target) | Open |
+| W2 | `acs undo --apply` | A session that edited files in a linked worktree is undone in the work tree `acs undo` runs in: it reports "already undone", or merges into the wrong copy, and the worktree keeps the change | surprising (wrong target) | Open (issue 74) |
 | W3 | `acs undo --apply` | With `core.autocrlf` (the Git for Windows default) committed session changes are restored but never committed, and the output says nothing | surprising | Fixed (decision 0044) |
-| W4 | `acs undo --apply` | When a hook of the person rejects the undo commit, the restored files are left staged | surprising | Open |
+| W4 | `acs undo --apply` | When a hook of the person rejects the undo commit, the restored files are left staged | surprising | Open (issue 75) |
 | W5 | hook install | A non-shell hook the person had switched off (`chmod -x`) gets an executable wrapper whose `exec` fails: **every commit is rejected** (Unix) | commit | Fixed (decision 0044) |
-| W6 | hook install and removal | A hook whose last line has no newline gets one, and keeps it after removal | surprising | Open |
+| W6 | hook install and removal | A hook whose last line has no newline gets one, and keeps it after removal | surprising | Open (issue 76) |
 | W7 | `acs sync` (session records) | Redaction of the intent misses Stripe keys (`sk_live_...`) and tokens after `user:` (`curl -u sara:ghp_...`), and the record is pushed | publication | Fixed (decision 0044); still a heuristic |
 | W8 | `acs lore review --accept` | Accepting onto an `acs/lore-<id>` branch that is checked out moves that branch under its index and files | surprising | Fixed (decision 0044) |
 | W9 | `pre-commit`, `prepare-commit-msg` | An agent command containing `git commit` that never ran (`cargo test && git commit ...` with failing tests) leaves a marker; the person's next commit within 10 minutes gets the agent's `ACS-Session` trailer, and a sealed path in it is rejected as an agent's | commit | Open (issue 38) |
@@ -92,7 +92,7 @@ Test: `w4_a_rejected_undo_commit_leaves_the_index_as_it_was`.
 
 **Not reproduced, from reading the code:**
 
-- **Symlinks.** `read_file` follows a symlink, and the write renames a temporary file over the
+- **Symlinks** (issue 77). `read_file` follows a symlink, and the write renames a temporary file over the
   path. Undoing a change made through a symlinked file would replace the link with a regular file
   and leave the target with the session's change. Whether the hook records such a path under the
   link's name or the target's was not checked; it needs a Unix test (symlinks need developer mode
@@ -180,7 +180,7 @@ claimed paths. **Not redacted:** branch names, the harness session id, override 
 paths. A repository that sets `sync = true` makes every pilot who works there with the plugin
 publish these on hooks, with no question to that pilot; on a public repository or fork they are
 readable by anyone who fetches `refs/acs/*`. That is the design (decision 0020); first testers
-should be told once, for example by `acs init` and `acs features sync on`.
+should be told once, for example by `acs init` and `acs features sync on` (issue 78, decision-needed).
 
 **W7 (publication, fixed).** See the summary. Redaction stays a heuristic: a secret with no known
 shape (an AWS secret key, a password in prose) is not caught. Test:
