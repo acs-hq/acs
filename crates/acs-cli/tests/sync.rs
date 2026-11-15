@@ -275,3 +275,24 @@ fn a_hook_does_not_wait_for_the_sync_it_starts() {
         started.elapsed()
     );
 }
+
+/// Issue 78: a pilot is told once what team sync publishes, by the first `acs sync` they run or
+/// by their first session (which passes it to the agent to say), and not again.
+#[test]
+fn a_pilot_is_told_once_what_sync_publishes() {
+    let team = Team::new();
+    let sara = team.clone("sara", "sara@example.com");
+    let first = String::from_utf8_lossy(&sara.acs(&["sync"]).stdout).into_owned();
+    assert!(first.contains("your git email"), "{first}");
+    assert!(first.contains("`origin`"), "{first}");
+    assert!(first.lines().all(|l| l.chars().count() <= 80), "{first}");
+    let second = String::from_utf8_lossy(&sara.acs(&["sync"]).stdout).into_owned();
+    assert!(!second.contains("your git email"), "{second}");
+
+    let omar = team.clone("omar", "omar@example.com");
+    let told = |d: &acs_core::Decision| d.context.iter().any(|c| c.contains("your git email"));
+    let start = omar.hook("session_start", "o1", json!({}));
+    assert!(told(&start), "{start:?}");
+    let again = omar.hook("session_start", "o2", json!({}));
+    assert!(!told(&again), "{again:?}");
+}

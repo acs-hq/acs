@@ -94,6 +94,11 @@ fn execute(args: &SyncArgs) -> Result<ExitCode, CliError> {
         );
         return Ok(ExitCode::SUCCESS);
     };
+    // A person running this in a terminal is told once what is about to be published. With
+    // `--json` (and from hooks, which discard the output) the first session start says it.
+    if !json && let Some(text) = sync::publishes_text_once(&ctx, db, Timestamp::now()) {
+        print!("{}", wrap(&text, "", ""));
+    }
     let pilot = acs_git::repo::pilot_email_or_fallback(work_tree);
     let storage = CustomRefs::new(work_tree, &remote);
     let options = SyncOptions {

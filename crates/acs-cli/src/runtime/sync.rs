@@ -61,6 +61,35 @@ pub fn may_sync(ctx: &RepoContext) -> bool {
     ctx.features().sync && ctx.has_remote && adopted(ctx)
 }
 
+/// The flag set once this machine's pilot has been told what sync publishes (issue 78).
+const TOLD_FLAG: &str = "sync_publishes_told";
+
+/// What team sync publishes and who can read it, in words for the pilot. `acs init`,
+/// `acs features sync on`, the first `acs sync` and the first session start all say this.
+#[must_use]
+pub fn publishes_text(remote: Option<&str>) -> String {
+    let place = remote.map_or_else(|| "the git remote".to_owned(), |name| format!("`{name}`"));
+    format!(
+        "Team sync is on in this repository. ACS publishes to `refs/acs/*` on {place}: your \
+         git email, the paths you claim, and a record of each agent session (branch, intent \
+         with secrets redacted, changed paths, commit ids). Anyone who can fetch from that \
+         remote can read them. `acs features sync off` stops it."
+    )
+}
+
+/// [`publishes_text`] the first time it is asked for in a repository that syncs, `None` after
+/// that and where nothing is published. The caller must show the text to the pilot.
+pub fn publishes_text_once(ctx: &RepoContext, db: &StateDb, now: Timestamp) -> Option<String> {
+    if !may_sync(ctx) || db.flag_is_set(TOLD_FLAG).unwrap_or(true) {
+        return None;
+    }
+    db.set_flag(TOLD_FLAG, "1", now).ok()?;
+    let remote = acs_git::repo::default_remote(&ctx.layout.work_tree)
+        .ok()
+        .flatten();
+    Some(publishes_text(remote.as_deref()))
+}
+
 fn adopted(ctx: &RepoContext) -> bool {
     ctx.layout.work_tree.join(".acs").join("policy").is_dir()
 }

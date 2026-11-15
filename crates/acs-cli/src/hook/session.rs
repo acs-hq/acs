@@ -39,6 +39,13 @@ pub fn start(ctx: &RepoContext, event: &ToolEvent, now: Timestamp) -> Decision {
     let _ = db.sweep_expired(now);
     let view = status(ctx, Some(&resolved.info), now);
     decision.context.push(view.summary_lines().join("\n"));
+    // A pilot who cloned a repository that syncs never ran a command that says what leaves the
+    // machine: the first session here passes it on, once.
+    if let Some(text) = sync::publishes_text_once(ctx, db, now) {
+        decision.context.push(format!(
+            "Tell your pilot this once, in your next reply: {text}"
+        ));
+    }
     let _ = db.record_event(&NewEvent {
         seat_id: &resolved.info.seat.seat_id,
         at: now,
