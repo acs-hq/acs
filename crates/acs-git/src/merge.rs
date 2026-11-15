@@ -175,6 +175,62 @@ pub fn head_matches(
     })
 }
 
+/// Whether the work-tree file `path` is what `HEAD` holds for it, as git sees it: through
+/// `core.autocrlf` and clean filters, so a CRLF checkout of an LF blob matches (W3 in
+/// `docs/security/write-paths.md`). A path in neither matches; a path in only one does not.
+///
+/// # Errors
+///
+/// [`GitError::Command`] when `git` cannot be run or fails.
+pub fn worktree_matches_head(work_tree: &Path, path: &str) -> Result<bool, GitError> {
+    let fail = |args: &str, detail: String| GitError::Command {
+        args: args.to_owned(),
+        detail,
+    };
+    let listed = git_command(work_tree)
+        .args([
+            "--literal-pathspecs",
+            "ls-tree",
+            "--full-tree",
+            "--name-only",
+            "HEAD",
+            "--",
+        ])
+        .arg(path)
+        .stdin(Stdio::null())
+        .stderr(Stdio::null())
+        .output()
+        .map_err(|e| fail("ls-tree", e.to_string()))?;
+    let in_head = listed.status.success() && !listed.stdout.trim_ascii().is_empty();
+    let exists = fs::symlink_metadata(work_tree.join(path)).is_ok();
+    match (in_head, exists) {
+        (false, false) => Ok(true),
+        (true, true) => {
+            let diff = git_command(work_tree)
+                .args([
+                    "--literal-pathspecs",
+                    "diff",
+                    "--quiet",
+                    "--no-ext-diff",
+                    "HEAD",
+                    "--",
+                ])
+                .arg(path)
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status()
+                .map_err(|e| fail("diff", e.to_string()))?;
+            match diff.code() {
+                Some(0) => Ok(true),
+                Some(1) => Ok(false),
+                _ => Err(fail("diff", format!("exited with {diff}"))),
+            }
+        }
+        _ => Ok(false),
+    }
+}
+
 /// What [`commit_only`] did.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CommitOutcome {

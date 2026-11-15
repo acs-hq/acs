@@ -344,8 +344,10 @@ fn committable_paths(ctx: &RepoContext, plan: &UndoPlan, session: &str) -> Vec<S
     changing
         .into_iter()
         .filter(|i| committed.contains(i.path.as_str()))
+        // Through git, not by raw bytes: with `core.autocrlf` (the Git for Windows default) the
+        // work tree holds CRLF and `HEAD` holds LF (W3 in docs/security/write-paths.md).
         .filter(|i| {
-            acs_git::merge::head_matches(&ctx.layout.work_tree, i.path.as_str(), i.current.as_ref())
+            acs_git::merge::worktree_matches_head(&ctx.layout.work_tree, i.path.as_str())
                 .unwrap_or(false)
         })
         .map(|i| i.path.as_str().to_owned())
