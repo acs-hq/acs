@@ -527,7 +527,11 @@ fn install_one(location: &HooksLocation, name: &str, path: &Path) -> Result<Acti
             if text == wanted {
                 Ok(Action::Unchanged)
             } else {
+                let was_executable = is_executable(path);
                 write_new(path, &wanted)?;
+                if !was_executable {
+                    set_not_executable(path)?;
+                }
                 Ok(Action::Updated)
             }
         }
@@ -572,9 +576,27 @@ fn wrap(path: &Path, name: &str) -> Result<Action, HooksError> {
             reason: "ACS would move the existing hook there",
         });
     }
+    // A hook the person switched off (not executable) must stay off: an executable wrapper would
+    // make git run it and `exec` the original, which fails and rejects every commit.
+    let was_executable = is_executable(path);
     fs::rename(path, &orig).map_err(|e| HooksError::io("moving", path, e))?;
     write_new(path, &wrapper(name))?;
+    if !was_executable {
+        set_not_executable(path)?;
+    }
     Ok(Action::Wrapped)
+}
+
+#[cfg(unix)]
+fn set_not_executable(path: &Path) -> Result<(), HooksError> {
+    use std::os::unix::fs::PermissionsExt;
+    fs::set_permissions(path, fs::Permissions::from_mode(0o644))
+        .map_err(|e| HooksError::io("keeping not executable", path, e))
+}
+
+#[cfg(not(unix))]
+fn set_not_executable(_path: &Path) -> Result<(), HooksError> {
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------------------------
