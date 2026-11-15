@@ -258,6 +258,80 @@ fn w4_a_rejected_undo_commit_leaves_the_index_as_it_was() {
     );
 }
 
+fn dir_link(target: &Path, link: &Path) {
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(target, link).unwrap();
+    #[cfg(windows)]
+    {
+        let out = Command::new("cmd")
+            .args(["/C", "mklink", "/J"])
+            .arg(link)
+            .arg(target)
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "mklink /J failed: {out:?}");
+    }
+}
+
+/// Issue 77. A folder that became a link (a junction on Windows) after the session: undo would
+/// write the old content through it, to wherever it points, outside the repository included.
+#[test]
+fn undo_never_writes_through_a_folder_that_became_a_link() {
+    let world = World::new();
+    let agent = Agent::new(&world, "claude-code", "link-dir");
+    agent.start();
+    edit(&agent, "src/lib.rs", "pub fn changed() {}\n");
+    agent.end();
+    let sid = session_id(&agent);
+
+    let outside = world.repo.parent().unwrap().join("outside");
+    fs::rename(world.repo.join("src"), &outside).unwrap();
+    dir_link(&outside, &world.repo.join("src"));
+
+    let out = undo(&world, &[&sid, "--apply"]);
+    assert_eq!(
+        fs::read_to_string(outside.join("lib.rs")).unwrap(),
+        "pub fn changed() {}\n",
+        "undo wrote through the link; output: {}",
+        stdout(&out)
+    );
+    assert!(stdout(&out).contains("link"), "{}", stdout(&out));
+}
+
+/// Issue 77 (Unix only: symlinks need developer mode on Windows). A change made through a
+/// symlinked file: undo must never replace the link with a regular file. Either it restores the
+/// target (the session recorded the real path) or it reports the link and leaves it alone.
+#[cfg(unix)]
+#[test]
+fn undo_never_replaces_a_symlink_with_a_file() {
+    let world = World::new();
+    let link = world.repo.join("link.txt");
+    std::os::unix::fs::symlink("a.txt", &link).unwrap();
+    let agent = Agent::new(&world, "claude-code", "link-file");
+    agent.start();
+    agent.pre_edit("link.txt");
+    fs::write(&link, "changed through the link\n").unwrap();
+    agent.post_edit("link.txt");
+    agent.end();
+    let sid = session_id(&agent);
+
+    let out = undo(&world, &[&sid, "--apply"]);
+    assert!(
+        fs::symlink_metadata(&link)
+            .unwrap()
+            .file_type()
+            .is_symlink(),
+        "the link was replaced; output: {}",
+        stdout(&out)
+    );
+    let target = fs::read_to_string(world.repo.join("a.txt")).unwrap();
+    assert!(
+        target == "a\n" || stdout(&out).contains("link"),
+        "the target kept the change and nothing was reported: {}",
+        stdout(&out)
+    );
+}
+
 // ---------------------------------------------------------------------------------------------
 // 2. Git hook install and removal
 // ---------------------------------------------------------------------------------------------

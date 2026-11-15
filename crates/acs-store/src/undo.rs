@@ -355,6 +355,17 @@ fn plan_path(
 ) -> Result<UndoItem, UndoError> {
     let store = inputs.snapshots;
     let abs = inputs.work_tree.join(path.as_str());
+    if let Some(link) = link_on_the_way(inputs.work_tree, path) {
+        return Ok(item(
+            path,
+            UndoAction::Conflict,
+            Some(format!(
+                "`{link}` is a link now; undo does not write through links"
+            )),
+            Effect::Nothing,
+            None,
+        ));
+    }
     let current = match read_file(&abs) {
         Ok(Some((bytes, mode))) => Some((bytes, mode)),
         Ok(None) => None,
@@ -526,6 +537,11 @@ pub fn apply(store: &SnapshotStore, work_tree: &Path, plan: &UndoPlan) -> Vec<Ap
 
 fn apply_item(store: &SnapshotStore, work_tree: &Path, item: &UndoItem) -> Result<(), String> {
     let abs = work_tree.join(item.path.as_str());
+    if let Some(link) = link_on_the_way(work_tree, &item.path) {
+        return Err(format!(
+            "`{link}` is a link now; undo does not write through links"
+        ));
+    }
     let now_key = match read_file(&abs) {
         Ok(read) => read.map(|(bytes, _)| ContentHash::of(&bytes)),
         Err(err) => return Err(err.to_string()),
@@ -544,6 +560,31 @@ fn apply_item(store: &SnapshotStore, work_tree: &Path, item: &UndoItem) -> Resul
             SnapshotStore::write_file(&abs, bytes, *mode).map_err(|e| e.to_string())
         }
     }
+}
+
+/// The first part of `path` (a folder on the way, or the file itself) that is a symbolic link or
+/// a junction in `work_tree`, as a repository path.
+///
+/// Sessions record files under their real paths, so a link here was put in place afterwards, or
+/// the change was made through it unseen. Writing would replace the link with a regular file (the
+/// write renames a temporary file over it) or land wherever the link points, outside the
+/// repository included. Undo leaves such a path alone.
+fn link_on_the_way(work_tree: &Path, path: &RepoPath) -> Option<String> {
+    let mut abs = work_tree.to_owned();
+    let mut rel = String::new();
+    for part in path.as_str().split('/') {
+        abs.push(part);
+        if !rel.is_empty() {
+            rel.push('/');
+        }
+        rel.push_str(part);
+        match fs::symlink_metadata(&abs) {
+            Ok(meta) if meta.file_type().is_symlink() => return Some(rel),
+            Ok(_) => {}
+            Err(_) => return None,
+        }
+    }
+    None
 }
 
 /// Removes a file; a missing file is fine, and a read-only one (Windows refuses to delete it) is
