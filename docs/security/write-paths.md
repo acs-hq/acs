@@ -6,7 +6,9 @@ ACS itself (not an agent) writes to a person's work tree, git history, git confi
 remote, what was checked, and what was found.
 
 Every finding has a test in `crates/acs-cli/tests/write_paths.rs`, named after it (`w1_...`).
-Tests of open findings fail on purpose. Fixes made during the audit are in decision 0044.
+Tests of open findings fail on purpose. Fixes made during the audit are in decision 0044; W4,
+W6, the link check (issue 77) and the sync notice (issue 78) were solved the same day in
+decision 0045. Open now: W2 and W9.
 
 ## Summary
 
@@ -19,16 +21,14 @@ altered by mistake), **surprising** (harmless, but not what the person expects).
 | W1 | `acs undo --apply` | A file that existed before the session, of which ACS took no pre-image, is taken for a file the session created and **deleted**, untracked content included | data loss | Fixed (decision 0044) |
 | W2 | `acs undo --apply` | A session that edited files in a linked worktree is undone in the work tree `acs undo` runs in: it reports "already undone", or merges into the wrong copy, and the worktree keeps the change | surprising (wrong target) | Open (issue 74) |
 | W3 | `acs undo --apply` | With `core.autocrlf` (the Git for Windows default) committed session changes are restored but never committed, and the output says nothing | surprising | Fixed (decision 0044) |
-| W4 | `acs undo --apply` | When a hook of the person rejects the undo commit, the restored files are left staged | surprising | Open (issue 75) |
+| W4 | `acs undo --apply` | When a hook of the person rejects the undo commit, the restored files are left staged | surprising | Solved (decision 0045, issue 75) |
 | W5 | hook install | A non-shell hook the person had switched off (`chmod -x`) gets an executable wrapper whose `exec` fails: **every commit is rejected** (Unix) | commit | Fixed (decision 0044) |
-| W6 | hook install and removal | A hook whose last line has no newline gets one, and keeps it after removal | surprising | Open (issue 76) |
+| W6 | hook install and removal | A hook whose last line has no newline gets one, and keeps it after removal | surprising | Solved (decision 0045, issue 76) |
 | W7 | `acs sync` (session records) | Redaction of the intent misses Stripe keys (`sk_live_...`) and tokens after `user:` (`curl -u sara:ghp_...`), and the record is pushed | publication | Fixed (decision 0044); still a heuristic |
 | W8 | `acs lore review --accept` | Accepting onto an `acs/lore-<id>` branch that is checked out moves that branch under its index and files | surprising | Fixed (decision 0044) |
 | W9 | `pre-commit`, `prepare-commit-msg` | An agent command containing `git commit` that never ran (`cargo test && git commit ...` with failing tests) leaves a marker; the person's next commit within 10 minutes gets the agent's `ACS-Session` trailer, and a sealed path in it is rejected as an agent's | commit | Open (issue 38) |
 
-New tests that fail on purpose today: `w2_undo_acts_on_the_worktree_the_session_changed`,
-`w4_a_rejected_undo_commit_leaves_the_index_as_it_was`,
-`w6_removing_the_block_restores_a_hook_without_a_final_newline`,
+Tests that fail on purpose today: `w2_undo_acts_on_the_worktree_the_session_changed`,
 `w9_a_commit_the_agent_never_ran_does_not_mark_the_persons_commit`,
 `w9_a_stale_marker_does_not_reject_a_persons_commit_of_a_sealed_path`.
 `w5_a_disabled_non_shell_hook_stays_disabled_after_install` is Unix only and does not run on
@@ -44,7 +44,8 @@ and the index entries of those files (`git add -A -- <paths>` before the commit)
 after the plan; files claimed by another live seat are left alone; a live session is refused;
 overlapping later changes are a conflict and left alone; a directory in the way is a conflict;
 history is never rewritten; other staged work stays staged and out of the commit (existing test
-`committed_changes_are_undone_with_a_new_commit`); restored files get their recorded mode bits
+`committed_changes_are_undone_with_a_new_commit`); a rejected undo commit leaves the index as it was (W4); a path
+that is a link, or lies behind one, is never written (issue 77); restored files get their recorded mode bits
 on Unix (only the read-only flag on Windows); the three-way merge works on bytes, so line endings
 inside a file are kept. Undo of an undo: running it again reports "already undone"; an undo is
 not a session, so it is undone with git, not with `acs undo`. A file created and then edited is
@@ -83,21 +84,24 @@ Windows committed changes were restored in the work tree only, and the output di
 commit. Fix: `acs_git::merge::worktree_matches_head` asks git (`ls-tree`, then
 `diff --quiet HEAD`). Test: `w3_committed_changes_get_an_undo_commit_under_autocrlf`.
 
-**W4 (surprising, open).** `commit_only` runs `git add -A -- <paths>` before `git commit --only`
-(needed for a file the session had deleted and committed). If a hook rejects the commit, the files
-stay restored, as decision 0030 says, but also staged, and the person's next plain `git commit`
-takes them along. **Proposed fix:** save the paths' index entries (`git ls-files -s -- <paths>`)
-before the add and put them back with `git update-index --index-info` when the commit fails.
-Test: `w4_a_rejected_undo_commit_leaves_the_index_as_it_was`.
+**W4 (surprising, solved).** `commit_only` runs `git add -A -- <paths>` before `git commit --only`
+(needed for a file the session had deleted and committed). If a hook rejected the commit, the files
+stayed restored, as decision 0030 says, but also staged, and the person's next plain `git commit`
+took them along. Fix (decision 0045): the paths' index entries are saved before the add
+(`git ls-files -s -z`) and put back (`git update-index --force-remove`, then `--index-info`) when
+the commit fails. Test: `w4_a_rejected_undo_commit_leaves_the_index_as_it_was`.
+
+**Links (issue 77, solved).** `read_file` follows a symlink, and the write renames a temporary
+file over the path: undoing a change made through a symlinked file would have replaced the link
+with a regular file, and a path through a folder that became a junction or symlink after the
+session was written through it, outside the repository included (reproduced on Windows with a
+junction). Fix (decision 0045): a path whose file or any folder on the way is a link is a conflict
+and left alone, at planning and again before the write; the output names the link. Tests:
+`undo_never_writes_through_a_folder_that_became_a_link`, and
+`undo_never_replaces_a_symlink_with_a_file` (Unix only; it has not run yet, CI is its first run).
 
 **Not reproduced, from reading the code:**
 
-- **Symlinks** (issue 77). `read_file` follows a symlink, and the write renames a temporary file over the
-  path. Undoing a change made through a symlinked file would replace the link with a regular file
-  and leave the target with the session's change. Whether the hook records such a path under the
-  link's name or the target's was not checked; it needs a Unix test (symlinks need developer mode
-  on Windows). Junctions are directories: a path through a junction made after the session would
-  be written through it.
 - **A staged-only version.** If the person staged a version of a committable file and then put
   the work-tree file back to `HEAD`, the `git add` replaces the staged version. Rare.
 - **The undo commit's own trailer.** The person-commit trailer rule counts an attribution that is
@@ -126,13 +130,12 @@ not look at the executable bit). Fix: the wrapper takes the original's executabl
 when an outdated wrapper is updated. Test: `w5_a_disabled_non_shell_hook_stays_disabled_after_install`
 (Unix).
 
-**W6 (surprising, open).** When the line before the block (usually the shebang) has no newline,
-install adds one, and removal cannot know it was added. `acs init` then `acs uninstall` leaves
-`#!/usr/bin/env bash` plus a newline. A hook that is only `#!/bin/sh` without a newline is
-deleted, like the exception decision 0039 states. **Proposed fix:** mark the block when install
-had to add the newline (for example `v1+nl` in the begin marker) and drop it again on removal; or
-state this as a second exception in decision 0039. Test:
-`w6_removing_the_block_restores_a_hook_without_a_final_newline`.
+**W6 (surprising, solved).** When the line before the block (usually the shebang) has no newline,
+install adds one, and removal could not know it was added: `acs init` then `acs uninstall` left
+`#!/usr/bin/env bash` plus a newline. Fix (decision 0045, the human's choice in issue 76): install
+marks the block (`v1+nl` in the begin line) when it added the newline, and removal drops it again.
+A hook that is only `#!/bin/sh` without a newline is still deleted, the exception decision 0039
+states. Test: `w6_removing_the_block_restores_a_hook_without_a_final_newline`.
 
 **Worth knowing:** with a global `core.hooksPath` (one hooks folder for every repository) ACS
 installs into that folder, outside the repository (decision 0015). In repositories without
@@ -179,8 +182,11 @@ decisions and up to 50 notable ones (text redacted), commit ids, lore ids, and o
 claimed paths. **Not redacted:** branch names, the harness session id, override patterns and
 paths. A repository that sets `sync = true` makes every pilot who works there with the plugin
 publish these on hooks, with no question to that pilot; on a public repository or fork they are
-readable by anyone who fetches `refs/acs/*`. That is the design (decision 0020); first testers
-should be told once, for example by `acs init` and `acs features sync on` (issue 78, decision-needed).
+readable by anyone who fetches `refs/acs/*`. That is the design (decision 0020). **Solved (issue 78, decision
+0045, the human chose "tell each pilot once"):** `acs init` and `acs features sync on` print what
+sync publishes and who can read it, and each pilot is told once per repository and machine, by
+the first `acs sync` they run or by the agent of their first session. Nothing about what is
+published changes. Test: `a_pilot_is_told_once_what_sync_publishes` (`tests/sync.rs`).
 
 **W7 (publication, fixed).** See the summary. Redaction stays a heuristic: a secret with no known
 shape (an AWS secret key, a password in prose) is not caught. Test:
@@ -224,8 +230,8 @@ not checked, the agent's own claims allowed); that trade-off is the human's call
 
 ## Not covered
 
-- Windows symlinks and junctions in undo (section 1), and any undo test with real file modes on
-  Windows beyond the read-only flag.
+- File symlinks in undo on Windows (they need developer mode; junctions are covered), and any
+  undo test with real file modes on Windows beyond the read-only flag.
 - `acs uninstall` was not re-audited beyond its hook removal (decision 0039 has its own
   byte-identical tests).
 - Real husky and pre-commit installations: the layouts are fixtures written from their sources
