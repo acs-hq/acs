@@ -1,6 +1,6 @@
 # ACS
 
-ACS (Agent Control System) stops coding agents from overwriting each other when several of them work in one repository. ACS works with Claude Code today.
+ACS (Agent Control System) stops coding agents from overwriting each other when several of them work in one repository. ACS works with Claude Code and with the Antigravity CLI (`agy`) today.
 
 ## The problem
 

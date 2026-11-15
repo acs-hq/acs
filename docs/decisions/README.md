@@ -28,7 +28,7 @@ Every new record says who decided, in its status line: `Decided by: the human` o
 | [0010](0010-snapshot-store.md) | Snapshot store | Claude | |
 | [0011](0011-phase2-architecture.md) | Phase 2 architecture | Claude | |
 | [0012](0012-hook-pipeline.md) | Hook pipeline | Claude | |
-| [0013](0013-claude-code-adapter.md) | Claude Code adapter and plugin | Claude | Strict mode when `acs` is missing (issue 11) |
+| [0013](0013-claude-code-adapter.md) | Claude Code adapter and plugin | Claude | None (strict mode: settled by 0043) |
 | [0014](0014-antigravity-adapter.md) | Antigravity adapter and plugin | Claude | |
 | [0015](0015-git-backstop.md) | Git backstop | Claude | |
 | [0016](0016-mcp-server.md) | MCP server | Claude | |
@@ -39,7 +39,7 @@ Every new record says who decided, in its status line: `Decided by: the human` o
 | [0021](0021-distribution.md) | Distribution and `acs plugin install` | Claude; Homebrew not published is yours | Release setup (issue 5) |
 | [0022](0022-setup-and-usage-skills.md) | Setup and usage skills | Claude | |
 | [0023](0023-m1-hardening.md) | M1 hardening | Claude | Windows latency budgets (issue 2) |
-| [0024](0024-antigravity-gate.md) | The Antigravity gate | Claude | Three questions and the desktop app checks (issues 6, 7, 8, 9) |
+| [0024](0024-antigravity-gate.md) | The Antigravity gate | Claude | The desktop app checks (issue 6); the three questions are settled by 0043 |
 | [0025](0025-init-proposals-without-codeowners.md) | `acs init` proposals without CODEOWNERS | You | |
 | [0026](0026-territory-overrides-and-self-protection.md) | Owned territory, overrides, self-protection | You, on four questions; the rest Claude | |
 | [0027](0027-outside-the-repository-is-opt-in.md) | Writes outside the repository ask only on request | You | |
@@ -58,3 +58,4 @@ Every new record says who decided, in its status line: `Decided by: the human` o
 | [0040](0040-the-main-branch-is-detected-at-init.md) | `acs init` writes the main branch when it is not `main`; `acs doctor` warns about a missing target branch | Claude, on the rule issue 67 set | None |
 | [0041](0041-acs-undo-last.md) | `acs undo --last` picks the last agent session that changed files, and stops if it is still running | Claude, on the scope issue 64 set | None |
 | [0042](0042-workflows-unsealed-and-example-env-files-writable.md) | `.github/workflows/**` is not sealed by default; `**/.env*` leaves out example files | You for both changes; Claude for building the `.env` change as a built-in exception (`**/.env*.{example,sample,template,dist}`) | Add `.github/workflows/**` to this repository's `guards.toml` if agents here should stay out of workflows |
+| [0043](0043-antigravity-open-questions-settled.md) | Antigravity: `ask` stays an ask under `always-proceed`, subagents stay separate sessions, claims outlive a session, CLI support is stated, no strict mode for Claude Code in v0.1, agents run real checks through scripts; the adapter reads `agy` 1.5.4's new fields | You for writes outside the repository and for claims outliving a session; Claude for the rest, told to decide without asking | The desktop app checks (issue 6) |
