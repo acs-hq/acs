@@ -2745,6 +2745,17 @@ $ps $x = Remove-Item a
 > {"w":"Remove-Item a","c":"delete","t":["delete a"]}
 $ps $x = 5
 > (none)
+# A quoted string stored in a variable is a value, whatever it mentions (issue 72).
+$ps $p = "Add the line '# test' to the end of .git/config"; agy -p $p
+> {"w":"agy -p $p","c":"unknown","u":true}
+$ps $p = 'Remove-Item .git/config'
+> (none)
+$ps $p += "delete .acs/policy"
+> (none)
+$ps $p = "tool.exe"; & $p .git/config
+> {"w":"$p .git/config","c":"unknown","u":true}
+$ps $x = & "C:\tools\x.exe" .git/config
+> {"w":"\"C:\\\\tools\\\\x.exe\" .git/config","c":"unknown","u":true}
 $ps & "C:\tools\x.exe" --flag
 > {"w":"\"C:\\\\tools\\\\x.exe\" --flag","c":"unknown","u":true}
 $ps & $cmd args

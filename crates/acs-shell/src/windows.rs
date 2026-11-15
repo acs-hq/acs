@@ -18,6 +18,8 @@ struct Statement {
     piped: bool,
     /// Whether the first word was a quoted string (a value, not a command).
     first_quoted: bool,
+    /// Whether the third word was a quoted string: the value in `$x = "text"`.
+    third_quoted: bool,
     /// Whether the statement began with the call operator `&`.
     call_op: bool,
 }
@@ -113,6 +115,8 @@ impl Lexer {
                         None => {
                             if current.words.is_empty() {
                                 current.first_quoted = self.last_quoted;
+                            } else if current.words.len() == 2 {
+                                current.third_quoted = self.last_quoted;
                             }
                             current.words.push(word);
                         }
@@ -516,16 +520,19 @@ fn ps_statement(statement: Statement, ctx: &mut Ctx) {
         redirects,
         blocks,
         piped,
-        first_quoted,
+        mut first_quoted,
+        third_quoted,
         call_op,
     } = statement;
-    // `$x = <command>`: the command is what matters.
+    // `$x = <command>`: the command is what matters. `$x = "text"` stores a value, whatever
+    // the text mentions.
     if words.first().is_some_and(|w| w.text.starts_with('$'))
         && words
             .get(1)
             .is_some_and(|w| matches!(w.text.as_str(), "=" | "+=" | "-="))
     {
         words.drain(..2);
+        first_quoted = third_quoted;
     }
     let first_lower = words.first().map(|w| w.text.to_ascii_lowercase());
     let analyze_blocks = !first_lower

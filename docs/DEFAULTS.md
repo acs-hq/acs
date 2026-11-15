@@ -27,9 +27,9 @@ differ, the change is **not built yet** and the issue is named.
 | Lore | On; does nothing until an entry exists | Same | Yes |
 | Git hooks and the `ACS-Session` commit trailer | On | On | Yes. The trailer goes off with `[features] history`, the rejections with `commit_checks` (decision 0033) |
 | Switching a feature off | `[features]` in `config.toml`: `claims`, `guards`, `territory`, `lore`, `history`, `commit_checks`, `sync` | Same | Yes (decision 0033) |
-| Strict mode when `acs` is missing | Off (Claude Code fails open) | Off | Not built (issue 11) |
+| Strict mode when `acs` is missing | Off (Claude Code fails open) | Off | Not built, and not planned for v0.1 (decision 0043) |
 | `acs watch`, VS Code extension | Opt-in | Opt-in | Yes; the extension is not published |
-| Antigravity | Opt-in | Opt-in, not mentioned to testers | Yes |
+| Antigravity | Opt-in (`acs plugin install antigravity`) | Opt-in; the CLI is supported and named in the guide, the desktop app is not checked yet (decision 0043) | Yes |
 
 ### Observe mode (not implemented)
 

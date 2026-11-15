@@ -63,7 +63,15 @@ Run `acs off`, and `acs on` when you finish. See [Turning the gate off](Working-
 
 ## Limits
 
-**ACS works with Claude Code today.** It has no effect on other tools.
+**ACS works with Claude Code and with the Antigravity CLI (`agy`) today.** It has no effect on other tools. The Antigravity desktop app has not been checked yet.
+
+**In Antigravity, three things differ from Claude Code.**
+
+- Antigravity does not tell ACS when a session ends, so the files a finished session held stay claimed for up to 15 minutes (`claim_ttl_secs`) unless the agent released them.
+- A subagent counts as a session of its own. It can be refused a file that the agent which started it holds.
+- If you run Antigravity in `always-proceed` mode, it approves the few things ACS asks you about (a delete over the limit, a risky command whose targets ACS cannot tell) without showing you a prompt. What ACS denies stays denied in every mode.
+
+**If `acs` is not installed, the two tools react in opposite ways.** In a repository that has adopted ACS, Claude Code runs every tool call unchecked and says nothing, while Antigravity denies every tool call until `acs` is on `PATH` and `agy` has been restarted. Install `acs` before opening such a repository; `acs doctor` checks it.
 
 **ACS only coordinates people who run it.** A teammate without it is invisible to it, and it does not block them. It also does not see your own editor unless you use the VS Code extension, `acs watch` or `acs claim` (see [Claiming a file yourself](Working-with-ACS#claiming-a-file-yourself)).
 

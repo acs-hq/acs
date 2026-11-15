@@ -10,6 +10,9 @@ Read this first:
 - **Verified on 2026-11-03 against a real `agy` 1.4.12 on Windows and the official docs.** Section
   15 records what the runs and the official pages showed, and wins wherever it disagrees with
   sections 1 to 14, which are kept as the research record. Decision 0024 has the resulting changes.
+- **Verified again on 2026-11-15 against `agy` 1.5.9.** Section 16 records what changed (the
+  payload now names its event, the working directory and a tool call id) and wins over section 15.
+  Decision 0043 has the resulting changes.
 - **No official documentation page could be read** (on 2026-10-30; see section 15 for 2026-11-03). `antigravity.google` (including
   `/docs/hooks`) is refused by this environment's egress proxy (HTTP 403 on CONNECT, policy
   denial), so the pages Google calls "the official docs" were never opened. What is official
@@ -641,6 +644,54 @@ fixtures are those captures with the workspace and home paths replaced. The offi
 - Interactive TUI sessions (`agy` without `-p`): prompts and trust dialogs.
 - macOS and Linux, a user-scope (global) plugin install, `ANTIGRAVITY_CONVERSATION_ID` in an MCP
   server's environment.
+
+## 16. Verified (2026-11-15, `agy` 1.5.9, Windows 11)
+
+Runs with `agy -p`, model `gemini-3.8-flash-medium`. A recording hook in a scratch repository
+(`.agents/hooks.json`, no ACS involved) captured every event; the `real159_*.json` fixtures are
+those captures with the workspace and home paths replaced. `agy changelog` was read for 1.5.1 to
+1.5.9. This section wins where it disagrees with section 15. Decision 0043 has the resulting
+changes.
+
+### What changed since 1.4.12
+
+| Point | 1.5.9 |
+| --- | --- |
+| Event name (2.4) | Every payload has `hookEventName` (`SessionStart`, `PreInvocation`, `PreToolUse`, `PostToolUse`, `Stop`; added in 1.5.4). The adapter uses it when `--phase` is missing; the plugin still passes `--phase`, which works on every version |
+| Working directory (2.4, 3) | Every payload has `cwd`, the agent's working directory, with backslashes on Windows (`workspacePaths` keeps forward slashes). The adapter judges the call there and falls back to the first workspace root |
+| Tool call id (2.4) | `toolCall.id` (`call_<digits>`), the same in the `PreToolUse` and `PostToolUse` of one call. Section 2.4's "no tool call id" no longer holds. ACS keeps it in `raw` and does not use it yet |
+| `Stop` (2.3) | Also carries `continuationActive` (1.5.6). `fullyIdle` was `false` at the end of a turn that had started a subagent. Still a turn end, not a session end |
+| Tools (3) | Offered to the model: `read_file {Path, StartLine, EndLine, ByteOffset}`, `edit_file {Path, Target, Replacement, ArtifactMetadata}`, `write_file {Path, Content, Append, Overwrite, ArtifactMetadata}`, `run_command {CommandLine, IsDaemon, WaitMsBeforeAsync, toolSummary}`, `run_workflow {Script, ScriptPath, Args, Cwd, Description, WaitMsBeforeAsync}`, `invoke_subagent`, `define_subagent`, `manage_subagents`, `manage_task`, `schedule`, `send_message`, `search_web`, `ask_question` and the new `swarm`. Still no list, search, delete or move tool |
+| `sed_file`, `notebook_edit` | Named in the 1.5.9 changelog, **not offered to the model** in these runs (asked to use them, it had neither). Their arguments are unknown. They fall under "an unknown tool with a path argument is a write"; a unit test pins that |
+| `run_workflow` | For everyone since 1.5.9: runs a Python script that starts many subagents. Each subagent's tool calls reach the hooks. What the script writes itself is invisible to ACS, like any script |
+| Subagents (3, 15) | Unchanged: a subagent gets its own `SessionStart`, its own `conversationId` in every payload and in `ANTIGRAVITY_CONVERSATION_ID`, the same `cwd` and workspace as its parent, an empty `lastUserInput`, and **nothing naming its parent**. It reports back with `send_message {Recipient: <parent id>}`. Decision 0043 keeps subagents as separate seats |
+| Counters (15) | Unchanged: first call of a new conversation `invocationNum` 0 and `initialNumSteps` 1; a subagent's first call 0 and 0 |
+| Hook process (8) | Unchanged: runs in the folder holding its `hooks.json`, with `ANTIGRAVITY_CONVERSATION_ID`. Plugin hooks also get `PLUGIN_ROOT` and `PLUGIN_DATA` since 1.5.3; ACS uses neither |
+| Paths (15) | The model now sent absolute paths with backslashes in every file call of the run. The adapter accepts both |
+| Validator | `agy plugin validate --strict` passes with no notes now that the plugin has a logo |
+
+### Fixed in `agy` after 1.4.12, and why ACS was not affected
+
+- **Windows, before 1.5.8:** a hook command containing double quotes failed and was silently
+  skipped, so a `PreToolUse` hook that should block went unenforced. ACS's hook commands
+  (`acs hook antigravity --phase pre_tool`) contain none. Keep it so.
+- **Before 1.5.8:** a `hooks.json` saved with a UTF-8 byte-order mark was ignored without a
+  message. `acs plugin install antigravity` writes the file without one. A `hooks.json` re-saved
+  by Windows PowerShell 5.1 or Notepad's "UTF-8 with BOM" would have switched ACS off on those
+  versions.
+- **1.5.7:** `auto_approve` from a hook no longer overrides an organization's enforced review.
+  ACS never sends `auto_approve`.
+
+### The plugin with ACS, real run
+
+`tests/e2e/real/antigravity.sh` (a person holds one file; the agent is asked to change it, a free
+file and `.git/config`, and to delete an unclaimed file). Its result is recorded in
+`docs/releases/antigravity-gate.md`.
+
+### Still not verified
+
+The desktop app (issue 6), interactive sessions (`agy` without `-p`), macOS and Linux, a
+user-scope plugin install (issue 49), and the arguments of `sed_file` and `notebook_edit`.
 
 ## Sources
 

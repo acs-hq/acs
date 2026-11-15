@@ -4,9 +4,13 @@
 //! The formats this module relies on, their sources and every gap are recorded in
 //! `docs/adapters/antigravity.md`; the decisions beyond the plan are in decision 0014. In short:
 //!
-//! - Antigravity writes one camelCase JSON object to the hook's stdin and does **not** name the
-//!   event, so the hook command line carries `--phase` (`acs hook antigravity --phase pre_tool`).
-//!   Without `--phase` the phase is inferred from the payload's fields, which is a fallback only.
+//! - Antigravity writes one camelCase JSON object to the hook's stdin. Before 1.5.4 it did
+//!   **not** name the event, so the hook command line carries `--phase`
+//!   (`acs hook antigravity --phase pre_tool`). Without `--phase` the phase comes from the
+//!   payload's `hookEventName` (1.5.4 and later), then from its fields, as a fallback only.
+//! - Since 1.5.4 the payload also carries `cwd`, the agent's working directory, and
+//!   `toolCall.id`, which is the same in the `PreToolUse` and `PostToolUse` of one call. The id
+//!   stays in the event's `raw`.
 //! - `PreToolUse` fails **closed** in Antigravity (a crash, an empty object or an unknown decision
 //!   blocks the tool), so [`render`](Adapter::render) always prints exactly one explicit JSON
 //!   decision and exits 0.
@@ -69,6 +73,7 @@ const OTHER_TOOLS: &[&str] = &[
     "read_url_content",
     "generate_image",
     "run_workflow",
+    "swarm",
     "list_resources",
     "read_resource",
     "finish",
@@ -102,7 +107,7 @@ impl Adapter for Antigravity {
         let recovered = |message: String| {
             let mut error = AdapterError::new(message);
             error.harness_session_id = session_id(map);
-            error.cwd = workspace(map).or_else(|| text(map, "cwd"));
+            error.cwd = working_dir(map);
             error
         };
 
@@ -114,7 +119,10 @@ impl Adapter for Antigravity {
         let tool_call = get(map, "toolCall")
             .or_else(|| get(map, "tool_call"))
             .and_then(Value::as_object);
-        let Some(phase) = phase.or_else(|| infer_phase(map, tool_call.is_some())) else {
+        let Some(phase) = phase
+            .or_else(|| named_phase(map))
+            .or_else(|| infer_phase(map, tool_call.is_some()))
+        else {
             return Err(recovered(
                 "cannot tell which hook event this is: pass --phase".to_owned(),
             ));
@@ -126,9 +134,7 @@ impl Adapter for Antigravity {
             harness: "antigravity".to_owned(),
             harness_session_id,
             phase,
-            cwd: workspace(map)
-                .or_else(|| text(map, "cwd"))
-                .unwrap_or_default(),
+            cwd: working_dir(map).unwrap_or_default(),
             tool: None,
             paths: Vec::new(),
             edit: None,
@@ -275,8 +281,27 @@ fn workspace(map: &Map<String, Value>) -> Option<String> {
         .map(str::to_owned)
 }
 
-/// Guesses the phase when the command line gave none. Antigravity's payload has no event name;
-/// this is a fallback for hooks installed without `--phase`.
+/// The directory the call is judged in: the agent's working directory (`cwd`, sent since
+/// 1.5.4), else the first workspace root.
+fn working_dir(map: &Map<String, Value>) -> Option<String> {
+    text(map, "cwd").or_else(|| workspace(map))
+}
+
+/// The phase named by `hookEventName` (sent since 1.5.4), for hooks installed without
+/// `--phase`. `Stop` is the end of a turn, not of the session, and `PostInvocation` is not
+/// used, so neither maps to a phase.
+fn named_phase(map: &Map<String, Value>) -> Option<Phase> {
+    match text(map, "hookEventName")?.as_str() {
+        "PreToolUse" => Some(Phase::PreTool),
+        "PostToolUse" => Some(Phase::PostTool),
+        "SessionStart" => Some(Phase::SessionStart),
+        "PreInvocation" => Some(Phase::PromptSubmit),
+        _ => None,
+    }
+}
+
+/// Guesses the phase when neither the command line nor the payload names the event (builds
+/// before 1.5.4, for hooks installed without `--phase`).
 fn infer_phase(map: &Map<String, Value>, has_tool_call: bool) -> Option<Phase> {
     if has_tool_call {
         Some(if get(map, "error").is_some() {
@@ -572,6 +597,65 @@ mod tests {
             r#"{"name":"mcp_fs_write","args":{"path":"/w/a.rs"}}"#,
         );
         assert_eq!(event.tool.unwrap().kind, ToolKind::Write);
+    }
+
+    #[test]
+    fn file_tools_this_adapter_has_not_seen_are_writes() {
+        // The 1.5.9 changelog names tools no run has offered yet. Whatever their arguments turn
+        // out to be, a path among them makes the call a write.
+        for call in [
+            r#"{"name":"sed_file","args":{"Path":"/w/a.rs","Expression":"s/1/2/"}}"#,
+            r#"{"name":"notebook_edit","args":{"NotebookPath":"/w/a.rs","CellId":"c1"}}"#,
+        ] {
+            let event = tool_event(Phase::PreTool, call);
+            assert_eq!(event.tool.unwrap().kind, ToolKind::Write, "{call}");
+            assert_eq!(event.paths, vec!["/w/a.rs"], "{call}");
+        }
+        // `swarm` (1.5.x) starts workers; its `workspace` argument is a mode, not a path.
+        let event = tool_event(
+            Phase::PreTool,
+            r#"{"name":"swarm","args":{"action":"start","workspace":"inherit","n":2}}"#,
+        );
+        assert_eq!(event.tool.unwrap().kind, ToolKind::Other);
+    }
+
+    #[test]
+    fn the_event_name_gives_the_phase_when_the_command_line_does_not() {
+        let phase = |name: &str, rest: &str| {
+            let json = format!(r#"{{"conversationId":"c","hookEventName":"{name}"{rest}}}"#);
+            parse(None, &json).map(|event| event.phase)
+        };
+        let call = r#","toolCall":{"name":"read_file","args":{}}"#;
+        assert_eq!(phase("PreToolUse", call).unwrap(), Phase::PreTool);
+        // No `error` key: the fields alone would say pre-tool.
+        assert_eq!(phase("PostToolUse", call).unwrap(), Phase::PostTool);
+        assert_eq!(phase("SessionStart", "").unwrap(), Phase::SessionStart);
+        assert_eq!(
+            phase("PreInvocation", r#","invocationNum":0,"initialNumSteps":1"#).unwrap(),
+            Phase::SessionStart
+        );
+        assert_eq!(
+            phase("PreInvocation", r#","invocationNum":2,"initialNumSteps":7"#).unwrap(),
+            Phase::PromptSubmit
+        );
+        // A turn end is not a session end.
+        assert!(phase("Stop", "").is_err());
+        assert!(phase("PostInvocation", "").is_err());
+        // The command line wins.
+        let json = r#"{"conversationId":"c","hookEventName":"PostToolUse","toolCall":{"name":"read_file","args":{}}}"#;
+        assert_eq!(
+            parse(Some(Phase::PreTool), json).unwrap().phase,
+            Phase::PreTool
+        );
+    }
+
+    #[test]
+    fn the_agents_working_directory_wins_over_the_workspace_root() {
+        let json = r#"{"conversationId":"c","cwd":"C:\\w\\sub","workspacePaths":["C:/w"],"toolCall":{"id":"call_1","name":"run_command","args":{"CommandLine":"dir"}}}"#;
+        let event = parse(Some(Phase::PreTool), json).unwrap();
+        assert_eq!(event.cwd, "C:\\w\\sub");
+        assert_eq!(event.tool.unwrap().name, "run_command (powershell)");
+        assert_eq!(event.raw["toolCall"]["id"], "call_1");
     }
 
     #[test]

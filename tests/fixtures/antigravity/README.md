@@ -31,6 +31,26 @@ before changing adapter code (plan section 9.1).
 | `real_post_tool_read_file_error.json` | PostToolUse with an `error` |
 | `real_stop.json` | Stop (`terminationReason` `NO_TOOL_CALL`) |
 
+## Real captures (`agy` 1.5.9)
+
+Captured on Windows on 2026-11-15 (decision 0043) the same way, with the same replacements. Since
+1.5.4 every payload carries `hookEventName` and `cwd`, and a tool call carries `id`.
+
+| File | Event |
+| --- | --- |
+| `real159_session_start.json` | SessionStart |
+| `real159_pre_invocation_first.json` | PreInvocation, first call of a new conversation |
+| `real159_pre_invocation_subagent_first.json` | PreInvocation, a subagent's first call (its own `conversationId`, nothing naming the parent) |
+| `real159_pre_tool_read_file.json` | PreToolUse `read_file {Path}`, backslash path |
+| `real159_pre_tool_edit_file.json` | PreToolUse `edit_file {Path, Target, Replacement}` |
+| `real159_post_tool_edit_file.json` | PostToolUse of the same call (the same `toolCall.id`) |
+| `real159_pre_tool_run_command.json` | PreToolUse `run_command` |
+| `real159_pre_tool_invoke_subagent.json` | PreToolUse `invoke_subagent {Model, Prompt, Role, TypeName, Workspace}` |
+| `real159_pre_tool_manage_subagents.json` | PreToolUse `manage_subagents {Action}` |
+| `real159_pre_tool_write_file_subagent.json` | PreToolUse `write_file {Path, Content, Append}`, made by the subagent |
+| `real159_pre_tool_send_message_subagent.json` | PreToolUse `send_message {Message, Recipient}`: the subagent reporting to its parent |
+| `real159_stop.json` | Stop (`continuationActive`, `fullyIdle` false) |
+
 Provenance legend: **quoted** = the shape and field names appear verbatim in a source;
 **assembled** = field names quoted, but this exact object was put together here;
 **unverified** = at least one field name or value rests on one third-party report.
