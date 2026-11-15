@@ -30,12 +30,38 @@ const TOKEN_PREFIXES: &[&str] = &[
     "github_pat_",
     "glpat-",
     "sk-",
+    "sk_live_",
+    "sk_test_",
+    "rk_live_",
+    "rk_test_",
+    "whsec_",
+    "npm_",
+    "pypi-",
+    "hf_",
+    "shpat_",
+    "dop_v1_",
+    "glptt-",
     "xoxb-",
     "xoxa-",
     "xoxp-",
+    "xoxs-",
+    "xapp-",
     "AKIA",
     "AIza",
 ];
+
+/// Whether a known token prefix starts `word` or follows a `:`, `=`, quote or `@` inside it
+/// (`sara:ghp_...` in `curl -u`, `token="ghp_..."`).
+fn holds_token(word: &str) -> bool {
+    let starts = std::iter::once(0).chain(
+        word.char_indices()
+            .filter(|(_, c)| matches!(c, ':' | '=' | '"' | '\'' | '@' | '(' | ','))
+            .map(|(i, c)| i + c.len_utf8()),
+    );
+    starts
+        .filter_map(|i| word.get(i..))
+        .any(|rest| TOKEN_PREFIXES.iter().any(|prefix| rest.starts_with(prefix)))
+}
 
 fn is_sensitive_name(name: &str) -> bool {
     let lower = name.to_ascii_lowercase();
@@ -92,13 +118,10 @@ pub fn redact_text(command: &str, max_chars: usize) -> String {
             // `Authorization: Bearer <token>`: the scheme and the credential.
             mask_next = 2;
             token.to_owned()
-        } else if TOKEN_PREFIXES
-            .iter()
-            .any(|prefix| token.trim_matches(['"', '\'']).starts_with(prefix))
-        {
-            "***".to_owned()
         } else if let Some(url) = mask_url_password(token) {
             url
+        } else if holds_token(token) {
+            "***".to_owned()
         } else {
             token.to_owned()
         };
@@ -146,6 +169,12 @@ mod tests {
             "git clone https://***@github.com/x/y"
         );
         assert_eq!(redact_command("echo ghp_abcdef sk-12345"), "echo *** ***");
+        assert_eq!(
+            redact_command("stripe sk_live_51Hx curl -u sara:ghp_abc -d token=\"npm_x\""),
+            "stripe *** curl -u *** -d token=***"
+        );
+        // A word that only contains a prefix in the middle of a name is left alone.
+        assert_eq!(redact_command("cargo test hash_map"), "cargo test hash_map");
     }
 
     #[test]
