@@ -5,11 +5,10 @@
   </picture>
 </p>
 
-<h3 align="center">Rules for any agent that works in your repository</h3>
+<h1 align="center">Rules for any agent that works in your repository</h1>
 
 <p align="center">
-  ACS, the Agent Control System, checks every tool call a coding agent makes, before it runs.<br>
-  One writer per file. Paths no agent may touch. A record of every session, and a way to take one back.
+  <b>Works with</b>&nbsp; Claude Code · Antigravity · Codex <sub>(coming soon)</sub>
 </p>
 
 <p align="center">
@@ -22,29 +21,34 @@
 
 ---
 
-## The problem
+ACS, the Agent Control System, is a command-line tool that works alongside git. A repository
+adopts it once. From then on every coding agent that works there, whoever started it, acts inside
+limits the repository's developers have set.
 
-Open two agent sessions in one repository and neither knows the other exists. Both edit the same
-file, and the last one to write wins. The other session's work is gone, and often nobody notices
-until much later. Add teammates with their own agents and it happens more often.
+Each time an agent is about to write a file or run a command, ACS checks the call against rules
+you commit next to your code. It lets the call through, blocks it with a reason, or asks you. One
+agent or twenty, yours or a teammate's, the rules are the same.
 
-Agents also do things nobody asked for: `git push --force`, a stray `rm -rf`, an edit to your CI
-workflow or a `.env` file.
+## What you get to decide
 
-## What ACS does
+| | |
+| --- | --- |
+| **Where agents may never write** | Sealed paths, banned commands, protected branches |
+| **Who is in a file right now** | Claims: one writer per file, across sessions and machines |
+| **Which folders belong to whom** | Zones with owners, and overrides only a person can grant |
+| **What an agent is told first** | Lore: your conventions, handed over when an agent enters a folder |
+| **What a session did, and taking it back** | A record per session, line-level blame, undo |
 
-ACS sits between the agent and your repository. Your agent harness calls one small `acs` program
-on every tool call, and it answers **allow**, **deny** or **ask the person**, the same way every
-time and in a few milliseconds. No model is involved and nothing is sent anywhere.
+| One binary, no server | It never calls a model | Fast enough to run on every call |
+| --- | --- | --- |
+| A single static `acs` program. No daemon and no hosted service. Teams share state through the git remote they already have. | Every decision is plain code over your policy files. The same call gets the same answer every time. | A check is a fresh process with a 15 ms budget, so the agent doesn't notice it. |
 
-When it refuses, it tells the agent why and what to do instead:
+When ACS blocks a call, the agent is told why and what to do instead:
 
 ```text
 src/api.ts is claimed by sara@example.com (claude-code, active just now).
 Work on other files, or ask your pilot to coordinate.
 ```
-
-The agent moves on to other work. You hear from ACS only when something was refused.
 
 ## Get started
 
@@ -108,7 +112,7 @@ Teammates install the program, pull, and run `acs init` once in their clone.
 | | Feature | What it does |
 | --- | --- | --- |
 | 🔒 | **Claims** | One writer per file. The first session to edit a file holds it until it goes quiet or ends. Other sessions are told who holds it. |
-| 🛑 | **Guards** | Paths no agent may write (`.git/**`, `.env*`, CI workflows, your own list), commands no agent may run, protected branches, and a ceiling on what one command may delete. |
+| 🛑 | **Guards** | Paths no agent may write (`.git/**`, real `.env` files, your own list such as CI workflows), commands no agent may run, protected branches, and a ceiling on what one command may delete. |
 | 🗺️ | **Territory** | Give folders owners. Only the owners' agents may change an owned zone, and only a person can let another agent in. |
 | 📖 | **Lore** | What you would tell a new colleague before they touch a folder. Written once, handed to every agent that works there. |
 | 🧾 | **History, blame and undo** | A record of every agent session. See which session wrote a line, and take one session's changes back out without touching anyone else's. |
@@ -149,7 +153,7 @@ Claimed by others (2):
 $ acs log --since 2d
 $ acs blame payments/refund.py     # which session wrote each line, and why
 
-$ acs undo ses_4k2                 # shows the plan, changes nothing
+$ acs undo --last                  # plan for the last session that changed files
 $ acs undo ses_4k2 --apply         # puts the files back, keeps later work
 ```
 
@@ -169,20 +173,12 @@ never rewritten.
 | `acs override` | Let an agent into an owned zone, once or for a session |
 | `acs off` · `acs on` | Pause the gate on this machine. Sealed paths and banned commands still hold. |
 | `acs lore` | Read the repository's lore and review what agents suggest |
-| `acs log` · `acs blame` · `acs undo` | See past sessions, who wrote a line, and take a session back |
+| `acs log` · `acs blame` · `acs undo` | See past sessions, who wrote a line, and take a session back by id or with `--last` |
 | `acs verify` · `acs stats` | Check the records are unaltered. Count what ACS prevented. |
 | `acs uninstall` | Take ACS out of a repository |
 
-Every command takes `--json` and `--help`.
-
-## Works with
-
-| Harness | |
-| --- | --- |
-| Claude Code | Supported |
-| Antigravity | Supported |
-| Codex | Coming |
-| VS Code | An extension claims the files you edit and marks the ones others hold |
+Every command takes `--json` and `--help`. An extension for VS Code claims the files you edit and
+marks the ones others hold.
 
 ## What ACS does not do
 
@@ -239,4 +235,4 @@ cargo build --release -p acs-cli   # produces target/release/acs
 
 ## License
 
-Licensed under either of MIT or [Apache-2.0](LICENSE-APACHE) at your option.
+Licensed under [Apache-2.0](LICENSE-APACHE).
