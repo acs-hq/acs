@@ -89,7 +89,14 @@ fn nested_worktree(world: &World) -> PathBuf {
     git(
         &world.repo,
         &world.git_config,
-        &["worktree", "add", "-q", "-b", "side", ".claude/worktrees/wp"],
+        &[
+            "worktree",
+            "add",
+            "-q",
+            "-b",
+            "side",
+            ".claude/worktrees/wp",
+        ],
     );
     dunce::canonicalize(world.repo.join(".claude/worktrees/wp")).unwrap()
 }
@@ -113,7 +120,10 @@ fn w1_undo_never_deletes_a_file_that_existed_before_the_session() {
     agent.start();
     // The pre-tool event never reached ACS (the hook failed open); the edit and the post-tool
     // event did.
-    world.write("notes.txt", "my own notes, never committed\nplus a line by the agent\n");
+    world.write(
+        "notes.txt",
+        "my own notes, never committed\nplus a line by the agent\n",
+    );
     agent.post_edit("notes.txt");
     agent.end();
     let sid = session_id(&agent);
@@ -387,7 +397,11 @@ fn w8_accepting_lore_never_moves_a_checked_out_branch() {
         ),
     );
     git(&world.repo, &world.git_config, &["add", "-A"]);
-    git(&world.repo, &world.git_config, &["commit", "-q", "-m", "lore"]);
+    git(
+        &world.repo,
+        &world.git_config,
+        &["commit", "-q", "-m", "lore"],
+    );
 
     propose_replacement(&world, "prop_one", "Amounts are i64 cents.");
     let first = world.run(
@@ -396,7 +410,11 @@ fn w8_accepting_lore_never_moves_a_checked_out_branch() {
         &world.repo,
     );
     assert!(first.status.success(), "{first:?}");
-    git(&world.repo, &world.git_config, &["checkout", "-q", "acs/lore-pay"]);
+    git(
+        &world.repo,
+        &world.git_config,
+        &["checkout", "-q", "acs/lore-pay"],
+    );
     let before = git_out(&world, &["rev-parse", "HEAD"]);
 
     propose_replacement(&world, "prop_two", "Amounts are i64 cents, never floats.");
@@ -449,8 +467,15 @@ fn w9_a_stale_marker_does_not_reject_a_persons_commit_of_a_sealed_path() {
     agent.start();
     agent.pre_shell("false && git commit -m wip");
     world.write(".acs/policy/config.toml", "spec = \"acs/0.1\"\n");
-    git(&world.repo, &world.git_config, &["add", ".acs/policy/config.toml"]);
-    let out = git_run(&world, &["commit", "-q", "-m", "policy change by the person"]);
+    git(
+        &world.repo,
+        &world.git_config,
+        &["add", ".acs/policy/config.toml"],
+    );
+    let out = git_run(
+        &world,
+        &["commit", "-q", "-m", "policy change by the person"],
+    );
     assert!(
         out.status.success(),
         "a person's commit was rejected as an agent's: {}",
