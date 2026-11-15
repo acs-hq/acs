@@ -363,6 +363,7 @@ fn antigravity_gets_the_built_in_plugin_in_the_workspace_folder() {
     let installed = world.repo.join(".agents/plugins/acs");
     for rel in [
         "plugin.json",
+        "assets/logo.svg",
         "hooks.json",
         "mcp_config.json",
         "rules/acs.md",

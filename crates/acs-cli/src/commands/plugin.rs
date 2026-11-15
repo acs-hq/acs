@@ -39,6 +39,10 @@ const ANTIGRAVITY_PLUGIN_FILES: &[(&str, &str)] = &[
         include_str!("../../../../integrations/antigravity/plugin.json"),
     ),
     (
+        "assets/logo.svg",
+        include_str!("../../../../integrations/antigravity/assets/logo.svg"),
+    ),
+    (
         "hooks.json",
         include_str!("../../../../integrations/antigravity/hooks.json"),
     ),

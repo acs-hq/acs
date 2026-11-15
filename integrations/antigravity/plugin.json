@@ -2,5 +2,6 @@
   "name": "acs",
   "displayName": "ACS (Agent Control System)",
   "description": "Coordinates agents working in one git repository: claims files before edits, blocks collisions and gives denials the agent can act on.",
-  "version": "0.1.0"
+  "version": "0.1.0",
+  "logo": "assets/logo.svg"
 }

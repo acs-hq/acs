@@ -3,12 +3,15 @@
 Installs ACS into Antigravity (the `agy` CLI and the app): a `PreToolUse` gate, post-tool
 attribution, context injection at the first model call, the `acs` MCP server, an always-on rule and
 the two skills. Formats, sources and the real runs: `docs/adapters/antigravity.md` (section 15).
-Decisions: `docs/decisions/0014-antigravity-adapter.md` and `0024-antigravity-gate.md`.
+Decisions: `docs/decisions/0014-antigravity-adapter.md`, `0024-antigravity-gate.md` and
+`0043-antigravity-open-questions-settled.md`. Checked with `agy` 1.4.12 and 1.5.9 on Windows; the
+desktop app has not been checked yet (issue 6).
 
 | File | Purpose |
 | --- | --- |
 | `plugin.json` | Manifest. The name is lowercase kebab-case, as `agy plugin validate` requires. |
-| `hooks.json` | `PreToolUse`, `PostToolUse` and `PreInvocation` hooks running `acs hook antigravity --phase ...`. No `Stop` hook (it fires at every turn end, not at session end) and no `SessionStart` hook (the first `PreInvocation` does its job, also where `SessionStart` may not fire). |
+| `assets/logo.svg` | The icon Antigravity shows for the plugin. |
+| `hooks.json` | `PreToolUse`, `PostToolUse` and `PreInvocation` hooks running `acs hook antigravity --phase ...`. The commands contain no double quotes: on Windows, `agy` before 1.5.8 silently skipped hook commands that did. No `Stop` hook (it fires at every turn end, not at session end) and no `SessionStart` hook (the first `PreInvocation` does its job, also where `SessionStart` may not fire). |
 | `mcp_config.json` | Registers `acs mcp --harness antigravity`. Appears to the agent as server `acs_acs`, its tools as `mcp_acs_acs_acs_status` and so on. |
 | `rules/acs.md` | Always-on rule: call `acs_status` / `acs_intent` first, follow denials. |
 | `skills/acs-setup/`, `skills/acs-usage/` | Exact copies of the canonical skills in `skills/` (`crates/acs-cli/tests/packaging.rs` checks it). |
