@@ -146,6 +146,17 @@ pub fn commit_file_on_branch(
 ) -> Result<BranchCommit, GitError> {
     let full = format!("refs/heads/{branch}");
     let existing = resolve_ref(work_tree, &full)?;
+    // `update-ref` would move a checked-out branch under its work tree, leaving the index and the
+    // files on the old commit (the new entry then shows as a staged reversal).
+    if existing.is_some() && checked_out_anywhere(work_tree, &full)? {
+        return Err(GitError::Command {
+            args: "update-ref".to_owned(),
+            detail: format!(
+                "the branch `{branch}` is checked out; switch to another branch (or commit there \
+                 yourself) and accept again"
+            ),
+        });
+    }
     let parent = match &existing {
         Some(tip) => tip.clone(),
         None => resolve_commit(work_tree, base)?.ok_or_else(|| GitError::Command {
@@ -215,6 +226,16 @@ pub fn short_commit(work_tree: &Path, commit: &str) -> Result<String, GitError> 
 }
 
 /// A scratch index file inside the git directory, removed when dropped.
+/// Whether `full_ref` (`refs/heads/...`) is the checked-out branch of any work tree of the
+/// repository.
+fn checked_out_anywhere(work_tree: &Path, full_ref: &str) -> Result<bool, GitError> {
+    let args = ["worktree", "list", "--porcelain"];
+    let listing = checked(&args, git_output(work_tree, &args, None, &[])?)?;
+    Ok(listing
+        .lines()
+        .any(|line| line.strip_prefix("branch ") == Some(full_ref)))
+}
+
 struct TempIndex {
     path: PathBuf,
     text: String,
