@@ -498,6 +498,11 @@ skipped when no binary exists. SPEC section 6.2 states the rule for editor integ
 
 **Known gaps and sharp edges**
 
+- Write paths (audit of 2026-11-16, `docs/security/write-paths.md`, decision 0044): W2 (undo in
+  the wrong worktree), W4 (a rejected undo commit leaves files staged), W6 (a newline added to a
+  hook) and W9 (a stale commit marker alters or rejects a person's commit, issue 38) are open, and
+  their tests in `crates/acs-cli/tests/write_paths.rs` fail on purpose until fixed. Anything that
+  writes to a person's repository gets a test there.
 - Antigravity: no session end or prompt event; `SessionStart` fires in the CLI but ACS relies on
   the first `PreInvocation`, whose rule now rests on real counters. ACS `allow` renders as
   `allow` (decision 0024). In `always-proceed` mode `force_ask` is approved without a prompt.

@@ -75,7 +75,9 @@ surface.
     deleted it); otherwise `git merge-file -p current post pre`, and a conflict leaves the file
     alone. A file tool takes no pre-image of a file that does not exist yet, so a path whose first
     attribution is a tool write without `pre_hash` counts as created; without this, create-then-
-    edit would restore the intermediate version.
+    edit would restore the intermediate version. *Amended by decision 0044: the pre-tool step now
+    records a missing file as absent, and only that pre-image makes a file "created"; the rule
+    above deleted files whose pre-tool step never ran.*
 13. **A live seat is not undone.** `--apply` refuses a seat with no end that was seen within
     `claim_ttl_secs`; the dry run works with a warning. Apply re-hashes each file just before
     writing and skips one that changed since the plan.

@@ -55,7 +55,7 @@ For each file the session changed, ACS compares three versions: before the sessi
 - **Unchanged since the session:** the file goes back to how it was before. A file the session created is deleted, and one it deleted comes back.
 - **Changed by someone since:** the session's change is taken out and the later changes are kept. If they overlap, the file is left alone and reported as a conflict.
 - **Held by another session right now:** left alone. Run undo again once it is released.
-- **No copy from before the session:** left alone and reported. This happens for files over 32 MB and for files a shell command changed that git did not track.
+- **No copy from before the session:** left alone and reported. This happens for files over 32 MB, for files a shell command changed that git did not track, and when ACS's check before the agent's edit did not run (for example it timed out). ACS never deletes a file it has no copy of.
 
 - **The copy was removed to save space:** left alone and reported. ACS keeps copies of up to 500 MiB per repository. Past that, `acs sync` (which hooks start in the background, including when a session ends) removes the copies of the oldest ended sessions first; those of a running session are never removed. `acs doctor` shows how much is used.
 
