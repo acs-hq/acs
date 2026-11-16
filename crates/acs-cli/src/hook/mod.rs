@@ -12,12 +12,14 @@
 //! - [`post`]: find what changed (the event's paths, or a working-tree diff for shell commands),
 //!   attribute it, store post-images, refresh heartbeats.
 //! - [`session`]: session start, prompt submit and session end.
+//! - [`intent`]: the one reminder for a session that changes files without an intent.
 //! - [`markers`]: the small files in `pending/` that tie events together and talk to git hooks.
 //!
 //! A tool event that no switched-on feature needs ends early (decision 0035): [`unneeded`] says
 //! which, and `skip` handles it without creating a seat or recording an event. The switches are
 //! part of the policy, so this comes after the repository is opened.
 
+pub mod intent;
 pub mod markers;
 pub mod post;
 pub mod pre;

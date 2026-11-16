@@ -5,6 +5,7 @@ use acs_core::{
 };
 use acs_store::{LastDecision, NewEvent, SeatInfo};
 
+use super::intent;
 use super::markers::{self, CommitMarker, ToolMarker};
 use super::redact::redact_command;
 use super::snapshots::capture_pre;
@@ -70,6 +71,9 @@ pub fn run(ctx: &RepoContext, event: &ToolEvent, now: Timestamp) -> Decision {
         }
         record(ctx, event, info, &norm.predicted, &decision, now);
         if proceeds {
+            decision
+                .context
+                .extend(intent::before_tool(db, info, event, now));
             leave_markers(ctx, event, info, &norm, now);
         }
     }
