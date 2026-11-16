@@ -40,10 +40,17 @@ searching for a missing tool and do not try to do its job another way: nothing n
 
 ## Always
 
-1. **Start with `acs_intent`.** Before anything else, say in one sentence what you are about to
-   do. Other agents and your pilot see it.
-2. **Call `acs_status`** before you plan edits. It says which parts of ACS are on, what you and
-   others hold, and which paths are never writable.
+Do both once per session, before any other work, whatever the task is. ACS is not automatic:
+without these calls your session's record and what other agents are told about you say nothing
+about what you were doing.
+
+1. **Call `acs_status`.** It says which parts of ACS are on, what you and others hold, and which
+   paths are never writable.
+2. **Call `acs_intent`.** Say in one sentence what you are about to do. Other agents and your
+   pilot see it. Call it again when your task changes.
+
+Do not repeat them with every message from your pilot. Call `acs_status` again only when you
+need to know who holds files now.
 
 ## When claims are on
 
