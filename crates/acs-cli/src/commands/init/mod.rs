@@ -626,6 +626,13 @@ pub fn render(report: &InitReport) -> String {
             "    ",
         ));
     }
+    if !report.remotes.is_empty() {
+        out.push_str(&wrap(
+            &crate::runtime::sync::publishes_text(None),
+            "  ",
+            "  ",
+        ));
+    }
 
     out.push_str("\nGit hooks\n");
     match &report.git_hooks {

@@ -36,5 +36,6 @@ they share.
 | Script | What it checks |
 | --- | --- |
 | `real/first_run.sh` | `acs init --yes` and nothing else: an edit and a commit go through with the trailer, `.env` and a banned command hold, nothing reaches the remote, and `acs uninstall --all` leaves git's config, hooks and remote byte-identical |
+| `real/first_calls.sh` | Agents given tasks that never mention ACS call `acs_status` and `acs_intent` before their first change: three Claude Code sessions, and one Antigravity conversation of three messages in which `acs_status` is called once (decision 0046) |
 | `real/history.sh` | `acs log`, `acs blame`, `acs stats`, `acs verify`; `acs undo --last` keeps the other session's work byte-identical; a committed session is undone with a new commit; a person's commit against a live claim is rejected |
 | `real/guards.sh` | An agent asked to delete a folder, force-push, `git clean`, change `.env`, run `acs off` and commit with `--no-verify` is refused each time; `.env.example` and `.github/workflows/` stay writable. On Windows it runs again through the PowerShell tool |

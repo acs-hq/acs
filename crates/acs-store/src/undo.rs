@@ -27,7 +27,7 @@ use acs_core::{ContentHash, RepoPath, SessionId};
 use rusqlite::params;
 use serde::Serialize;
 
-use crate::attributions::{AttributionSource, StoredAttribution};
+use crate::attributions::StoredAttribution;
 use crate::db::{StateDb, StoreError, id_from_db};
 use crate::seats::SeatInfo;
 use crate::snapshots::{
@@ -243,31 +243,26 @@ fn key(state: &FileState) -> Option<ContentHash> {
     }
 }
 
-/// The state of the session's first change's "before": the first pre-image, unless the session
-/// created the file (its first post-image came before any pre-image and the file tool recorded no
-/// before-hash), in which case the file was absent.
-fn before_state(
-    entries: &[&SnapshotEntry],
-    attributions: &[&StoredAttribution],
-) -> Option<FileState> {
+/// The state of the session's first change's "before": the first pre-image, if it was taken before
+/// the first post-image. The pre-tool step records a file that does not exist yet as
+/// [`FileState::Absent`], so a creation has a pre-image too.
+///
+/// Without such a pre-image the before-state is unknown, even when the first attribution has no
+/// before-hash: that is also what a change looks like whose pre-tool step never ran (the hook
+/// failed open or timed out, the state was busy, `history` was switched on in between), and
+/// taking it for a creation made undo delete a file that existed before the session (W1 in
+/// `docs/security/write-paths.md`).
+fn before_state(entries: &[&SnapshotEntry]) -> Option<FileState> {
     let first = |kind: SnapshotKind| {
         entries
             .iter()
             .filter(|e| e.kind == kind)
             .min_by_key(|e| e.seq)
     };
-    let pre = first(SnapshotKind::Pre);
-    let post = first(SnapshotKind::Post);
-    if let Some(pre) = pre
-        && post.is_none_or(|post| pre.seq < post.seq)
-    {
-        return Some(pre.state.clone());
-    }
-    // A file tool's pre-tool step takes no image of a file that does not exist, so a tool-made
-    // first change with no earlier before-hash created the file.
-    let first_attribution = attributions.iter().min_by_key(|a| a.id)?;
-    (first_attribution.via == AttributionSource::Tool && first_attribution.pre_hash.is_none())
-        .then_some(FileState::Absent)
+    let pre = first(SnapshotKind::Pre)?;
+    first(SnapshotKind::Post)
+        .is_none_or(|post| pre.seq < post.seq)
+        .then(|| pre.state.clone())
 }
 
 /// The state after the session's last change: the last post-image, or the hash the last
@@ -360,6 +355,17 @@ fn plan_path(
 ) -> Result<UndoItem, UndoError> {
     let store = inputs.snapshots;
     let abs = inputs.work_tree.join(path.as_str());
+    if let Some(link) = link_on_the_way(inputs.work_tree, path) {
+        return Ok(item(
+            path,
+            UndoAction::Conflict,
+            Some(format!(
+                "`{link}` is a link now; undo does not write through links"
+            )),
+            Effect::Nothing,
+            None,
+        ));
+    }
     let current = match read_file(&abs) {
         Ok(Some((bytes, mode))) => Some((bytes, mode)),
         Ok(None) => None,
@@ -403,7 +409,7 @@ fn plan_path(
         )
     };
 
-    let Some(pre) = before_state(entries, attributions) else {
+    let Some(pre) = before_state(entries) else {
         return Ok(unknown(
             "no pre-image: ACS could not tell what the file was before the session",
             current_key,
@@ -531,6 +537,11 @@ pub fn apply(store: &SnapshotStore, work_tree: &Path, plan: &UndoPlan) -> Vec<Ap
 
 fn apply_item(store: &SnapshotStore, work_tree: &Path, item: &UndoItem) -> Result<(), String> {
     let abs = work_tree.join(item.path.as_str());
+    if let Some(link) = link_on_the_way(work_tree, &item.path) {
+        return Err(format!(
+            "`{link}` is a link now; undo does not write through links"
+        ));
+    }
     let now_key = match read_file(&abs) {
         Ok(read) => read.map(|(bytes, _)| ContentHash::of(&bytes)),
         Err(err) => return Err(err.to_string()),
@@ -549,6 +560,31 @@ fn apply_item(store: &SnapshotStore, work_tree: &Path, item: &UndoItem) -> Resul
             SnapshotStore::write_file(&abs, bytes, *mode).map_err(|e| e.to_string())
         }
     }
+}
+
+/// The first part of `path` (a folder on the way, or the file itself) that is a symbolic link or
+/// a junction in `work_tree`, as a repository path.
+///
+/// Sessions record files under their real paths, so a link here was put in place afterwards, or
+/// the change was made through it unseen. Writing would replace the link with a regular file (the
+/// write renames a temporary file over it) or land wherever the link points, outside the
+/// repository included. Undo leaves such a path alone.
+fn link_on_the_way(work_tree: &Path, path: &RepoPath) -> Option<String> {
+    let mut abs = work_tree.to_owned();
+    let mut rel = String::new();
+    for part in path.as_str().split('/') {
+        abs.push(part);
+        if !rel.is_empty() {
+            rel.push('/');
+        }
+        rel.push_str(part);
+        match fs::symlink_metadata(&abs) {
+            Ok(meta) if meta.file_type().is_symlink() => return Some(rel),
+            Ok(_) => {}
+            Err(_) => return None,
+        }
+    }
+    None
 }
 
 /// Removes a file; a missing file is fine, and a read-only one (Windows refuses to delete it) is

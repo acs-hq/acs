@@ -278,6 +278,136 @@ fn ending_a_session_keeps_its_snapshots_and_a_resumed_session_gets_status_again(
     assert!(agent.info().ended_at.is_none());
 }
 
+/// Issue 73: a start message that only described ACS read as "nothing to do".
+#[test]
+fn session_start_asks_for_status_and_intent_until_an_intent_is_given() {
+    let world = World::new();
+    for (harness, status_tool, intent_tool) in [
+        (
+            "claude-code",
+            "`mcp__plugin_acs_acs__acs_status`",
+            "`mcp__plugin_acs_acs__acs_intent`",
+        ),
+        (
+            "antigravity",
+            "`mcp_acs_acs_acs_status`",
+            "`mcp_acs_acs_acs_intent`",
+        ),
+    ] {
+        let agent = Agent::new(&world, harness, "first");
+        let text = agent.start().context[0].clone();
+        assert!(text.contains("make these two tool calls"), "{text}");
+        assert!(text.contains("1. `acs_status`"), "{text}");
+        assert!(text.contains("2. `acs_intent`"), "{text}");
+        assert!(text.contains(status_tool), "{text}");
+        assert!(text.contains(intent_tool), "{text}");
+        assert!(text.contains("Once per session is enough"), "{text}");
+        assert!(text.contains("`acs_release`"), "{text}");
+        // The calls come before the description of what ACS does by itself.
+        assert!(
+            text.find("two tool calls").unwrap() < text.find("Editing a file claims").unwrap(),
+            "{text}"
+        );
+
+        // A second start of the same session (resume, compaction, a harness that reports one
+        // per message) does not ask again once the intent is on record.
+        world
+            .db()
+            .set_seat_intent(&agent.seat_id(), "Rename the parser module")
+            .unwrap();
+        let text = agent.start().context[0].clone();
+        assert!(!text.contains("two tool calls"), "{text}");
+        assert!(
+            text.contains("Your intent on record: \"Rename the parser module\""),
+            "{text}"
+        );
+    }
+    // A harness ACS ships no plugin for is asked too, without tool names it cannot know.
+    let other = Agent::new(&world, "canonical", "first");
+    let text = other.start().context[0].clone();
+    assert!(text.contains("make these two tool calls"), "{text}");
+    assert!(!text.contains("mcp_"), "{text}");
+}
+
+#[test]
+fn a_session_that_changes_files_without_an_intent_is_reminded_once() {
+    let world = World::new();
+    let claude = Agent::new(&world, "claude-code", "c1");
+    claude.start();
+    // Reading earns no reminder.
+    let d = claude.pre_tool("Read", "read", &["src/lib.rs"]);
+    assert!(d.context.is_empty(), "{d:?}");
+    // The first call that can change files does, with the tool's name in this harness.
+    let d = claude.pre_edit("a.txt");
+    assert_eq!(d.outcome, Outcome::Allow);
+    assert_eq!(d.context.len(), 1, "{d:?}");
+    assert!(d.context[0].contains("Call `acs_intent` now"), "{d:?}");
+    assert!(
+        d.context[0].contains("mcp__plugin_acs_acs__acs_intent"),
+        "{d:?}"
+    );
+    // Once.
+    assert!(claude.pre_edit("b.txt").context.is_empty());
+    assert!(claude.pre_shell("ls").context.is_empty());
+
+    // A session that gave its intent is never reminded.
+    let told = Agent::new(&world, "claude-code", "c2");
+    told.start();
+    world
+        .db()
+        .set_seat_intent(&told.seat_id(), "Add tests")
+        .unwrap();
+    assert!(told.pre_edit("c.txt").context.is_empty());
+
+    // A denied call carries no reminder, and does not use it up.
+    let denied = Agent::new(&world, "claude-code", "c3");
+    denied.start();
+    let d = denied.pre_edit(".acs/policy/guards.toml");
+    assert_eq!(d.outcome, Outcome::Deny);
+    assert!(d.context.is_empty(), "{d:?}");
+    assert_eq!(denied.pre_edit("d.txt").context.len(), 1);
+
+    // A new session of the same harness starts clean after the old one ended.
+    claude.end();
+    assert!(
+        world
+            .db()
+            .flag(&format!("intent_reminder:{}", claude.seat_id()))
+            .unwrap()
+            .is_none()
+    );
+}
+
+/// Antigravity shows no context with an allowed tool call, so the reminder waits for the next
+/// `PreInvocation`.
+#[test]
+fn antigravity_gets_the_intent_reminder_with_its_next_invocation() {
+    let world = World::new();
+    let agent = Agent::new(&world, "antigravity", "g1");
+    agent.start();
+    let prompt = || agent.send("prompt_submit", json!({"prompt": "go on"}));
+    assert!(prompt().context.is_empty(), "nothing was changed yet");
+    assert!(agent.pre_edit("a.txt").context.is_empty());
+    let d = prompt();
+    assert_eq!(d.context.len(), 1, "{d:?}");
+    assert!(d.context[0].contains("Call `acs_intent` now"), "{d:?}");
+    assert!(d.context[0].contains("mcp_acs_acs_acs_intent"), "{d:?}");
+    assert!(prompt().context.is_empty(), "once");
+    assert!(agent.pre_edit("b.txt").context.is_empty());
+    assert!(prompt().context.is_empty(), "once");
+
+    // An intent given between the edit and the next invocation cancels it.
+    let quick = Agent::new(&world, "antigravity", "g2");
+    quick.start();
+    quick.pre_edit("c.txt");
+    world
+        .db()
+        .set_seat_intent(&quick.seat_id(), "Fix c")
+        .unwrap();
+    let d = quick.send("prompt_submit", json!({"prompt": "go on"}));
+    assert!(d.context.is_empty(), "{d:?}");
+}
+
 #[test]
 fn prompt_submit_returns_context_only_for_new_notices() {
     let world = World::new();
@@ -306,6 +436,11 @@ fn pre_tool_context_delivers_notices_on_allow_but_not_on_deny() {
     let world = World::new();
     let agent = Agent::new(&world, "claude-code", "s1");
     agent.start();
+    // With an intent on record, the notice is all the context there is.
+    world
+        .db()
+        .set_seat_intent(&agent.seat_id(), "tidy up")
+        .unwrap();
     world
         .db()
         .insert_notice(

@@ -175,6 +175,62 @@ pub fn head_matches(
     })
 }
 
+/// Whether the work-tree file `path` is what `HEAD` holds for it, as git sees it: through
+/// `core.autocrlf` and clean filters, so a CRLF checkout of an LF blob matches (W3 in
+/// `docs/security/write-paths.md`). A path in neither matches; a path in only one does not.
+///
+/// # Errors
+///
+/// [`GitError::Command`] when `git` cannot be run or fails.
+pub fn worktree_matches_head(work_tree: &Path, path: &str) -> Result<bool, GitError> {
+    let fail = |args: &str, detail: String| GitError::Command {
+        args: args.to_owned(),
+        detail,
+    };
+    let listed = git_command(work_tree)
+        .args([
+            "--literal-pathspecs",
+            "ls-tree",
+            "--full-tree",
+            "--name-only",
+            "HEAD",
+            "--",
+        ])
+        .arg(path)
+        .stdin(Stdio::null())
+        .stderr(Stdio::null())
+        .output()
+        .map_err(|e| fail("ls-tree", e.to_string()))?;
+    let in_head = listed.status.success() && !listed.stdout.trim_ascii().is_empty();
+    let exists = fs::symlink_metadata(work_tree.join(path)).is_ok();
+    match (in_head, exists) {
+        (false, false) => Ok(true),
+        (true, true) => {
+            let diff = git_command(work_tree)
+                .args([
+                    "--literal-pathspecs",
+                    "diff",
+                    "--quiet",
+                    "--no-ext-diff",
+                    "HEAD",
+                    "--",
+                ])
+                .arg(path)
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status()
+                .map_err(|e| fail("diff", e.to_string()))?;
+            match diff.code() {
+                Some(0) => Ok(true),
+                Some(1) => Ok(false),
+                _ => Err(fail("diff", format!("exited with {diff}"))),
+            }
+        }
+        _ => Ok(false),
+    }
+}
+
 /// What [`commit_only`] did.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CommitOutcome {
@@ -189,7 +245,8 @@ pub enum CommitOutcome {
 /// Commits the work-tree state of `paths` with `message`, and only those paths (`git commit
 /// --only`): other staged changes stay staged and are not part of the commit. Deleted paths are
 /// committed as deletions. User hooks run; if one rejects the commit the work tree is left as it
-/// is and [`CommitOutcome::Failed`] says why.
+/// is, the index entries of `paths` go back to what they were, and [`CommitOutcome::Failed`]
+/// says why.
 ///
 /// # Errors
 ///
@@ -207,7 +264,9 @@ pub fn commit_only(
         detail,
     };
     // Stage the paths first: `--only` takes deletions of tracked files, but a restored file that
-    // is new to the index (the session had deleted it) needs the add.
+    // is new to the index (the session had deleted it) needs the add. The index entries are
+    // saved before, so a commit that fails leaves nothing staged that was not staged already.
+    let saved = index_entries(work_tree, paths).map_err(&fail)?;
     let add = git_command(work_tree)
         .arg("--literal-pathspecs")
         .args(["add", "-A", "--"])
@@ -242,7 +301,63 @@ pub fn commit_only(
     if text.contains("nothing to commit") || text.contains("no changes added") {
         return Ok(CommitOutcome::NothingToCommit);
     }
+    let mut text = text;
+    if let Err(e) = restore_index_entries(work_tree, paths, &saved) {
+        text.push_str(
+            "
+The files are still staged: ",
+        );
+        text.push_str(&e);
+    }
     Ok(CommitOutcome::Failed(text))
+}
+
+/// The index entries of `paths`, as `git ls-files -s -z` prints them (the format
+/// `git update-index -z --index-info` reads).
+fn index_entries(work_tree: &Path, paths: &[String]) -> Result<Vec<u8>, String> {
+    let out = git_command(work_tree)
+        .arg("--literal-pathspecs")
+        .args(["ls-files", "-s", "-z", "--"])
+        .args(paths)
+        .output()
+        .map_err(|e| e.to_string())?;
+    if !out.status.success() {
+        return Err(output_text(&out));
+    }
+    Ok(out.stdout)
+}
+
+/// Puts the index entries of `paths` back to `saved`: a path with no saved entry leaves the
+/// index. The work tree is not touched.
+fn restore_index_entries(work_tree: &Path, paths: &[String], saved: &[u8]) -> Result<(), String> {
+    use std::io::Write as _;
+    let remove = git_command(work_tree)
+        .args(["update-index", "--force-remove", "--"])
+        .args(paths)
+        .output()
+        .map_err(|e| e.to_string())?;
+    if !remove.status.success() {
+        return Err(output_text(&remove));
+    }
+    if saved.is_empty() {
+        return Ok(());
+    }
+    let mut child = git_command(work_tree)
+        .args(["update-index", "-z", "--index-info"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    if let Some(mut stdin) = child.stdin.take() {
+        stdin.write_all(saved).map_err(|e| e.to_string())?;
+    }
+    let out = child.wait_with_output().map_err(|e| e.to_string())?;
+    if out.status.success() {
+        Ok(())
+    } else {
+        Err(output_text(&out))
+    }
 }
 
 fn output_text(output: &std::process::Output) -> String {

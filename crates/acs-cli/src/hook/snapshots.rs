@@ -18,17 +18,25 @@ pub const MAX_SNAPSHOT_BYTES: u64 = 32 * 1024 * 1024;
 /// The most files snapshotted for one event.
 pub const MAX_SNAPSHOT_FILES: usize = 2_000;
 
-/// An existing regular file we are willing to read, with its repository path.
+/// A regular file we are willing to read, or a path where nothing exists yet, with its repository
+/// path. The store records a missing file as absent.
 fn candidate(ctx: &RepoContext, rel: &RepoPath) -> Option<(RepoPath, PathBuf)> {
     let abs = ctx.layout.work_tree.join(rel.as_str());
-    let meta = fs::metadata(&abs).ok()?;
-    (meta.is_file() && meta.len() <= MAX_SNAPSHOT_BYTES).then(|| (rel.clone(), abs))
+    match fs::symlink_metadata(&abs) {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Some((rel.clone(), abs)),
+        Err(_) => None,
+        Ok(_) => {
+            let meta = fs::metadata(&abs).ok()?;
+            (meta.is_file() && meta.len() <= MAX_SNAPSHOT_BYTES).then(|| (rel.clone(), abs))
+        }
+    }
 }
 
-/// Captures pre-images for the engine's snapshot requests. Missing files are skipped (decision
-/// 0009 item 8); a recursive request is served from the expansion the pipeline made for that
-/// directory. Returns warnings for what could not be done; a snapshot problem never blocks the
-/// tool call.
+/// Captures pre-images for the engine's snapshot requests. A requested file that does not exist
+/// yet is recorded as absent, so undo can tell a file the session created from one it has no
+/// image of (W1 in `docs/security/write-paths.md`; decision 0009 item 8 skipped them). A recursive
+/// request is served from the expansion the pipeline made for that directory. Returns warnings for
+/// what could not be done; a snapshot problem never blocks the tool call.
 #[must_use]
 pub fn capture_pre(
     ctx: &RepoContext,

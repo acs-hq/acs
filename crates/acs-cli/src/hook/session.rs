@@ -3,7 +3,7 @@
 use acs_core::{Decision, Outcome, ReasonCode, Timestamp, ToolEvent};
 use acs_store::NewEvent;
 
-use super::{keep_alive, markers};
+use super::{intent, keep_alive, markers};
 use crate::runtime::{RepoContext, seats, status, sync};
 
 fn allow() -> Decision {
@@ -39,6 +39,13 @@ pub fn start(ctx: &RepoContext, event: &ToolEvent, now: Timestamp) -> Decision {
     let _ = db.sweep_expired(now);
     let view = status(ctx, Some(&resolved.info), now);
     decision.context.push(view.summary_lines().join("\n"));
+    // A pilot who cloned a repository that syncs never ran a command that says what leaves the
+    // machine: the first session here passes it on, once.
+    if let Some(text) = sync::publishes_text_once(ctx, db, now) {
+        decision.context.push(format!(
+            "Tell your pilot this once, in your next reply: {text}"
+        ));
+    }
     let _ = db.record_event(&NewEvent {
         seat_id: &resolved.info.seat.seat_id,
         at: now,
@@ -56,7 +63,7 @@ pub fn start(ctx: &RepoContext, event: &ToolEvent, now: Timestamp) -> Decision {
     decision
 }
 
-/// `prompt_submit`: delivers pending notices, and nothing else. Some harnesses call this before
+/// `prompt_submit`: delivers pending notices and a waiting intent reminder, and nothing else. Some harnesses call this before
 /// every model call, so with nothing undelivered the context is empty.
 ///
 /// A session without a seat has nothing waiting for it, so none is created here: the first
@@ -68,6 +75,8 @@ pub fn prompt(ctx: &RepoContext, event: &ToolEvent, now: Timestamp) -> Decision 
         return decision;
     };
     keep_alive(db, &info, now);
+    // The reminder a harness could not show with the tool call that earned it.
+    decision.context.extend(intent::at_prompt(db, &info, now));
     let Ok(notices) = db.pending_notices(&info.seat.seat_id) else {
         return decision;
     };
@@ -78,7 +87,7 @@ pub fn prompt(ctx: &RepoContext, event: &ToolEvent, now: Timestamp) -> Decision 
     // Only the process that marks a notice delivered shows it, so two racing hooks of the same
     // seat never show it twice.
     if db.mark_delivered(&ids, now).is_ok_and(|marked| marked > 0) {
-        decision.context = notices.into_iter().map(|n| n.body).collect();
+        decision.context.extend(notices.into_iter().map(|n| n.body));
     }
     decision
 }
@@ -109,6 +118,7 @@ pub fn end(ctx: &RepoContext, event: &ToolEvent, now: Timestamp) -> Decision {
             detail: None,
         });
     }
+    intent::forget(db, &info);
     let _ = db.end_seat(&info.seat.seat_id, now);
     markers::clear_tool_marker(ctx, &info.seat.seat_id);
     // The claims just released would otherwise block other machines until their TTL: there may

@@ -152,13 +152,18 @@ fn schema_of<T: JsonSchema>() -> Map<String, Value> {
 /// out, so nothing tells an agent to claim where claims are switched off.
 #[must_use]
 pub fn instructions(available: Available) -> String {
-    let mut text = "ACS coordinates the coding agents working in this repository.".to_owned();
+    // The two calls come first and as an order: listed among the other tools they read as
+    // optional, and agents skipped them (issue 73).
+    let mut text = "ACS coordinates the coding agents working in this repository. Once per \
+                    session, before any other work, call acs_status and then acs_intent with one \
+                    sentence on your task; call acs_intent again when the task changes."
+        .to_owned();
     text.push_str(if available.claims {
-        " Claim files with acs_claim before you edit or delete them, say what you are doing \
-         with acs_intent, release files when done, and call acs_why when something is denied."
+        " Claim files with acs_claim before you edit or delete them, release files when done, \
+         and call acs_why when something is denied."
     } else {
-        " Claims are switched off here, so files need no claim. Say what you are doing with \
-         acs_intent, and call acs_why when something is denied."
+        " Claims are switched off here, so files need no claim. Call acs_why when something is \
+         denied."
     });
     if available.lore {
         text.push_str(
@@ -184,7 +189,8 @@ pub fn definitions_for(available: Available) -> Vec<ToolDef> {
         for def in &mut defs {
             if def.name == STATUS {
                 def.description = "Show which parts of ACS are on in this repository and which \
-                                   paths are never writable. Call it at the start of a task.";
+                                   paths are never writable. Call it once when your session \
+                                   starts, before other work. Not with every message.";
             }
         }
     }
@@ -198,8 +204,9 @@ pub fn definitions() -> Vec<ToolDef> {
         ToolDef {
             name: STATUS,
             description: "Show what you have claimed, what other agents have claimed, and which \
-                          paths are never writable. Call it at the start of a task and before \
-                          editing files others may be working on.",
+                          paths are never writable. Call it once when your session starts, \
+                          before other work, and again when you need to know who holds files \
+                          now. Not with every message.",
             input_schema: schema_of::<NoArgs>(),
             read_only: true,
             idempotent: true,
@@ -226,8 +233,8 @@ pub fn definitions() -> Vec<ToolDef> {
         ToolDef {
             name: INTENT,
             description: "Say in one sentence what you are about to do. Other agents and the \
-                          user see it in acs_status. Call it when you start a task and when \
-                          your plan changes.",
+                          user see it in acs_status. Call it once when your session starts, \
+                          before other work, and again when your task changes.",
             input_schema: schema_of::<IntentArgs>(),
             read_only: false,
             idempotent: true,
@@ -869,7 +876,8 @@ Use X."
                     assert!(!said.to_lowercase().contains("you have claimed"), "{said}");
                     assert!(said.contains("Claims are switched off"), "{said}");
                 }
-                assert!(instructions(available).len() < 420, "{available:?}");
+                assert!(instructions(available).len() < 520, "{available:?}");
+                assert!(instructions(available).contains("call acs_status and then acs_intent"));
             }
         }
     }

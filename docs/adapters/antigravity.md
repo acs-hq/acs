@@ -359,7 +359,8 @@ Workspace rule paths are consistent in third-party material [S18, S20]; the offi
 results but are unreadable here.
 
 **Tier B fallback rule.** A workspace rule `.agents/rules/acs.md` with front matter
-`trigger: always_on` telling the agent to call `acs_status` at the start of every task, and to
+`trigger: always_on` telling the agent to call `acs_status` once per conversation (decision
+0046; "at the start of every task" made it call with every message), and to
 read denial messages as instructions, is cheap and should ship with the plugin even though
 hooks work, because `PreInvocation` injection is soft and unverified in interactive sessions.
 

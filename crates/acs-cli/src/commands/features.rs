@@ -100,10 +100,11 @@ fn execute(args: &FeaturesArgs) -> Result<ExitCode, CliError> {
                         notes.push(format!("remote `{name}`: {err}"));
                     }
                 }
+                let remote = acs_git::repo::default_remote(work_tree).ok().flatten();
+                notes.push(crate::runtime::sync::publishes_text(remote.as_deref()));
                 notes.push(
-                    "Sync publishes claimed file paths, session records and your git email to \
-                     `refs/acs/*` on the remote. Teammates run `acs init` once after pulling \
-                     this change."
+                    "Once this change is committed, the same holds for everyone who works \
+                     here with the plugin. Teammates run `acs init` once after pulling it."
                         .to_owned(),
                 );
             }
