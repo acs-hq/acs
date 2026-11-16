@@ -238,21 +238,42 @@ pub struct StatusView {
 }
 
 impl StatusView {
-    /// A few lines for an agent's context at session start: what it holds, what others hold,
-    /// what is sealed. Kept short on purpose (each line is spent context).
+    /// What an agent is told when its session starts: the two calls ACS wants from it before
+    /// it works (or the intent it already gave), then what it holds, what others hold and what
+    /// is sealed. Kept short on purpose (each line is spent context).
+    ///
+    /// The calls come first and are numbered because a start message that only described ACS
+    /// read as "nothing to do", and agents then worked whole sessions without an intent
+    /// (issue 73). A session that already gave one (a resume, a compaction, a harness that
+    /// reports a start more than once) is not asked again.
     #[must_use]
     pub fn summary_lines(&self) -> Vec<String> {
         let claims = !self.features_off.contains(&Feature::Claims);
         let mut lines = vec![if claims {
-            "ACS coordinates the agents working in this repository. Editing a file claims it for \
-             you; a file another seat has claimed is blocked until they finish."
-                .to_owned()
+            "ACS coordinates the agents working in this repository.".to_owned()
         } else {
             // The claim tools are not listed here, so they are not named either.
             "ACS is set up in this repository with claims switched off: files need no claim \
              before you edit, delete or move them."
                 .to_owned()
         }];
+        if let Some(seat) = self.seat.as_ref().filter(|seat| seat.harness != "human") {
+            match &seat.intent {
+                None => lines.extend(first_calls(&seat.harness)),
+                Some(intent) => lines.push(format!(
+                    "Your intent on record: \"{}\". Call `acs_intent` again when your task \
+                     changes.",
+                    shortened(intent, 160)
+                )),
+            }
+        }
+        if claims {
+            lines.push(
+                "Editing a file claims it for you; a file another seat has claimed is blocked \
+                 until they finish. When you are done with files, free them with `acs_release`."
+                    .to_owned(),
+            );
+        }
         // Sync is not the agent's concern, and it is off by default.
         let off: Vec<&str> = self
             .features_off
@@ -310,6 +331,52 @@ impl StatusView {
         }
         lines
     }
+}
+
+/// The calls ACS asks of a session that has given no intent yet, with the names the tools have
+/// in `harness` (an agent that has to guess a tool's name often does not call it).
+fn first_calls(harness: &str) -> Vec<String> {
+    let mut lines = vec![
+        "Before you start on the user's request, whatever it is, make these two tool calls. \
+         Once per session is enough: do not repeat them with every message."
+            .to_owned(),
+        "1. `acs_status`: what is switched on here, and what you and others hold.".to_owned(),
+        "2. `acs_intent`: one sentence on what you are about to do. Other agents and your pilot \
+         see it. Call it again when your task changes."
+            .to_owned(),
+    ];
+    if let Some(names) = tool_names(harness) {
+        lines.push(names.to_owned());
+    }
+    lines
+}
+
+/// Where `harness` lists the two tools, for the harnesses whose plugin ACS ships.
+#[must_use]
+pub fn tool_names(harness: &str) -> Option<&'static str> {
+    match harness {
+        "claude-code" => Some(
+            "In Claude Code they are `mcp__plugin_acs_acs__acs_status` and \
+             `mcp__plugin_acs_acs__acs_intent`. If they are not loaded yet, load them with \
+             ToolSearch (`select:mcp__plugin_acs_acs__acs_status,mcp__plugin_acs_acs__acs_intent`, \
+             or search for `acs`).",
+        ),
+        "antigravity" => {
+            Some("In Antigravity they are `mcp_acs_acs_acs_status` and `mcp_acs_acs_acs_intent`.")
+        }
+        _ => None,
+    }
+}
+
+/// `text` on one line, cut to `max` characters.
+fn shortened(text: &str, max: usize) -> String {
+    let line = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    if line.chars().count() <= max {
+        return line;
+    }
+    let mut cut: String = line.chars().take(max).collect();
+    cut.push_str("...");
+    cut
 }
 
 fn list<'a>(items: impl Iterator<Item = &'a str>) -> String {
