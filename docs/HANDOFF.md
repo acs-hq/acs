@@ -155,6 +155,22 @@ PowerShell, `$x = "text"` is a value (`third_quoted` in `acs-shell`'s `windows.r
 (`docs/releases/antigravity-gate.md` has its run). **Reinstall `acs` after merging**, and run
 `acs plugin install antigravity` again where Antigravity is used; no schema change.
 
+**Agents are asked for `acs_status` and `acs_intent`, once (2026-11-16, decision 0046, issue
+73; branch `agents-follow-acs`, on top of `audit-write-paths`).** The session-start message
+(`StatusView::summary_lines`) leads with the two calls as a numbered list and names the tools
+as the harness lists them (`runtime::tool_names`); a session with an intent on record gets
+"Your intent on record" instead. `hook::intent` reminds a session once when it first changes
+files without an intent: in the pre-tool context for Claude Code, with the next `PreInvocation`
+for Antigravity (state flag `intent_reminder:<seat>`, cleared at session end). The MCP
+instructions, the tool descriptions, the usage skill and the Antigravity rule now say "once per
+session", which is what stopped Antigravity calling `acs_status` with every message. **A test
+that compares a pre-tool call's whole context must give its seat an intent first**
+(`set_seat_intent`), or the reminder is in it. **A new harness adds its tool names to
+`tool_names`.** `tests/e2e/real/first_calls.sh <scratch-dir>` is the real-agent check (passed
+with Sonnet and with `agy` 1.5.9). **Reinstall `acs` after merging**, and run
+`acs plugin install antigravity` again where Antigravity is used; no schema change. Not run:
+either desktop app.
+
 ## 1. Where things stand
 
 - `main` has Phase 0, Phase 1, **Phase 2 (WP2.1–WP2.6)**, **Phase 3 (WP3.1)**, including the rule
