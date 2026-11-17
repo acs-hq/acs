@@ -143,7 +143,7 @@ fn a_corrupt_policy_cache_fails_and_fix_clears_it() {
 }
 
 #[test]
-fn an_invalid_policy_file_is_a_warning_that_shows_the_error() {
+fn an_invalid_policy_file_fails_and_shows_the_error() {
     let world = started();
     fs::write(
         world.repo.join(".acs/policy/guards.toml"),
@@ -152,18 +152,18 @@ fn an_invalid_policy_file_is_a_warning_that_shows_the_error() {
     .unwrap();
 
     let out = acs(&world, &["doctor", "--json"]);
-    assert_success(&out);
+    assert_failure(&out);
     let doc = json(&out);
-    assert_eq!(doc["ok"], true);
-    assert_eq!(status_of(&doc, "policy"), "warn");
+    assert_eq!(doc["ok"], false);
+    assert_eq!(status_of(&doc, "policy"), "fail");
     let message = check(&doc, "policy")["message"].as_str().unwrap();
     assert!(message.contains("guards.toml"), "{message}");
 
     let text = stdout(&acs(&world, &["doctor"]));
-    assert!(text.contains("WARN  Policy"), "{text}");
+    assert!(text.contains("FAIL  Policy"), "{text}");
     assert!(text.contains("guards.toml"), "{text}");
     assert_fits_80(&text);
-    // ACS keeps working on the last valid policy, and status shows the warning too.
+    // ACS keeps enforcing the last valid policy, and status shows the problem too.
     let view = json(&acs(&world, &["status", "--json"]));
     assert!(!view["policy_warnings"].as_array().unwrap().is_empty());
 }
