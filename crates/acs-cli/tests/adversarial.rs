@@ -94,7 +94,11 @@ fn snapshot(dir: &Path, out: &mut Vec<(String, u64, Option<std::time::SystemTime
     };
     for entry in entries.flatten() {
         let path = entry.path();
-        let meta = entry.metadata().unwrap();
+        // A file can vanish between the listing and this call (a lock or SQLite temp file of a
+        // process that is finishing); it cannot be one the help command left behind.
+        let Ok(meta) = entry.metadata() else {
+            continue;
+        };
         if meta.is_dir() {
             // A directory's own time moves for reasons unrelated to ACS; its files are listed.
             out.push((path.display().to_string(), 0, None));
