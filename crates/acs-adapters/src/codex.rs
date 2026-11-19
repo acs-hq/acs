@@ -14,7 +14,10 @@
 //!   `*** Update File:`, `*** Delete File:` and `*** Move to:` lines. `mcp__<server>__<tool>` and
 //!   the rest are `other`.
 //! - **Output**: allow is an empty stdout or an `additionalContext` document; deny is the JSON
-//!   deny document on stdout, the same reason on stderr and exit code 2. Codex does not support
+//!   deny document on stdout and exit code 0. **Never exit 2**: the docs say exit 2 blocks with
+//!   the reason from stderr, but Codex 0.170 on Windows reported such a hook as failed and ran the
+//!   tool call, with or without the JSON document on stdout (real runs, docs/adapters/codex.md
+//!   section 5). Codex does not support
 //!   `permissionDecision: "ask"` (the hook run fails and the tool call goes ahead), so `ask` and
 //!   `queue` are rendered as deny, with a line saying a person can let the call through.
 
@@ -113,13 +116,11 @@ impl Adapter for Codex {
 
     fn render(&self, event: Option<&ToolEvent>, decision: &Decision) -> HookOutput {
         let Some(event) = event else {
+            // Unparseable payload: the pipeline allows. Anything stronger is rendered as a
+            // pre-tool deny, the only blocking form Codex honours; other events ignore it.
             return match decision.outcome {
                 Outcome::Allow => HookOutput::default(),
-                Outcome::Deny | Outcome::Ask | Outcome::Queue => HookOutput {
-                    stdout: Vec::new(),
-                    stderr: reason(decision).into_bytes(),
-                    exit_code: 2,
-                },
+                Outcome::Deny | Outcome::Ask | Outcome::Queue => deny(decision),
             };
         };
         match event.phase {
@@ -409,8 +410,8 @@ fn deny(decision: &Decision) -> HookOutput {
                 "permissionDecisionReason": reason,
             }
         })),
-        stderr: reason.into_bytes(),
-        exit_code: 2,
+        stderr: Vec::new(),
+        exit_code: 0,
     }
 }
 
@@ -563,20 +564,25 @@ mod tests {
     }
 
     #[test]
-    fn deny_and_ask_block_with_the_reason_on_both_streams() {
+    fn deny_and_ask_block_with_a_json_deny_and_exit_code_0() {
+        // Codex 0.170 runs the tool call when a hook exits 2, so the JSON document must carry
+        // the deny on its own.
         let event = event(&pre("Bash", r#"{"command":"rm x"}"#, "/r"));
         for outcome in [Outcome::Deny, Outcome::Ask, Outcome::Queue] {
             let out = Codex.render(Some(&event), &decision(outcome, "x is claimed by bob"));
-            assert_eq!(out.exit_code, 2);
+            assert_eq!(out.exit_code, 0);
+            assert!(out.stderr.is_empty());
             let doc: Value = serde_json::from_slice(&out.stdout).expect("json");
             assert_eq!(doc["hookSpecificOutput"]["permissionDecision"], "deny");
             let reason = doc["hookSpecificOutput"]["permissionDecisionReason"]
                 .as_str()
                 .expect("reason");
             assert!(reason.starts_with("x is claimed by bob"));
-            assert_eq!(String::from_utf8_lossy(&out.stderr), reason);
             assert_eq!(reason.contains("acs override"), outcome == Outcome::Ask);
         }
+        let unparsed = Codex.render(None, &decision(Outcome::Deny, "no"));
+        assert_eq!(unparsed.exit_code, 0);
+        assert!(String::from_utf8_lossy(&unparsed.stdout).contains("\"deny\""));
     }
 
     #[test]
