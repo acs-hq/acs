@@ -121,11 +121,14 @@ pub fn run(args: &GitHookArgs) -> ExitCode {
 
 /// Whether the harness environment says this process runs inside an agent's tool call: Claude
 /// Code sets `CLAUDECODE=1` for its Bash tool; Antigravity's hook processes carry
-/// `ANTIGRAVITY_CONVERSATION_ID` (reported, unverified; docs/adapters/antigravity.md).
+/// `ANTIGRAVITY_CONVERSATION_ID` (reported, unverified; docs/adapters/antigravity.md); Codex
+/// 0.170 sets `CODEX_THREAD_ID` for its shell commands (seen in a real run,
+/// docs/adapters/codex.md).
 #[must_use]
 pub fn agent_environment() -> bool {
     std::env::var("CLAUDECODE").is_ok_and(|v| v == "1")
         || std::env::var("ANTIGRAVITY_CONVERSATION_ID").is_ok_and(|v| !v.is_empty())
+        || std::env::var("CODEX_THREAD_ID").is_ok_and(|v| !v.is_empty())
 }
 
 /// Runs one hook. `stdin` is what git wrote on the hook's standard input (`pre-push` only).

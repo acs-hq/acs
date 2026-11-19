@@ -652,7 +652,7 @@ pub fn render(report: &InitReport) -> String {
 
     out.push_str("\nAgent harnesses\n");
     if report.harnesses.is_empty() {
-        out.push_str("  none detected (looked for Claude Code and Antigravity)\n");
+        out.push_str("  none detected (looked for Claude Code, Antigravity and Codex)\n");
     }
     for found in &report.harnesses {
         out.push_str(&wrap(

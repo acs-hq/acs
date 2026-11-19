@@ -44,6 +44,11 @@ pub fn run_with_path(world: &World, cwd: &Path, path: &std::ffi::OsStr, args: &[
         // Keep the harness-settings lookups inside the test sandbox.
         .env("HOME", world.tmp.path().join("fake-home"))
         .env_remove("CLAUDE_CONFIG_DIR")
+        // `HOME` is not the home folder on Windows: name Codex's explicitly.
+        .env(
+            "CODEX_HOME",
+            world.tmp.path().join("fake-home").join(".codex"),
+        )
         .stdin(Stdio::null())
         .output()
         .unwrap()

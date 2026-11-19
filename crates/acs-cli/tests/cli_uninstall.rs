@@ -363,3 +363,29 @@ fn outside_a_repository_it_fails() {
     assert!(!out.status.success());
     assert_eq!(json(&out)["error"]["code"], "not_a_repo");
 }
+
+#[test]
+fn the_codex_block_is_taken_out_byte_for_byte() {
+    // A config of the person's own: only the block goes.
+    let world = World::new();
+    let codex = world.repo.join(".codex");
+    fs::create_dir_all(&codex).unwrap();
+    let mine = "model = \"o3\"\r\n\r\n[[hooks.PreToolUse]]\r\nmatcher = \"^Bash$\"\r\n";
+    fs::write(codex.join("config.toml"), mine).unwrap();
+    let before = snapshot(&world);
+    assert_success(&acs(&world, &["plugin", "install", "codex"]));
+    assert_ne!(fs::read_to_string(codex.join("config.toml")).unwrap(), mine);
+    let report = json(&acs(&world, &["uninstall", "--json"]));
+    assert_eq!(step(&report, "codex_config")["state"], "done", "{report}");
+    assert!(report["notes"].to_string().contains(".codex/config.toml"));
+    assert_same(&before, &snapshot(&world));
+
+    // A config that was only the block is deleted, with its folder.
+    let world = World::new();
+    let before = snapshot(&world);
+    assert_success(&acs(&world, &["plugin", "install", "codex"]));
+    let report = json(&acs(&world, &["uninstall", "--json"]));
+    assert_eq!(step(&report, "codex_config")["state"], "done", "{report}");
+    assert!(!world.repo.join(".codex").exists());
+    assert_same(&before, &snapshot(&world));
+}

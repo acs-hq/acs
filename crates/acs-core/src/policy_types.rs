@@ -32,6 +32,8 @@ pub const DEFAULT_SEALED: &[&str] = &[
     "**/.agent/plugins/**",
     "**/.agents/plugins.json",
     "**/.agent/plugins.json",
+    "**/.codex/config.toml",
+    "**/.codex/hooks.json",
     ".husky/**",
 ];
 
@@ -69,6 +71,8 @@ pub const SELF_PROTECTION_SEALED: &[&str] = &[
     "**/.agent/plugins/**",
     "**/.agents/plugins.json",
     "**/.agent/plugins.json",
+    "**/.codex/config.toml",
+    "**/.codex/hooks.json",
     ".husky/**",
 ];
 

@@ -171,6 +171,25 @@ with Sonnet and with `agy` 1.5.9). **Reinstall `acs` after merging**, and run
 `acs plugin install antigravity` again where Antigravity is used; no schema change. Not run:
 either desktop app.
 
+**Codex is supported (2026-11-19, decision 0047; branch `codex-adapter`).** Adapter `codex`
+(`crates/acs-adapters/src/codex.rs`, fixtures captured from Codex CLI 0.170.0 in
+`tests/fixtures/codex/`). `acs plugin install codex` appends the block in
+`integrations/codex/config.toml` (hooks plus `[mcp_servers.acs]`) to `.codex/config.toml`, or
+`$CODEX_HOME/config.toml` with `--scope user`; `acs uninstall` takes it out byte for byte
+(`commands/codex_config.rs`). **Never render a Codex deny with exit 2**: Codex 0.170 on Windows
+treats it as a failed hook and runs the call (the docs say otherwise); the JSON deny with exit 0
+is what blocks. Codex's `Bash` runs PowerShell on Windows, so the adapter names it `PowerShell`
+when `cwd` is a Windows path. The MCP server finds the session in
+`_meta["x-codex-turn-metadata"].session_id`. Sealed: `**/.codex/config.toml`,
+`**/.codex/hooks.json` (`CACHE_FORMAT` 5) and all of `$CODEX_HOME`; `codex --disable hooks`,
+`-c features|hooks|mcp_servers|projects...`, `codex features disable hooks` and
+`codex mcp remove acs` are denied. Test runs: `cli_common::run_with_path` sets `CODEX_HOME`
+inside the sandbox, because `HOME` is not the home folder on Windows. Real-agent check:
+`tests/e2e/real/codex.sh <scratch-dir>` (passed, `docs/adapters/codex.md` section 9). An agent
+that can claim plans around every collision, so that script lets it call only `acs_status` and
+`acs_intent`. **Reinstall `acs` after merging**; no schema change. Not run: the TUI's trust
+prompts and `/hooks` review, macOS and Linux, the Codex desktop app. No skills ship for Codex.
+
 ## 1. Where things stand
 
 - `main` has Phase 0, Phase 1, **Phase 2 (WP2.1–WP2.6)**, **Phase 3 (WP3.1)**, including the rule

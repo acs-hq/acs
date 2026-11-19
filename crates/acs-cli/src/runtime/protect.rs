@@ -53,7 +53,9 @@ impl OverrideView for StoreOverrides {
 
 /// The locations outside the work tree that agents may never write or delete: `ACS_HOME`, git
 /// directories outside the work tree (the common directory of a linked worktree), and the
-/// user-level configuration of Claude Code and Antigravity that can turn ACS off.
+/// user-level configuration of Claude Code, Antigravity and Codex that can turn ACS off. For
+/// Codex that is its whole home folder (`$CODEX_HOME`, default `~/.codex`): besides
+/// `config.toml` and `hooks.json`, a profile there (`<name>.config.toml`) can switch hooks off.
 #[must_use]
 pub fn outside_seals(ctx: &RepoContext) -> Vec<OutsideSeal> {
     let home = std::env::home_dir().filter(|p| !p.as_os_str().is_empty());
@@ -95,6 +97,13 @@ pub fn outside_seals(ctx: &RepoContext) -> Vec<OutsideSeal> {
             false,
         );
         add(claude.join("plugins"), "Claude Code plugins", true);
+    }
+    let codex = std::env::var_os("CODEX_HOME")
+        .filter(|v| !v.is_empty())
+        .map(PathBuf::from)
+        .or_else(|| home.as_ref().map(|h| h.join(".codex")));
+    if let Some(codex) = codex {
+        add(codex, "Codex user configuration (`CODEX_HOME`)", true);
     }
     if let Some(home) = &home {
         let gemini = home.join(".gemini");

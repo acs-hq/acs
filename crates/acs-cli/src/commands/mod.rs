@@ -9,6 +9,7 @@
 
 pub mod blame;
 pub mod claim;
+mod codex_config;
 pub mod doctor;
 pub mod features;
 pub mod git_hook;

@@ -10,6 +10,8 @@ sealed = [
   "**/.agent/plugins/**",
   "**/.agents/plugins.json",
   "**/.agent/plugins.json",
+  "**/.codex/config.toml",
+  "**/.codex/hooks.json",
   ".husky/**",
 ]
 protected_branches = ["main", "release/*"]
