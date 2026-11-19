@@ -30,6 +30,7 @@ model), and the rest of WP10.1 and WP10.2. No release has been tagged.
 | 2026-11-15 | The Antigravity gate's open questions are settled without contract changes (asks under `always-proceed`, subagents as separate sessions, claims outliving a session); the adapter reads `agy` 1.5.9. Of the gate, only the desktop app checks are left (issue 6) | 0043 |
 | 2026-11-16 | ACS asks every agent session for `acs_status` and `acs_intent` once, in its start message, and reminds a session once when it edits without an intent (issue 73) | 0046 |
 | 2026-11-14 | The default sealed list of §4.3 loses `.github/workflows/**`, and its `**/.env*` leaves out example env files | 0042 |
+| 2026-11-19 | Codex (CLI 0.170) is supported ahead of WP9.4, at tier A: pre-tool gate, context and MCP through a block in `.codex/config.toml`; `.codex/config.toml`, `.codex/hooks.json` and `~/.codex` are sealed | 0047 |
 
 Open work is in GitHub issues, not in this file. Decisions are in `docs/decisions/`.
 
