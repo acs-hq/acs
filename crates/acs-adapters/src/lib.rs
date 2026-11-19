@@ -14,6 +14,7 @@
 use acs_core::{Decision, Phase, ToolEvent};
 
 pub mod antigravity;
+pub mod codex;
 
 /// What the hook process should write and exit with.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -113,6 +114,7 @@ static ADAPTERS: &[&dyn Adapter] = &[
     &canonical::Canonical,
     &claude_code::ClaudeCode,
     &antigravity::Antigravity,
+    &codex::Codex,
 ];
 
 /// The adapter for `name` (case-insensitive), if there is one.
@@ -189,7 +191,10 @@ mod tests {
         assert_eq!(by_name("canonical").map(|a| a.name()), Some("canonical"));
         assert_eq!(by_name("Canonical").map(|a| a.name()), Some("canonical"));
         assert!(by_name("no-such-harness").is_none());
-        assert_eq!(names(), vec!["canonical", "claude-code", "antigravity"]);
+        assert_eq!(
+            names(),
+            vec!["canonical", "claude-code", "antigravity", "codex"]
+        );
     }
 
     #[test]

@@ -1,0 +1,14 @@
+{
+  "session_id": "01a1f3db-6767-7c53-b245-fdb43fc5a2ca",
+  "turn_id": "01a1f3db-6e36-7cc3-8cba-45a583f81aca",
+  "transcript_path": "C:\\Users\\dev\\.codex\\sessions\\2026\\11\\19\\rollout-2026-11-19T14-50-06-01a1f3db-6767-7c53-b245-fdb43fc5a2ca.jsonl",
+  "cwd": "C:\\Users\\dev\\project",
+  "hook_event_name": "PreToolUse",
+  "model": "gpt-6-luna",
+  "permission_mode": "bypassPermissions",
+  "tool_name": "apply_patch",
+  "tool_input": {
+    "command": "*** Begin Patch\n*** Add File: c.txt\n+new\n*** End Patch"
+  },
+  "tool_use_id": "exec-e52ef2a5-ddda-4fe4-84cd-bf76374bbec4"
+}

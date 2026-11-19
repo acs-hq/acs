@@ -1,0 +1,22 @@
+{
+  "session_id": "01a1f3df-d0e0-7c83-a8d0-f35e217290f3",
+  "turn_id": "01a1f3df-d395-7eb2-9747-823b4e8f76d9",
+  "transcript_path": "C:\\Users\\dev\\.codex\\sessions\\2026\\11\\19\\rollout-2026-11-19T14-54-54-01a1f3df-d0e0-7c83-a8d0-f35e217290f3.jsonl",
+  "cwd": "C:\\Users\\dev\\project",
+  "hook_event_name": "PostToolUse",
+  "model": "gpt-6-luna",
+  "permission_mode": "bypassPermissions",
+  "tool_name": "mcp__probe__probe_ping",
+  "tool_input": {
+    "note": "hi"
+  },
+  "tool_response": {
+    "content": [
+      {
+        "type": "text",
+        "text": "pong"
+      }
+    ]
+  },
+  "tool_use_id": "exec-4e33a6d6-4053-43d2-8ea3-59812039498f"
+}

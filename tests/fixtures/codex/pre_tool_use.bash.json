@@ -1,0 +1,14 @@
+{
+  "session_id": "01a1f3db-6767-7c53-b245-fdb43fc5a2ca",
+  "turn_id": "01a1f3db-6e36-7cc3-8cba-45a583f81aca",
+  "transcript_path": "C:\\Users\\dev\\.codex\\sessions\\2026\\11\\19\\rollout-2026-11-19T14-50-06-01a1f3db-6767-7c53-b245-fdb43fc5a2ca.jsonl",
+  "cwd": "C:\\Users\\dev\\project",
+  "hook_event_name": "PreToolUse",
+  "model": "gpt-6-luna",
+  "permission_mode": "bypassPermissions",
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "Set-Content -NoNewline c.txt 'new'"
+  },
+  "tool_use_id": "exec-766fdbfd-6354-4666-9b61-454d4a73ec5f"
+}

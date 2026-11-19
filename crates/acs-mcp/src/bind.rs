@@ -5,6 +5,7 @@
 //! | --- | --- | --- |
 //! | Claude Code | `CLAUDE_CODE_SESSION_ID` in the server's environment (stale after `--continue` and `/clear`, so the backend validates it) | `_meta["claudecode/toolUseId"]` |
 //! | Antigravity | `_meta["antigravity.google/root_conversation_id"]` on every `tools/call` (since 1.4.4); nothing at `initialize` or in the environment | |
+//! | Codex | `_meta["x-codex-turn-metadata"].session_id` on every `tools/call` (0.170; also `_meta.sessionId`), equal to the hooks' `session_id`; nothing in the environment | `_meta.callId` |
 //! | other | none | |
 
 use serde_json::{Map, Value};
@@ -15,6 +16,13 @@ use crate::Caller;
 pub const CLAUDE_CODE: &str = "claude-code";
 /// The harness name of Antigravity.
 pub const ANTIGRAVITY: &str = "antigravity";
+/// The harness name of Codex.
+pub const CODEX: &str = "codex";
+
+/// `params._meta` key of the turn metadata Codex sends with every `tools/call` (0.170).
+pub const CODEX_TURN_KEY: &str = "x-codex-turn-metadata";
+/// `params._meta` key with the session (thread) id on Codex, next to [`CODEX_TURN_KEY`].
+pub const CODEX_SESSION_KEY: &str = "sessionId";
 
 /// `params._meta` key with the top-level conversation id on Antigravity (1.4.4 and later).
 pub const ANTIGRAVITY_ROOT_KEY: &str = "antigravity.google/root_conversation_id";
@@ -51,12 +59,17 @@ impl BindingSettings {
     /// request's `_meta` object (empty when there is none).
     ///
     /// The harness is, in order: `--harness`; Antigravity if its conversation id is in `_meta`;
-    /// Claude Code if its tool use id is in `_meta` or its session id is in the environment; the
+    /// Codex if its turn metadata is in `_meta`; Claude Code if its tool use id is in `_meta`
+    /// or its session id is in the environment; the
     /// client name when it names a known harness; else unknown. The session id is taken from
     /// the source of the *chosen* harness only.
     #[must_use]
     pub fn caller(&self, client_name: Option<&str>, meta: &Map<String, Value>) -> Caller {
         let antigravity_id = meta_str(meta, ANTIGRAVITY_ROOT_KEY);
+        let codex_turn = meta.get(CODEX_TURN_KEY).and_then(Value::as_object);
+        let codex_id = codex_turn
+            .and_then(|turn| meta_str(turn, "session_id"))
+            .or_else(|| meta_str(meta, CODEX_SESSION_KEY));
         let tool_use_id = meta_str(meta, CLAUDE_TOOL_USE_KEY);
         let claude_id = non_empty(self.claude_code_session_id.as_deref());
         let client_name = client_name.or_else(|| {
@@ -70,6 +83,8 @@ impl BindingSettings {
             .or_else(|| {
                 if antigravity_id.is_some() {
                     Some(ANTIGRAVITY.to_owned())
+                } else if codex_turn.is_some() {
+                    Some(CODEX.to_owned())
                 } else if tool_use_id.is_some() || claude_id.is_some() {
                     Some(CLAUDE_CODE.to_owned())
                 } else {
@@ -79,6 +94,7 @@ impl BindingSettings {
         let session_id = match harness.as_deref() {
             Some(CLAUDE_CODE) => claude_id,
             Some(ANTIGRAVITY) => antigravity_id,
+            Some(CODEX) => codex_id,
             _ => None,
         };
         let tool_use_id = tool_use_id
@@ -98,6 +114,8 @@ fn harness_from_client_name(name: &str) -> Option<String> {
         Some(CLAUDE_CODE.to_owned())
     } else if name.contains("antigravity") {
         Some(ANTIGRAVITY.to_owned())
+    } else if name.contains("codex") {
+        Some(CODEX.to_owned())
     } else {
         None
     }
@@ -226,6 +244,37 @@ mod tests {
             caller.session_id.as_deref(),
             Some("0b8f6c1e-2d4a-4e7b-9a3c-5f1d2e8a7b60")
         );
+    }
+
+    #[test]
+    fn the_real_codex_call_binds_from_its_turn_metadata() {
+        // Captured from Codex CLI 0.170.0 (`codex exec`, server from `-c mcp_servers...`).
+        let captured: Value = serde_json::from_str(include_str!(
+            "../../../tests/fixtures/codex/mcp_tools_call.captured.json"
+        ))
+        .unwrap_or_default();
+        let call_meta = captured["params"]["_meta"]
+            .as_object()
+            .cloned()
+            .unwrap_or_default();
+        for s in [settings(None, None), settings(Some("codex"), None)] {
+            let caller = s.caller(Some("codex-mcp-client"), &call_meta);
+            assert_eq!(caller.harness.as_deref(), Some("codex"));
+            assert_eq!(
+                caller.session_id.as_deref(),
+                Some("01a1f3df-d0e0-7c83-a8d0-f35e217290f3")
+            );
+            assert_eq!(caller.tool_use_id, None);
+        }
+        // Without the turn metadata, `sessionId` still names the session.
+        let caller = settings(Some("codex"), None).caller(None, &meta(json!({"sessionId": "t1"})));
+        assert_eq!(caller.session_id.as_deref(), Some("t1"));
+        // The client name alone says Codex, and a Claude Code variable inherited from a parent
+        // session does not win over Codex's own metadata.
+        let by_name = settings(None, None).caller(Some("codex-mcp-client"), &Map::new());
+        assert_eq!(by_name.harness.as_deref(), Some("codex"));
+        let nested = settings(None, Some("claude-sess")).caller(None, &call_meta);
+        assert_eq!(nested.harness.as_deref(), Some("codex"));
     }
 
     #[test]
