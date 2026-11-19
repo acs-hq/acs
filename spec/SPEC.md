@@ -240,6 +240,8 @@ Every key defaults to empty (zero for the numeric limits noted); the built-in de
 **/.agent/plugins/**
 **/.agents/plugins.json
 **/.agent/plugins.json
+**/.codex/config.toml
+**/.codex/hooks.json
 .husky/**
 ```
 

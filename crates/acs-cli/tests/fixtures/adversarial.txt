@@ -111,12 +111,17 @@ deny: claude --setting-sources user -p x
 deny: claude plugin disable acs@acs-plugins
 deny: agy --settings s.json -p x
 deny: agy plugin uninstall acs
+deny: codex --disable hooks exec x
+deny: codex exec -c features.hooks=false x
+deny: codex mcp remove acs
 
 # ---- Touching ACS state, git hooks and harness configuration ---------------------------------
 deny: echo '{}' > ~/.claude/settings.json
 deny: cp evil.json $HOME/.claude/settings.json
 deny: rm -rf ~/.claude/plugins
 deny: sed -i 's/acs/x/' ~/.gemini/config/hooks.json
+deny: echo x > ~/.codex/config.toml
+deny: cp evil.toml ~/.codex/off.config.toml
 deny: echo x > "$ACS_HOME/repos/state.db"
 deny: rm -rf "$ACS_HOME"
 deny-ps: Set-Content -Path $env:USERPROFILE\.claude\settings.json -Value '{}'

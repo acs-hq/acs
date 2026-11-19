@@ -318,6 +318,7 @@ fn harness(words: &[&str]) -> Option<String> {
     let flags_off: &[&str] = match name.as_str() {
         "claude" => &["--bare", "--settings", "--setting-sources"],
         "agy" | "antigravity" => &["--settings"],
+        "codex" => return codex_off(words),
         _ => return None,
     };
     for word in &words[1..] {
@@ -341,6 +342,58 @@ fn harness(words: &[&str]) -> Option<String> {
         }
         _ => None,
     }
+}
+
+/// Codex started, or reconfigured, with its hooks or the ACS MCP server off (decision 0047):
+/// `--disable hooks`, a `-c` override of `features`, `hooks`, `mcp_servers` or `projects` (an
+/// untrusted project loads no project hooks), `codex features disable hooks` and
+/// `codex mcp remove acs`.
+fn codex_off(words: &[&str]) -> Option<String> {
+    const HOOK_FEATURES: &[&str] = &["hooks", "codex_hooks"];
+    const KEYS: &[&str] = &["features", "hooks", "mcp_servers", "projects"];
+    let mut rest = words[1..].iter();
+    while let Some(word) = rest.next() {
+        let (flag, inline) = match word.split_once('=') {
+            Some((flag, value)) if flag.starts_with("--") => (flag, Some(value)),
+            _ => (*word, None),
+        };
+        let value = match flag {
+            "--disable" | "-c" | "--config" => inline.or_else(|| rest.next().copied()),
+            _ if flag.starts_with("-c") && flag.len() > 2 && !flag.starts_with("--") => {
+                Some(&word[2..])
+            }
+            _ => continue,
+        };
+        let Some(value) = value else { continue };
+        if flag == "--disable" {
+            if HOOK_FEATURES.contains(&value) {
+                return Some(format!("codex --disable {value}"));
+            }
+            continue;
+        }
+        let key = value.split_once('=').map_or(value, |(key, _)| key).trim();
+        let top = key
+            .split('.')
+            .next()
+            .unwrap_or(key)
+            .trim_matches(['"', '\'']);
+        if KEYS.contains(&top) {
+            return Some(format!("codex -c {key}"));
+        }
+    }
+    // Subcommands, past any flag values (`codex -c model=o3 mcp remove acs`).
+    let operands: Vec<&str> = words[1..]
+        .iter()
+        .copied()
+        .filter(|w| !w.starts_with('-'))
+        .collect();
+    operands.windows(3).find_map(|w| match w {
+        ["features", "disable", feature] if HOOK_FEATURES.contains(feature) => {
+            Some(format!("codex features disable {feature}"))
+        }
+        ["mcp", action @ ("remove" | "rm"), "acs"] => Some(format!("codex mcp {action} acs")),
+        _ => None,
+    })
 }
 
 #[cfg(test)]
@@ -509,6 +562,14 @@ mod tests {
             "claude config set -g disableAllHooks true",
             "agy --settings s.json -p hi",
             "agy plugin disable acs",
+            "codex --disable hooks exec hi",
+            "codex exec --disable=codex_hooks hi",
+            "codex -c features.hooks=false exec hi",
+            "codex --config hooks.PreToolUse=[] exec hi",
+            "codex -cmcp_servers.acs.enabled=false",
+            "codex exec -c projects={} hi",
+            "codex features disable hooks",
+            "codex -c model=o3 mcp remove acs",
         ] {
             assert!(matches!(breach(line), Some(Breach::Harness(_))), "{line}");
         }
@@ -517,6 +578,11 @@ mod tests {
             "claude --plugin-dir x -p hi",
             "claude plugin list",
             "agy -p hi",
+            "codex exec hi",
+            "codex -c model=o3 --disable fast_mode exec hi",
+            "codex --dangerously-bypass-hook-trust exec hi",
+            "codex features disable fast_mode",
+            "codex mcp remove other",
         ] {
             assert_eq!(breach(line), None, "{line}");
         }

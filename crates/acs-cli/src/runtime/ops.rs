@@ -364,6 +364,7 @@ pub fn tool_names(harness: &str) -> Option<&'static str> {
         "antigravity" => {
             Some("In Antigravity they are `mcp_acs_acs_acs_status` and `mcp_acs_acs_acs_intent`.")
         }
+        "codex" => Some("In Codex they are `mcp__acs__acs_status` and `mcp__acs__acs_intent`."),
         _ => None,
     }
 }
