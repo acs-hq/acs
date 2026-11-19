@@ -1,7 +1,7 @@
 //! `acs plugin install <harness>`: installs the ACS plugin into an agent harness.
 //!
 //! Keyed by harness name, so a harness joins by getting one arm in [`install`]: Claude Code
-//! (decision 0021) and Antigravity (decision 0024).
+//! (decision 0021), Antigravity (decision 0024) and Codex (decision 0047).
 //!
 //! `acs` must resolve on `PATH` first: the plugin's hooks run `acs`, and without it they either
 //! check nothing (Claude Code) or deny every tool call (Antigravity).
@@ -14,6 +14,10 @@
 //! Antigravity has no marketplace entry for ACS, so its plugin is built into the binary and
 //! written to the workspace plugin folder `.agents/plugins/acs/`, which Antigravity loads at the
 //! next session start. That folder is the project scope; the other scopes are not offered.
+//!
+//! Codex has no plugin that the command line can install, so ACS adds a block of hooks and an
+//! MCP server to Codex's `config.toml`: the project's `.codex/config.toml`, or the user's
+//! `$CODEX_HOME/config.toml` with `--scope user` (`codex_config`). Codex has no local scope.
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode, Stdio};
@@ -21,6 +25,7 @@ use std::process::{Command, ExitCode, Stdio};
 use clap::{Args, Subcommand, ValueEnum};
 use serde::Serialize;
 
+use super::codex_config;
 use super::init::harness::{CLAUDE_CODE_PLUGIN, HARNESSES, Harness};
 use super::support::{
     CliError, OutputArgs, find_on_path, find_spawnable_on_path, finish, print_json, wrap,
@@ -84,11 +89,11 @@ pub enum PluginCommand {
 #[command(
     after_help = "Examples:\n  acs plugin install claude-code\n  acs plugin install claude-code \
                   --scope user\n  acs plugin install claude-code --marketplace ./my-checkout\n  \
-                  acs plugin install antigravity\n\n\
+                  acs plugin install antigravity\n  acs plugin install codex\n\n\
                   Safe to run again: a plugin that is already enabled is left alone."
 )]
 pub struct InstallArgs {
-    /// The harness, by adapter name (`claude-code`, `antigravity`).
+    /// The harness, by adapter name (`claude-code`, `antigravity`, `codex`).
     #[arg(value_name = "HARNESS")]
     pub harness: String,
     /// Where to enable it. `project` is shared through `.claude/settings.json`; `user` gates every
@@ -231,6 +236,26 @@ pub fn install(args: &InstallArgs) -> Result<InstallReport, CliError> {
             let agy = find_harness_cli(harness)?;
             let dir = working_dir(Scope::Project)?;
             Ok(install_antigravity(&agy, &dir, args))
+        }
+        "codex" => {
+            require_acs_on_path(harness)?;
+            let file = match args.scope {
+                Scope::Project => codex_config::project_file(&working_dir(Scope::Project)?),
+                Scope::User => codex_config::user_file().ok_or_else(|| {
+                    CliError::new(
+                        "no_home",
+                        "cannot find Codex's home folder: set CODEX_HOME or HOME.",
+                    )
+                })?,
+                Scope::Local => {
+                    return Err(CliError::new(
+                        "unsupported_scope",
+                        "Codex has no local scope: use `--scope project` (.codex/config.toml, \
+                         shared) or `--scope user` (your Codex config.toml).",
+                    ));
+                }
+            };
+            Ok(install_codex(&file, args))
         }
         _ => Err(CliError::new(
             "unsupported_harness",
@@ -539,6 +564,87 @@ fn install_antigravity(agy: &Path, dir: &Path, args: &InstallArgs) -> InstallRep
 }
 
 // ---------------------------------------------------------------------------------------------
+// Codex
+// ---------------------------------------------------------------------------------------------
+
+/// Adds the ACS block to the Codex configuration file `file`, creating the file and its folder
+/// when they do not exist. A file that already holds the current block is left alone.
+fn install_codex(file: &Path, args: &InstallArgs) -> InstallReport {
+    let mut report = InstallReport {
+        ok: false,
+        changed: false,
+        harness: "codex",
+        scope: args.scope,
+        plugin: "acs",
+        marketplace: "built into acs".to_owned(),
+        version: None,
+        steps: Vec::new(),
+        warnings: Vec::new(),
+    };
+    if args.marketplace != DEFAULT_MARKETPLACE {
+        report.warnings.push(
+            "--marketplace is ignored for Codex: its hooks and MCP server are built into acs."
+                .to_owned(),
+        );
+    }
+    if args.scope == Scope::User {
+        report.warnings.push(
+            "user scope gates every git repository you open in Codex, with the built-in guards \
+             where a repository has no .acs/policy. Prefer the default, project scope, unless \
+             you want that."
+                .to_owned(),
+        );
+    }
+    if find_spawnable_on_path("codex").is_none() {
+        report.warnings.push(
+            "`codex` is not on PATH here; the block is written anyway and takes effect where \
+             Codex runs."
+                .to_owned(),
+        );
+    }
+    let existing = match std::fs::read_to_string(file) {
+        Ok(text) => text,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(err) => {
+            report.steps.push(Step {
+                command: format!("read {}", file.display()),
+                ok: false,
+                output: Some(err.to_string()),
+            });
+            return report;
+        }
+    };
+    let line = format!("add the ACS block to {}", file.display());
+    let new = match codex_config::add_block(&existing) {
+        Ok(None) => {
+            report.ok = true;
+            return report;
+        }
+        Ok(Some(new)) => new,
+        Err(err) => {
+            report.steps.push(Step {
+                command: line,
+                ok: false,
+                output: Some(err),
+            });
+            return report;
+        }
+    };
+    let written = file
+        .parent()
+        .map_or(Ok(()), std::fs::create_dir_all)
+        .and_then(|()| std::fs::write(file, new));
+    report.ok = written.is_ok();
+    report.changed = written.is_ok();
+    report.steps.push(Step {
+        command: line,
+        ok: written.is_ok(),
+        output: written.err().map(|err| err.to_string()),
+    });
+    report
+}
+
+// ---------------------------------------------------------------------------------------------
 // Rendering
 // ---------------------------------------------------------------------------------------------
 
@@ -586,6 +692,31 @@ fn outcome(report: &InstallReport) -> String {
                  ({version}{scope} scope). Nothing to change.\n"
             )
         };
+        return wrap(&text, "", "");
+    }
+    if report.harness == "codex" {
+        let place = if report.scope == Scope::User {
+            "your Codex config.toml"
+        } else {
+            codex_config::PROJECT_FILE
+        };
+        let mut text = if report.changed {
+            format!(
+                "The ACS hooks and MCP server are in {place} ({scope} scope). Codex loads them \
+                 at the next session start.\n"
+            )
+        } else {
+            format!("The ACS hooks and MCP server are already in {place}. Nothing to change.\n")
+        };
+        if report.changed {
+            text.push_str(
+                "Codex runs them only once you trust them: start `codex` here, accept the \
+                 project as trusted if asked, then review and trust the ACS hooks in /hooks.\n",
+            );
+            if report.scope == Scope::Project {
+                text.push_str("Commit .codex/config.toml so teammates get it too.\n");
+            }
+        }
         return wrap(&text, "", "");
     }
     let mut text = if report.changed {

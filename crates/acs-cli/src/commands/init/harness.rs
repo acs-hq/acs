@@ -3,13 +3,14 @@
 //! harnesses it covers; `doctor` reuses the detection and a best-effort check that the plugin is
 //! installed.
 //!
-//! Sources: `docs/adapters/claude-code.md` section 10 and `docs/adapters/antigravity.md`
-//! section 5.
+//! Sources: `docs/adapters/claude-code.md` section 10, `docs/adapters/antigravity.md`
+//! section 5 and `docs/adapters/codex.md`.
 
 use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
+use crate::commands::codex_config;
 use crate::commands::support::find_on_path;
 
 /// The ACS plugin's id in Claude Code: plugin `acs` of the marketplace `acs-plugins`.
@@ -54,6 +55,15 @@ pub const HARNESSES: &[Harness] = &[
         install: &["acs plugin install antigravity"],
         without_acs: "its hooks fail CLOSED: Antigravity denies every tool call",
         fails_closed: true,
+    },
+    Harness {
+        id: "codex",
+        name: "Codex",
+        binaries: &["codex"],
+        dirs: &[".codex"],
+        install: &["acs plugin install codex"],
+        without_acs: "its hooks fail open: Codex reports a failed hook and the tool call runs                       unchecked",
+        fails_closed: false,
     },
 ];
 
@@ -115,12 +125,14 @@ pub enum PluginState {
 
 /// Looks for the ACS plugin without running the harness: Claude Code's `enabledPlugins` key
 /// `acs@acs-plugins` in the user, project and local settings files; Antigravity's plugin
-/// directories (`<work tree>/.agents/plugins/acs`, `~/.gemini/config/plugins/acs`).
+/// directories (`<work tree>/.agents/plugins/acs`, `~/.gemini/config/plugins/acs`); the ACS
+/// block in Codex's project or user `config.toml`.
 #[must_use]
 pub fn plugin_state(harness: &Harness, work_tree: &Path) -> PluginState {
     let installed = match harness.id {
         "claude-code" => claude_code_plugin_enabled(work_tree),
         "antigravity" => antigravity_plugin_present(work_tree),
+        "codex" => codex_block_present(work_tree),
         _ => false,
     };
     if installed {
@@ -172,6 +184,12 @@ fn claude_code_plugin_enabled(work_tree: &Path) -> bool {
     let mut files = claude_code_project_settings(work_tree).to_vec();
     files.extend(claude_code_user_settings());
     files.iter().any(|file| settings_enable_acs(file))
+}
+
+fn codex_block_present(work_tree: &Path) -> bool {
+    let mut files = vec![codex_config::project_file(work_tree)];
+    files.extend(codex_config::user_file());
+    files.iter().any(|file| codex_config::file_has_block(file))
 }
 
 fn antigravity_plugin_present(work_tree: &Path) -> bool {

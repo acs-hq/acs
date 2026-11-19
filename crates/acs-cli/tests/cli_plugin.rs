@@ -501,3 +501,84 @@ fn a_missing_harness_is_named() {
     assert_failure(&out);
     assert_eq!(json(&out)["error"]["code"], "harness_not_found");
 }
+
+fn codex_block() -> String {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../integrations/codex");
+    fs::read_to_string(root.join("config.toml")).unwrap()
+}
+
+#[test]
+fn codex_gets_the_block_in_the_project_config_once() {
+    let world = World::new();
+    let nested = world.repo.join("src");
+    fs::create_dir_all(&nested).unwrap();
+    let out = cli_common::acs_in(&world, &nested, &["plugin", "install", "codex"]);
+    assert_success(&out);
+    let file = world.repo.join(".codex/config.toml");
+    assert_eq!(fs::read_to_string(&file).unwrap(), codex_block());
+    let text = stdout(&out);
+    assert!(text.contains(".codex/config.toml"), "{text}");
+    assert!(text.contains("/hooks"), "{text}");
+    assert!(text.contains("Commit .codex/config.toml"), "{text}");
+    assert_fits_80(&text);
+
+    // Again: nothing changes.
+    let report = json(&cli_common::acs(
+        &world,
+        &["plugin", "install", "codex", "--json"],
+    ));
+    assert_eq!(report["ok"], true);
+    assert_eq!(report["changed"], false);
+    assert_eq!(report["steps"].as_array().unwrap().len(), 0);
+
+    // A config of the person's own keeps its text; the block goes after it.
+    let mine = "model = \"o3\"\n";
+    fs::write(&file, mine).unwrap();
+    let report = json(&cli_common::acs(
+        &world,
+        &["plugin", "install", "codex", "--json"],
+    ));
+    assert_eq!(report["changed"], true);
+    assert_eq!(
+        fs::read_to_string(&file).unwrap(),
+        format!("{mine}\n{}", codex_block())
+    );
+}
+
+#[test]
+fn codex_user_scope_writes_codex_home_and_there_is_no_local_scope() {
+    let world = World::new();
+    let report = json(&cli_common::acs(
+        &world,
+        &["plugin", "install", "codex", "--scope", "user", "--json"],
+    ));
+    assert_eq!(report["ok"], true, "{report}");
+    let user = world.tmp.path().join("fake-home/.codex/config.toml");
+    assert_eq!(fs::read_to_string(user).unwrap(), codex_block());
+    assert!(!world.repo.join(".codex").exists());
+    assert!(
+        report["warnings"]
+            .to_string()
+            .contains("every git repository")
+    );
+
+    let out = cli_common::acs(
+        &world,
+        &["plugin", "install", "codex", "--scope", "local", "--json"],
+    );
+    assert_failure(&out);
+    assert_eq!(json(&out)["error"]["code"], "unsupported_scope");
+}
+
+#[test]
+fn a_codex_config_that_cannot_take_the_block_is_left_alone() {
+    let world = World::new();
+    let file = world.repo.join(".codex/config.toml");
+    fs::create_dir_all(file.parent().unwrap()).unwrap();
+    let mine = "[mcp_servers.acs]\ncommand = \"mine\"\n";
+    fs::write(&file, mine).unwrap();
+    let out = cli_common::acs(&world, &["plugin", "install", "codex"]);
+    assert_failure(&out);
+    assert!(stdout(&out).contains("FAILED"), "{}", stdout(&out));
+    assert_eq!(fs::read_to_string(&file).unwrap(), mine);
+}

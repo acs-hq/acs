@@ -1,0 +1,32 @@
+# >>> acs: added by `acs plugin install codex`; `acs uninstall` removes this block.
+# ACS hooks and MCP tools for Codex. Codex runs project hooks only in a trusted project, and only
+# after you trust them once in `/hooks`.
+[mcp_servers.acs]
+command = "acs"
+args = ["mcp", "--harness", "codex"]
+default_tools_approval_mode = "approve"
+
+[[hooks.SessionStart]]
+[[hooks.SessionStart.hooks]]
+type = "command"
+command = "acs hook codex"
+timeout = 20
+
+[[hooks.PreToolUse]]
+[[hooks.PreToolUse.hooks]]
+type = "command"
+command = "acs hook codex"
+timeout = 20
+
+[[hooks.PostToolUse]]
+[[hooks.PostToolUse.hooks]]
+type = "command"
+command = "acs hook codex"
+timeout = 30
+
+[[hooks.SessionEnd]]
+[[hooks.SessionEnd.hooks]]
+type = "command"
+command = "acs hook codex"
+timeout = 3
+# <<< acs

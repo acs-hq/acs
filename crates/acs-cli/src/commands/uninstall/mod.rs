@@ -6,7 +6,8 @@
 //! 2. the `refs/acs/*` fetch refspec of every remote, and the local `refs/acs/*` refs and their
 //!    remote-tracking copies;
 //! 3. the ACS plugin entries in the project's Claude Code settings (`.claude/settings.json` and
-//!    `.claude/settings.local.json`), and the Antigravity plugin folder `.agents/plugins/acs/`.
+//!    `.claude/settings.local.json`), the Antigravity plugin folder `.agents/plugins/acs/`, and
+//!    the ACS block in the project's Codex configuration `.codex/config.toml` (decision 0047).
 //!
 //! On request, each on its own (a flag, or a yes at its question in a terminal):
 //!
@@ -32,6 +33,7 @@ use clap::Args;
 use serde::Serialize;
 
 use self::settings::Edit;
+use super::codex_config;
 use super::init::harness::{
     CLAUDE_CODE_PLUGIN, claude_code_project_settings, claude_code_user_settings,
     settings_enable_acs,
@@ -90,7 +92,7 @@ pub enum StepState {
 #[derive(Debug, Clone, Serialize)]
 pub struct Step {
     /// Stable identifier: `git_hooks`, `fetch_refspecs`, `local_refs`, `claude_code_settings`,
-    /// `antigravity_plugin`, `policy`, `state`, `remote_refs`.
+    /// `antigravity_plugin`, `codex_config`, `policy`, `state`, `remote_refs`.
     pub id: &'static str,
     /// For people.
     pub title: &'static str,
@@ -133,6 +135,8 @@ struct Plan {
     settings: Vec<(PathBuf, Edit)>,
     settings_errors: Vec<String>,
     antigravity: Option<PathBuf>,
+    /// The project's Codex configuration file and its text without the ACS block.
+    codex: Option<(PathBuf, String)>,
     policy: Option<PathBuf>,
     state: Result<Vec<PathBuf>, String>,
     remotes: Vec<String>,
@@ -292,6 +296,11 @@ fn plan(layout: RepoLayout) -> Plan {
         }
     }
     let antigravity = Some(work_tree.join(ANTIGRAVITY_PLUGIN_DIR)).filter(|d| d.is_dir());
+    let codex_file = codex_config::project_file(&work_tree);
+    let codex = std::fs::read_to_string(&codex_file)
+        .ok()
+        .and_then(|text| codex_config::remove_block(&text))
+        .map(|rest| (codex_file, rest));
     let policy = Some(work_tree.join(".acs").join("policy")).filter(|d| d.is_dir());
     let state = AcsHome::from_env()
         .map_err(|err| err.to_string())
@@ -303,6 +312,7 @@ fn plan(layout: RepoLayout) -> Plan {
         settings,
         settings_errors,
         antigravity,
+        codex,
         policy,
         state,
         remotes,
@@ -456,6 +466,15 @@ fn planned_steps(plan: &Plan, choice: Choice) -> Vec<Step> {
         plan.antigravity
             .iter()
             .map(|dir| format!("{}/", relative(work_tree, dir)))
+            .collect(),
+    ));
+    steps.push(step(
+        "codex_config",
+        "Codex hooks and MCP server",
+        false,
+        plan.codex
+            .iter()
+            .map(|(file, _)| format!("the ACS block in {}", relative(work_tree, file)))
             .collect(),
     ));
     let mut policy = step(
@@ -665,6 +684,17 @@ fn carry_out(plan: &Plan, choice: Choice, dry_run: bool) -> UninstallReport {
                     }
                     result
                 }),
+                "codex_config" => plan.codex.as_ref().map_or(Ok(()), |(file, rest)| {
+                    // A file that held nothing but the block was written by `acs plugin
+                    // install codex`: take it, and an emptied `.codex/`, away again.
+                    let result = if rest.is_empty() {
+                        std::fs::remove_file(file)
+                    } else {
+                        std::fs::write(file, rest)
+                    };
+                    file.parent().into_iter().for_each(remove_if_empty);
+                    result.map_err(|err| err.to_string())
+                }),
                 "policy" => plan.policy.as_ref().map_or(Ok(()), |dir| {
                     let result = std::fs::remove_dir_all(dir).map_err(|err| err.to_string());
                     dir.parent().into_iter().for_each(remove_if_empty);
@@ -795,6 +825,9 @@ fn notes(plan: &Plan, steps: &[Step], dry_run: bool) -> Vec<String> {
     if state_of("antigravity_plugin") == StepState::Done {
         to_commit.push(ANTIGRAVITY_PLUGIN_DIR);
     }
+    if state_of("codex_config") == StepState::Done {
+        to_commit.push(codex_config::PROJECT_FILE);
+    }
     if plan.hooks.as_ref().is_ok_and(|h| {
         h.iter()
             .any(|r| relative(&plan.layout.work_tree, &r.path).starts_with(".husky/"))
@@ -821,6 +854,13 @@ fn notes(plan: &Plan, steps: &[Step], dry_run: bool) -> Vec<String> {
              repository you open. Remove it with `claude plugin uninstall {CLAUDE_CODE_PLUGIN} \
              --scope user`."
         ));
+    }
+    if codex_config::user_file().is_some_and(|file| codex_config::file_has_block(&file)) {
+        notes.push(
+            "The ACS block is still in your Codex config.toml, which gates every repository \
+             you open in Codex. Remove the lines from `# >>> acs` to `# <<< acs` there."
+                .to_owned(),
+        );
     }
     notes.push(
         "The `acs` program itself stays installed; remove it the way you installed it.".to_owned(),

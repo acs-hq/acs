@@ -202,7 +202,7 @@ pub fn run_checks(cwd: &Path, fix: bool) -> Vec<Check> {
         checks.push(Check::pass(
             "plugins",
             "Harness plugins",
-            "no Claude Code or Antigravity detected on this machine or in this repository",
+            "no Claude Code, Antigravity or Codex detected on this machine or in this repository",
         ));
     }
     for (found, state) in detected.iter().zip(&plugin_states) {
