@@ -374,6 +374,10 @@ New in WP10:
    a time in test fixtures.
 4. **A real run can pass without testing anything.** Run 1 blocked no `Edit` at all. Read the calls
    in the logs, not just the verdict.
+5. **A benchmark can measure nothing, too.** The lore cases check, before measuring, that the first
+   call showed the entry's text. Do the same for any case that depends on a feature firing.
+6. **Each git process costs about 40 ms on this machine.** Count the git runs on a hook path before
+   guessing from the code's comments: the lore staleness check runs four per entry, not two.
 
 New in WP7 (the first work done under dogfooding):
 
@@ -499,8 +503,10 @@ place files with `propose::file_for`; entries must have `written_against` (use `
 text is injected into every agent's context, so keep the import's output reviewable (a branch, as
 `acs lore review` does with `acs_git::lore::commit_file_on_branch`).
 
-**WP10.1 / WP10.3** — no benchmark covers the first touch of a scope with lore yet (two `git diff`
-runs per entry on a new `HEAD`, cached in `cache/lore-stale.json`). Poisoned lore is a
+**WP10.1 / WP10.3** — lore is benchmarked since decision 0049 (`lore_calls` in
+`benches/hook_paths.rs`). The first touch of a scope right after a commit runs four git processes
+per entry (about 0.4 s for two entries on Windows), and every call reads every lore file (about
+0.15 ms per entry); issue 81 has the numbers and the fixes to try. Poisoned lore is a
 prompt-injection path: the threat model must list it, with CODEOWNERS on `.acs/policy/` as the
 mitigation.
 
