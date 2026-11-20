@@ -31,6 +31,7 @@ model), and the rest of WP10.1 and WP10.2. No release has been tagged.
 | 2026-11-16 | ACS asks every agent session for `acs_status` and `acs_intent` once, in its start message, and reminds a session once when it edits without an intent (issue 73) | 0046 |
 | 2026-11-14 | The default sealed list of §4.3 loses `.github/workflows/**`, and its `**/.env*` leaves out example env files | 0042 |
 | 2026-11-19 | Codex (CLI 0.170) is supported ahead of WP9.4, at tier A: pre-tool gate, context and MCP through a block in `.codex/config.toml`; `.codex/config.toml`, `.codex/hooks.json` and `~/.codex` are sealed | 0047 |
+| 2026-11-20 | A new canonical phase `turn_end` (the harnesses' `Stop`): an agent that changed files is asked once, at the end of its turn, to propose lore; Claude Code loads `acs_lore_propose` at the start; the pilot is told about waiting proposals (issue 80) | 0048 |
 
 Open work is in GitHub issues, not in this file. Decisions are in `docs/decisions/`.
 
