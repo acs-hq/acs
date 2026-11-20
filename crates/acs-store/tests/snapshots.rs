@@ -413,7 +413,7 @@ fn index_is_created_migrated_and_reopened() {
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap()
     };
-    assert_eq!(version(&db), 1);
+    assert_eq!(version(&db), 2);
     // Reopening is a no-op; a newer schema is refused rather than clobbered.
     SnapshotStore::open(&repo).unwrap();
     rusqlite::Connection::open(&db)
@@ -481,4 +481,61 @@ fn capturing_1000_small_files_is_fast() {
     };
     assert!(cold.as_millis() < limit_ms, "cold capture took {cold:?}");
     assert!(warm.as_millis() < limit_ms, "warm capture took {warm:?}");
+}
+
+/// Lookups for one work tree ignore the entries of other work trees, and count the entries that
+/// name none (taken before work trees were recorded), so a session that spans an upgrade keeps
+/// its pre-images (issue 74).
+#[test]
+fn images_of_one_work_tree_ignore_other_work_trees() {
+    let f = fixture();
+    let other = f.work.parent().unwrap().join("other");
+    fs::create_dir_all(&other).unwrap();
+    fs::write(other.join("a"), b"other").unwrap();
+    let s = ses(1);
+    let entry = f
+        .store
+        .capture_in(
+            &s,
+            SnapshotKind::Pre,
+            Some(&other),
+            &[(rp("a"), other.join("a").as_path())],
+            t(1),
+        )
+        .unwrap()
+        .remove(0)
+        .entry;
+    assert_eq!(entry.work_tree.as_deref(), Some(other.as_path()));
+    let listed = f.store.list(&s).unwrap();
+    assert_eq!(listed[0].work_tree.as_deref(), Some(other.as_path()));
+
+    assert!(
+        f.store
+            .pre_image_in(&s, &f.work, &rp("a"))
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        f.store
+            .post_image_in(&s, &f.work, &rp("a"))
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        f.store
+            .pre_image_in(&s, &other, &rp("a"))
+            .unwrap()
+            .is_some()
+    );
+    // Without a work tree, any entry counts.
+    assert!(f.store.pre_image(&s, &rp("a")).unwrap().is_some());
+
+    fs::write(f.work.join("a"), b"main").unwrap();
+    capture_one(&f, &s, SnapshotKind::Post, "a", 2);
+    let legacy = f
+        .store
+        .post_image_in(&s, &f.work, &rp("a"))
+        .unwrap()
+        .unwrap();
+    assert_eq!(legacy.work_tree, None);
 }

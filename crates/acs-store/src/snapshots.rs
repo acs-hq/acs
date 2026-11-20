@@ -30,7 +30,8 @@ use crate::home::RepoHome;
 const ZSTD_LEVEL: i32 = 1;
 
 /// Index schema migrations; `PRAGMA user_version` is the number applied.
-const MIGRATIONS: &[&str] = &["
+const MIGRATIONS: &[&str] = &[
+    "
     CREATE TABLE blobs (
         hash        TEXT PRIMARY KEY,
         size        INTEGER NOT NULL,  -- uncompressed bytes
@@ -49,10 +50,16 @@ const MIGRATIONS: &[&str] = &["
     );
     CREATE INDEX entries_by_path ON entries (session, path, kind, id);
     CREATE INDEX entries_by_hash ON entries (hash);
-"];
+",
+    "
+    -- The root of the work tree the path is relative to (absolute); NULL for entries taken
+    -- before it was recorded, which belong to whichever work tree undo runs in (issue 74).
+    ALTER TABLE entries ADD COLUMN work_tree TEXT;
+",
+];
 
 const SELECT_ENTRY: &str =
-    "SELECT id, session, path, kind, taken_at, hash, size, mode FROM entries";
+    "SELECT id, session, path, kind, taken_at, hash, size, mode, work_tree FROM entries";
 
 /// Errors from the snapshot store.
 #[derive(Debug, thiserror::Error)]
@@ -172,6 +179,9 @@ pub struct SnapshotEntry {
     pub taken_at: Timestamp,
     /// The captured state.
     pub state: FileState,
+    /// The root of the work tree `path` is relative to; `None` when it was not recorded
+    /// (captured by an older ACS, or with [`SnapshotStore::capture`]).
+    pub work_tree: Option<PathBuf>,
 }
 
 /// The outcome of capturing one file.
@@ -288,15 +298,35 @@ impl SnapshotStore {
         paths: &[(RepoPath, &Path)],
         now: Timestamp,
     ) -> Result<Vec<CaptureResult>, SnapshotError> {
+        self.capture_in(session, kind, None, paths, now)
+    }
+
+    /// [`capture`](Self::capture), recording that the repository paths are relative to the work
+    /// tree rooted at `work_tree`, so undo acts on that work tree whichever one it runs in.
+    ///
+    /// # Errors
+    ///
+    /// As [`capture`](Self::capture).
+    pub fn capture_in(
+        &self,
+        session: &SessionId,
+        kind: SnapshotKind,
+        work_tree: Option<&Path>,
+        paths: &[(RepoPath, &Path)],
+        now: Timestamp,
+    ) -> Result<Vec<CaptureResult>, SnapshotError> {
         let now_ms = now.as_millisecond();
+        // A root that is not UTF-8 cannot be stored; the entry then belongs to no work tree in
+        // particular, as before trees were recorded.
+        let tree = work_tree.and_then(Path::to_str);
         let tx = self.begin()?;
         let mut compressor = zstd::bulk::Compressor::new(ZSTD_LEVEL)
             .map_err(|e| SnapshotError::io("start compressor for", &self.dir, e))?;
         let mut results = Vec::with_capacity(paths.len());
         {
             let mut insert_entry = tx.prepare_cached(
-                "INSERT INTO entries (session, path, kind, taken_at, hash, size, mode)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                "INSERT INTO entries (session, path, kind, taken_at, hash, size, mode, work_tree)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             )?;
             let mut upsert_blob = tx.prepare_cached(
                 "INSERT INTO blobs (hash, size, stored, last_access) VALUES (?1, ?2, ?3, ?4)
@@ -346,7 +376,8 @@ impl SnapshotStore {
                     now_ms,
                     hash,
                     db_int(size),
-                    mode
+                    mode,
+                    tree
                 ])?;
                 results.push(CaptureResult {
                     entry: SnapshotEntry {
@@ -356,6 +387,7 @@ impl SnapshotStore {
                         kind,
                         taken_at: now,
                         state,
+                        work_tree: tree.map(PathBuf::from),
                     },
                     stored_new_blob,
                 });
@@ -405,7 +437,37 @@ impl SnapshotStore {
         session: &SessionId,
         path: &RepoPath,
     ) -> Result<Option<SnapshotEntry>, SnapshotError> {
-        self.image(session, path, SnapshotKind::Pre, "ASC")
+        self.image(session, None, path, SnapshotKind::Pre, "ASC")
+    }
+
+    /// [`pre_image`](Self::pre_image) of `path` in the work tree rooted at `work_tree`: entries
+    /// of other work trees are ignored, entries with no work tree recorded count.
+    ///
+    /// # Errors
+    ///
+    /// Index errors.
+    pub fn pre_image_in(
+        &self,
+        session: &SessionId,
+        work_tree: &Path,
+        path: &RepoPath,
+    ) -> Result<Option<SnapshotEntry>, SnapshotError> {
+        self.image(session, Some(work_tree), path, SnapshotKind::Pre, "ASC")
+    }
+
+    /// [`post_image`](Self::post_image) of `path` in the work tree rooted at `work_tree`, as
+    /// [`pre_image_in`](Self::pre_image_in).
+    ///
+    /// # Errors
+    ///
+    /// Index errors.
+    pub fn post_image_in(
+        &self,
+        session: &SessionId,
+        work_tree: &Path,
+        path: &RepoPath,
+    ) -> Result<Option<SnapshotEntry>, SnapshotError> {
+        self.image(session, Some(work_tree), path, SnapshotKind::Post, "DESC")
     }
 
     /// The latest post-image of `path` in `session`: the state the session last left it in.
@@ -418,24 +480,29 @@ impl SnapshotStore {
         session: &SessionId,
         path: &RepoPath,
     ) -> Result<Option<SnapshotEntry>, SnapshotError> {
-        self.image(session, path, SnapshotKind::Post, "DESC")
+        self.image(session, None, path, SnapshotKind::Post, "DESC")
     }
 
     fn image(
         &self,
         session: &SessionId,
+        work_tree: Option<&Path>,
         path: &RepoPath,
         kind: SnapshotKind,
         order: &str,
     ) -> Result<Option<SnapshotEntry>, SnapshotError> {
+        // `?4` NULL: any work tree. A root that is not UTF-8 was never stored, so it matches the
+        // entries with no work tree only.
+        let tree = work_tree.map(|t| t.to_str().unwrap_or(""));
         let sql = format!(
-            "{SELECT_ENTRY} WHERE session = ?1 AND path = ?2 AND kind = ?3 ORDER BY id {order} LIMIT 1"
+            "{SELECT_ENTRY} WHERE session = ?1 AND path = ?2 AND kind = ?3 \
+             AND (?4 IS NULL OR work_tree IS NULL OR work_tree = ?4) ORDER BY id {order} LIMIT 1"
         );
         let row = self
             .conn
             .query_row(
                 &sql,
-                params![session.as_str(), path.as_str(), kind.code()],
+                params![session.as_str(), path.as_str(), kind.code(), tree],
                 raw_entry,
             )
             .optional()?;
@@ -704,6 +771,7 @@ struct RawEntry {
     hash: Option<String>,
     size: u64,
     mode: u32,
+    work_tree: Option<String>,
 }
 
 /// SQLite integers are signed 64-bit; sizes never get near the limit.
@@ -725,6 +793,7 @@ fn raw_entry(r: &rusqlite::Row<'_>) -> rusqlite::Result<RawEntry> {
         hash: r.get(5)?,
         size: as_u64(r.get::<_, i64>(6)?),
         mode: r.get(7)?,
+        work_tree: r.get(8)?,
     })
 }
 
@@ -755,6 +824,7 @@ impl RawEntry {
                     mode: self.mode,
                 },
             },
+            work_tree: self.work_tree.map(PathBuf::from),
         })
     }
 }

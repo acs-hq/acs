@@ -17,11 +17,17 @@
 //!    alone ([`UndoAction::Conflict`]).
 //!
 //! The planner reads the work tree but never writes it. [`apply`] carries a plan out.
+//!
+//! Each file is planned and restored in the work tree its snapshots and attributions name: a
+//! session started in the main checkout that changed `src/lib.rs` of a linked worktree is undone
+//! in that worktree, whichever checkout `acs undo` runs in (issue 74). Rows that name no work
+//! tree (recorded before ACS stored it) belong to the work tree undo runs in. A file whose work
+//! tree is gone is [`UndoAction::Unknown`] and never written anywhere else.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::io;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use acs_core::{ContentHash, RepoPath, SessionId};
 use rusqlite::params;
@@ -108,7 +114,10 @@ pub enum Effect {
 /// The plan for one file.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UndoItem {
-    /// The file.
+    /// The root of the work tree the file is in: where it is read and written. For a file whose
+    /// work tree no longer exists, the root that was recorded.
+    pub work_tree: PathBuf,
+    /// The file, relative to [`work_tree`](Self::work_tree).
     pub path: RepoPath,
     /// What happens to it.
     pub action: UndoAction,
@@ -126,7 +135,8 @@ pub struct UndoItem {
 pub struct UndoPlan {
     /// The session being undone.
     pub session: SessionId,
-    /// One item per changed file, sorted by path.
+    /// One item per changed file: those of the work tree undo runs in first, each work tree's
+    /// sorted by path.
     pub items: Vec<UndoItem>,
 }
 
@@ -155,8 +165,11 @@ pub type Merger<'a> = dyn FnMut(&[u8], &[u8], &[u8]) -> MergeResult + 'a;
 pub struct PlanInputs<'a> {
     /// The session to undo.
     pub session: &'a SessionId,
-    /// The work tree root.
+    /// The root of the work tree undo runs in. Rows that recorded no work tree are resolved here.
     pub work_tree: &'a Path,
+    /// Where a recorded work tree other than [`work_tree`](Self::work_tree) is now: its root, or,
+    /// when it is gone or no longer a work tree of this repository, why undo will not act there.
+    pub locate: &'a dyn Fn(&Path) -> Result<PathBuf, String>,
     /// The snapshot store.
     pub snapshots: &'a SnapshotStore,
     /// The attributions of the session's seat, oldest first.
@@ -300,6 +313,7 @@ fn why_unusable(err: &SnapshotError) -> String {
     }
 }
 
+/// An item; [`plan`] fills in its work tree.
 fn item(
     path: &RepoPath,
     action: UndoAction,
@@ -308,6 +322,7 @@ fn item(
     current: Option<ContentHash>,
 ) -> UndoItem {
     UndoItem {
+        work_tree: PathBuf::new(),
         path: path.clone(),
         action,
         detail,
@@ -324,21 +339,53 @@ fn item(
 /// error: it makes that file [`UndoAction::Unknown`].
 pub fn plan(inputs: &PlanInputs<'_>, merge: &mut Merger<'_>) -> Result<UndoPlan, UndoError> {
     let entries = inputs.snapshots.list(inputs.session)?;
-    let mut by_path: BTreeMap<RepoPath, (Vec<&SnapshotEntry>, Vec<&StoredAttribution>)> =
-        BTreeMap::new();
+    let here = inputs.work_tree;
+    // Keyed by (elsewhere, recorded root, path): the work tree undo runs in sorts first.
+    let key = |tree: Option<&PathBuf>, path: &RepoPath| {
+        let tree = tree.map_or(here, PathBuf::as_path);
+        (tree != here, tree.to_path_buf(), path.clone())
+    };
+    type Rows<'r> = (Vec<&'r SnapshotEntry>, Vec<&'r StoredAttribution>);
+    let mut by_path: BTreeMap<(bool, PathBuf, RepoPath), Rows<'_>> = BTreeMap::new();
     for entry in &entries {
-        by_path.entry(entry.path.clone()).or_default().0.push(entry);
+        by_path
+            .entry(key(entry.work_tree.as_ref(), &entry.path))
+            .or_default()
+            .0
+            .push(entry);
     }
     for attribution in inputs.attributions {
         by_path
-            .entry(attribution.path.clone())
+            .entry(key(attribution.work_tree.as_ref(), &attribution.path))
             .or_default()
             .1
             .push(attribution);
     }
+    let mut located: BTreeMap<PathBuf, Result<PathBuf, String>> = BTreeMap::new();
     let mut items = Vec::with_capacity(by_path.len());
-    for (path, (entries, attributions)) in &by_path {
-        items.push(plan_path(inputs, path, entries, attributions, merge)?);
+    for ((elsewhere, recorded, path), (entries, attributions)) in &by_path {
+        let place = located.entry(recorded.clone()).or_insert_with(|| {
+            if *elsewhere {
+                (inputs.locate)(recorded)
+            } else {
+                Ok(here.to_path_buf())
+            }
+        });
+        let mut planned = match place {
+            Ok(root) => plan_path(inputs, root, path, entries, attributions, merge)?,
+            Err(why) => item(
+                path,
+                UndoAction::Unknown,
+                Some(why.clone()),
+                Effect::Nothing,
+                None,
+            ),
+        };
+        planned.work_tree = match place {
+            Ok(root) => root.clone(),
+            Err(_) => recorded.clone(),
+        };
+        items.push(planned);
     }
     Ok(UndoPlan {
         session: inputs.session.clone(),
@@ -348,14 +395,15 @@ pub fn plan(inputs: &PlanInputs<'_>, merge: &mut Merger<'_>) -> Result<UndoPlan,
 
 fn plan_path(
     inputs: &PlanInputs<'_>,
+    work_tree: &Path,
     path: &RepoPath,
     entries: &[&SnapshotEntry],
     attributions: &[&StoredAttribution],
     merge: &mut Merger<'_>,
 ) -> Result<UndoItem, UndoError> {
     let store = inputs.snapshots;
-    let abs = inputs.work_tree.join(path.as_str());
-    if let Some(link) = link_on_the_way(inputs.work_tree, path) {
+    let abs = work_tree.join(path.as_str());
+    if let Some(link) = link_on_the_way(work_tree, path) {
         return Ok(item(
             path,
             UndoAction::Conflict,
@@ -515,27 +563,32 @@ fn plan_path(
 /// What happened to one item of an applied plan.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Applied {
+    /// The root of the file's work tree.
+    pub work_tree: PathBuf,
     /// The file.
     pub path: RepoPath,
     /// `Err` holds why the file was left alone.
     pub result: Result<(), String>,
 }
 
-/// Carries out the items of `plan` that change files and returns what happened to each. Items
-/// whose file changed since planning are skipped with an error, never overwritten.
+/// Carries out the items of `plan` that change files, each in its own work tree, and returns
+/// what happened to each. Items whose file changed since planning are skipped with an error,
+/// never overwritten.
 #[must_use]
-pub fn apply(store: &SnapshotStore, work_tree: &Path, plan: &UndoPlan) -> Vec<Applied> {
+pub fn apply(store: &SnapshotStore, plan: &UndoPlan) -> Vec<Applied> {
     plan.items
         .iter()
         .filter(|i| i.action.changes_file())
         .map(|i| Applied {
+            work_tree: i.work_tree.clone(),
             path: i.path.clone(),
-            result: apply_item(store, work_tree, i),
+            result: apply_item(store, i),
         })
         .collect()
 }
 
-fn apply_item(store: &SnapshotStore, work_tree: &Path, item: &UndoItem) -> Result<(), String> {
+fn apply_item(store: &SnapshotStore, item: &UndoItem) -> Result<(), String> {
+    let work_tree = item.work_tree.as_path();
     let abs = work_tree.join(item.path.as_str());
     if let Some(link) = link_on_the_way(work_tree, &item.path) {
         return Err(format!(
@@ -603,12 +656,12 @@ fn remove(abs: &Path) -> io::Result<()> {
     }
 }
 
-/// The paths of the items that were applied successfully.
+/// The items that were applied successfully, as (work tree root, path).
 #[must_use]
-pub fn applied_paths(applied: &[Applied]) -> BTreeSet<RepoPath> {
+pub fn applied_paths(applied: &[Applied]) -> BTreeSet<(PathBuf, RepoPath)> {
     applied
         .iter()
         .filter(|a| a.result.is_ok())
-        .map(|a| a.path.clone())
+        .map(|a| (a.work_tree.clone(), a.path.clone()))
         .collect()
 }

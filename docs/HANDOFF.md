@@ -594,6 +594,9 @@ skipped when no binary exists. SPEC section 6.2 states the rule for editor integ
 
 ## 5. For the human
 
+- **After merging issue 74 (decision 0050):** reinstall `acs`; the state moves to schema 8 and the
+  snapshot index to version 2, and older builds then report the state unavailable. Worktree
+  sessions recorded before that still undo only from inside their worktree.
 - **After merging Phase 4:** reinstall `acs` (`cargo install --path crates/acs-cli --locked`); the
   state moves to schema 7. The first sync then writes records for this repository's past sessions
   (since dogfooding started on 2026-11-08) and pushes them to `refs/acs/ledger/<pilot-id>` on

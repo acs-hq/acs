@@ -99,6 +99,7 @@ impl Fixture {
             post_hash: post.map(ContentHash::of),
             at: t(10),
             via,
+            work_tree: None,
         });
         self.next_attribution += 1;
     }
@@ -112,6 +113,7 @@ impl Fixture {
             &PlanInputs {
                 session: &self.session,
                 work_tree: &self.work,
+                locate: &|tree| Err(format!("{} is gone", tree.display())),
                 snapshots: &self.store,
                 attributions: &self.attributions,
                 holder,
@@ -143,7 +145,7 @@ fn a_file_the_session_changed_is_restored_byte_exact() {
     f.tool_write("a.txt", Some(b"new"));
     let p = f.plan();
     assert_eq!(action(&p, "a.txt"), UndoAction::Restore);
-    let applied = apply(&f.store, &f.work, &p);
+    let applied = apply(&f.store, &p);
     assert!(applied.iter().all(|a| a.result.is_ok()), "{applied:?}");
     assert_eq!(f.read("a.txt"), b"old\r\n\xff\x00bytes");
     // Planning again: now it is as it was before the session.
@@ -162,7 +164,7 @@ fn restoring_brings_the_file_mode_back() {
     f.capture(SnapshotKind::Post, "run.sh");
     let p = f.plan();
     assert_eq!(action(&p, "run.sh"), UndoAction::Restore);
-    let _ = apply(&f.store, &f.work, &p);
+    let _ = apply(&f.store, &p);
     let mode = fs::metadata(f.abs("run.sh")).unwrap().permissions().mode() & 0o7777;
     assert_eq!(mode, 0o755);
 }
@@ -173,7 +175,7 @@ fn a_file_the_session_created_is_deleted() {
     f.tool_write("new.txt", Some(b"made by the session"));
     let p = f.plan();
     assert_eq!(action(&p, "new.txt"), UndoAction::Delete);
-    let _ = apply(&f.store, &f.work, &p);
+    let _ = apply(&f.store, &p);
     assert!(!f.abs("new.txt").exists());
 }
 
@@ -186,7 +188,7 @@ fn a_file_created_and_edited_again_is_still_a_creation() {
     f.tool_write("new.txt", Some(b"v2"));
     let p = f.plan();
     assert_eq!(action(&p, "new.txt"), UndoAction::Delete);
-    let _ = apply(&f.store, &f.work, &p);
+    let _ = apply(&f.store, &p);
     assert!(!f.abs("new.txt").exists());
 }
 
@@ -200,7 +202,7 @@ fn a_file_the_session_deleted_is_recreated_even_when_empty() {
     let p = f.plan();
     assert_eq!(action(&p, "gone.txt"), UndoAction::Recreate);
     assert_eq!(action(&p, "empty.txt"), UndoAction::Recreate);
-    let _ = apply(&f.store, &f.work, &p);
+    let _ = apply(&f.store, &p);
     assert_eq!(f.read("gone.txt"), b"content\n");
     assert_eq!(f.read("empty.txt"), b"");
 }
@@ -239,7 +241,7 @@ fn later_changes_by_others_are_merged_with_the_reverse_change() {
     assert_eq!(action(&p, "m.txt"), UndoAction::Merge);
     // Planning wrote nothing.
     assert_eq!(f.read("m.txt"), b"others\nbase\nsession\n");
-    let _ = apply(&f.store, &f.work, &p);
+    let _ = apply(&f.store, &p);
     assert_eq!(f.read("m.txt"), b"others\nbase\n");
 }
 
@@ -254,7 +256,7 @@ fn overlapping_changes_are_a_conflict_and_the_file_is_not_touched() {
     });
     assert_eq!(action(&p, "c.txt"), UndoAction::Conflict);
     assert_eq!(p.items[0].detail.as_deref(), Some("overlap"));
-    assert!(apply(&f.store, &f.work, &p).is_empty());
+    assert!(apply(&f.store, &p).is_empty());
     assert_eq!(f.read("c.txt"), b"three\n");
 }
 
@@ -291,7 +293,7 @@ fn a_file_without_a_pre_image_is_unknown_and_never_touched() {
     let p = f.plan();
     assert_eq!(action(&p, "sh.txt"), UndoAction::Unknown);
     assert_eq!(action(&p, "ghost.txt"), UndoAction::Unknown);
-    assert!(apply(&f.store, &f.work, &p).is_empty());
+    assert!(apply(&f.store, &p).is_empty());
     assert_eq!(f.read("sh.txt"), b"after");
 }
 
@@ -312,7 +314,7 @@ fn a_tool_change_whose_pre_tool_step_never_ran_is_unknown_not_a_creation() {
     );
     let p = f.plan();
     assert_eq!(action(&p, "notes.txt"), UndoAction::Unknown);
-    assert!(apply(&f.store, &f.work, &p).is_empty());
+    assert!(apply(&f.store, &p).is_empty());
     assert!(f.abs("notes.txt").exists());
 }
 
@@ -347,7 +349,7 @@ fn a_file_held_by_another_seat_is_reported_and_left_alone() {
         p.items[0].detail.as_deref(),
         Some("claimed by claude-code sara")
     );
-    assert!(apply(&f.store, &f.work, &p).is_empty());
+    assert!(apply(&f.store, &p).is_empty());
     assert_eq!(f.read("h.txt"), b"new");
 }
 
@@ -377,7 +379,7 @@ fn applying_refuses_to_overwrite_a_file_that_changed_after_planning() {
     f.tool_write("r.txt", Some(b"new"));
     let p = f.plan();
     f.write("r.txt", b"someone wrote this meanwhile");
-    let applied = apply(&f.store, &f.work, &p);
+    let applied = apply(&f.store, &p);
     assert!(applied[0].result.is_err());
     assert!(applied_paths(&applied).is_empty());
     assert_eq!(f.read("r.txt"), b"someone wrote this meanwhile");
@@ -449,6 +451,7 @@ fn seats_that_changed_files_come_most_recent_first() {
                 path: rp("a.txt"),
                 pre_hash: None,
                 post_hash: None,
+                work_tree: None,
             }],
             AttributionSource::Tool,
             t(at),
@@ -501,4 +504,68 @@ fn seats_that_changed_files_come_most_recent_first() {
     assert_eq!(found.len(), 1);
     assert_eq!(found[0].session_id, running.session_id);
     assert!(found[0].ended_at.is_none());
+}
+
+/// Issue 74: a file is planned and restored in the work tree its rows name, not in the one undo
+/// runs in, even when both have a file of that name; a file whose work tree is gone is left
+/// unknown and nothing is written anywhere.
+#[test]
+fn each_file_is_undone_in_the_work_tree_it_was_changed_in() {
+    let f = fixture();
+    let root = f.work.parent().unwrap().to_path_buf();
+    let other = root.join("other");
+    let gone = root.join("gone");
+    f.write("a.txt", b"main copy\n");
+    for tree in [&other, &gone] {
+        fs::create_dir_all(tree).unwrap();
+        let abs = tree.join("a.txt");
+        fs::write(&abs, b"before\n").unwrap();
+        let capture = |kind| {
+            f.store
+                .capture_in(
+                    &f.session,
+                    kind,
+                    Some(tree),
+                    &[(rp("a.txt"), abs.as_path())],
+                    t(10),
+                )
+                .unwrap();
+        };
+        capture(SnapshotKind::Pre);
+        fs::write(&abs, b"after\n").unwrap();
+        capture(SnapshotKind::Post);
+    }
+    fs::remove_dir_all(&gone).unwrap();
+
+    let locate = |tree: &std::path::Path| {
+        if tree == other {
+            Ok(other.clone())
+        } else {
+            Err(format!("{} is gone", tree.display()))
+        }
+    };
+    let p = plan(
+        &PlanInputs {
+            session: &f.session,
+            work_tree: &f.work,
+            locate: &locate,
+            snapshots: &f.store,
+            attributions: &[],
+            holder: &|_| None,
+        },
+        &mut |_, _, _| MergeResult::Conflict("no merge".to_owned()),
+    )
+    .unwrap();
+    assert_eq!(p.items.len(), 2, "{p:?}");
+    let find = |tree: &PathBuf| p.items.iter().find(|i| &i.work_tree == tree).unwrap();
+    assert_eq!(find(&other).action, UndoAction::Restore);
+    assert_eq!(find(&gone).action, UndoAction::Unknown);
+    assert!(find(&gone).detail.as_deref().unwrap().contains("is gone"));
+
+    let applied = apply(&f.store, &p);
+    assert_eq!(applied.len(), 1, "{applied:?}");
+    assert!(applied_paths(&applied).contains(&(other.clone(), rp("a.txt"))));
+    assert_eq!(fs::read(other.join("a.txt")).unwrap(), b"before\n");
+    assert_eq!(f.read("a.txt"), b"main copy\n");
+    assert!(!gone.exists());
 }

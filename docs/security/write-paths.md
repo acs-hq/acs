@@ -8,7 +8,7 @@ remote, what was checked, and what was found.
 Every finding has a test in `crates/acs-cli/tests/write_paths.rs`, named after it (`w1_...`).
 Tests of open findings fail on purpose. Fixes made during the audit are in decision 0044; W4,
 W6, the link check (issue 77) and the sync notice (issue 78) were solved the same day in
-decision 0045. Open now: W2 and W9.
+decision 0045. W2 was fixed by decision 0050. Open now: W9.
 
 ## Summary
 
@@ -19,7 +19,7 @@ altered by mistake), **surprising** (harmless, but not what the person expects).
 | Id | Surface | What happens | Severity | State |
 | --- | --- | --- | --- | --- |
 | W1 | `acs undo --apply` | A file that existed before the session, of which ACS took no pre-image, is taken for a file the session created and **deleted**, untracked content included | data loss | Fixed (decision 0044) |
-| W2 | `acs undo --apply` | A session that edited files in a linked worktree is undone in the work tree `acs undo` runs in: it reports "already undone", or merges into the wrong copy, and the worktree keeps the change | surprising (wrong target) | Open (issue 74) |
+| W2 | `acs undo --apply` | A session that edited files in a linked worktree is undone in the work tree `acs undo` runs in: it reports "already undone", or merges into the wrong copy, and the worktree keeps the change | surprising (wrong target) | Fixed (decision 0050, issue 74) |
 | W3 | `acs undo --apply` | With `core.autocrlf` (the Git for Windows default) committed session changes are restored but never committed, and the output says nothing | surprising | Fixed (decision 0044) |
 | W4 | `acs undo --apply` | When a hook of the person rejects the undo commit, the restored files are left staged | surprising | Solved (decision 0045, issue 75) |
 | W5 | hook install | A non-shell hook the person had switched off (`chmod -x`) gets an executable wrapper whose `exec` fails: **every commit is rejected** (Unix) | commit | Fixed (decision 0044) |
@@ -63,20 +63,21 @@ not exist yet as absent, and only that pre-image makes a file "created"; without
 unknown. Test: `w1_undo_never_deletes_a_file_that_existed_before_the_session`; unit test
 `a_tool_change_whose_pre_tool_step_never_ran_is_unknown_not_a_creation`.
 
-**W2 (wrong target, open).** Since decision 0032 a session started in the main checkout that
+**W2 (wrong target, fixed).** Since decision 0032 a session started in the main checkout that
 edits a file in a linked worktree (`.claude/worktrees/wp/src/lib.rs`) records it as `src/lib.rs`,
-the worktree's own name for it. Attributions and snapshots do not record which work tree a path
-belongs to, and undo resolves every path against the work tree `acs undo` runs in. Run from the
-main checkout (where the session ran, and where `--last` is natural), it reads the main copy of
-`src/lib.rs`: "already undone", and the worktree keeps the agent's change. When the main copy
-differs, the reverse change is merged into a file the session never touched (a clean merge
-usually leaves it as it was; content equal to the session's result is restored or deleted). No
-case was found where content that exists nowhere else is lost, but the person is told the undo
-happened. Run from the worktree, it works. **Proposed fix:** store the work tree root with each
-attribution and snapshot entry (a migration), plan each path in its own work tree, and refuse
-`--apply` for paths whose work tree no longer exists. Until then, `acs undo` could warn when the
-repository has linked worktrees. This is the dogfooding table's "paths claimed relative to the
-wrong worktree" (row of 2026-11-10), reaching undo.
+the worktree's own name for it. Attributions and snapshots did not record which work tree a path
+belongs to, and undo resolved every path against the work tree `acs undo` runs in. Run from the
+main checkout (where the session ran, and where `--last` is natural), it read the main copy of
+`src/lib.rs`: "already undone", and the worktree kept the agent's change. When the main copy
+differed, the reverse change was merged into a file the session never touched (content equal to
+the session's result was restored or deleted). Fix (decision 0050): both stores record the work
+tree root with each row, undo plans and restores each file in its own work tree, and a file whose
+work tree is gone is reported unknown and written nowhere. Rows from before the fix name no work
+tree and are undone where `acs undo` runs, as before. Tests:
+`w2_undo_acts_on_the_worktree_the_session_changed`, `w2_undo_run_in_the_worktree_acts_on_its_file`,
+`w2_undo_leaves_files_of_a_removed_worktree_alone`; unit test
+`each_file_is_undone_in_the_work_tree_it_was_changed_in`. This was the dogfooding table's "paths
+claimed relative to the wrong worktree" (row of 2026-11-10), reaching undo.
 
 **W3 (surprising, fixed).** Whether a restored file can go into the undo commit was decided by
 comparing raw work-tree bytes with the `HEAD` blob. On a CRLF checkout they never match, so on

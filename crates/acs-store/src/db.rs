@@ -168,6 +168,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("migrations/0005_overrides.sql"),
     include_str!("migrations/0006_lore.sql"),
     include_str!("migrations/0007_session_records.sql"),
+    include_str!("migrations/0008_attribution_work_trees.sql"),
 ];
 
 /// The schema version this build reads and writes.
