@@ -78,7 +78,14 @@ instructions. Each entry comes once per session, so remember it.
 - **Propose what you learned.** At the end of a task, if you found a fact about this code that
   the next agent would need and the code does not make obvious, propose it as lore with
   `acs_lore_propose`: `scope` (path globs such as `["payments/**"]`), `text` (a few sentences)
-  and, optionally, `why`. Never write lore files yourself: `.acs/` is sealed.
+  and, optionally, `why`. Never write lore files yourself: `.acs/` is sealed. ACS asks you this
+  once, the first time you finish a turn after changing files. If you propose something, say so
+  in your closing message: your pilot reviews it with `acs lore review`.
+- **Lore or hand-off notes?** Lore is a fact tied to code paths that stays true for every agent
+  and every later session ("amounts here are integer cents", "this file is generated from
+  `schema.yml`"). The state of a piece of work (what is done, what is left, what to try next)
+  belongs where the repository keeps that, such as a hand-off file, issues or `CLAUDE.md` /
+  `AGENTS.md`, not in lore.
 - If an entry is wrong, propose a correction with `acs_lore_propose`, passing its id as
   `replaces`; the owner reviews it.
 - `acs lore show <path>` prints the lore for a file again.

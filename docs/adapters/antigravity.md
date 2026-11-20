@@ -213,7 +213,7 @@ always blocks is capped after a configurable number of consecutive continuations
 
 ### 2.7 Mapping events to ACS phases
 
-**Settled in stage 2 (section 13): no `Stop` hook; `PreInvocation` is `session_start` for the first invocation and `prompt_submit` after.** The table below is the original proposal.
+**Settled in stage 2 (section 13): no `Stop` hook (since decision 0048 `Stop` is registered as `turn_end`, never as a session end); `PreInvocation` is `session_start` for the first invocation and `prompt_submit` after.** The table below is the original proposal.
 
 Hooks carry the event only by command line, so the command line must carry the ACS phase.
 
@@ -524,8 +524,10 @@ shapes below, but that tests ACS, not Antigravity.
 Resolved from the proposals above (orchestrator answers; the `allow` rendering changed in decision
 0024, see section 15):
 
-- `Stop` is **not** mapped and no `Stop` hook is registered. Claims expire by TTL; crashed-session
-  detection covers the rest.
+- `Stop` is **not** a session end: claims expire by TTL; crashed-session detection covers the
+  rest. Since decision 0048 a `Stop` hook is registered as `turn_end`
+  (`acs hook antigravity --phase turn_end`), only to ask the agent once per conversation, after it
+  changed files, to propose lore: the answer is `{"decision":"continue","reason":"..."}`, or `{}`.
 - ACS `allow` renders `{"decision":"allow"}` (was `{"decision":"ask"}` until decision 0024); `ask`
   renders `{"decision":"force_ask","reason":...}`;
   `deny` and `queue` render `{"decision":"deny","reason":...}`. Warnings are appended to the

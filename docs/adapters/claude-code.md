@@ -99,9 +99,12 @@ the `"hooks"` object; in a plugin it is `hooks/hooks.json` with the same object 
   further optional handler fields **[docs]**. ACS uses none except possibly `onFailure`.
 
 Events ACS registers: `SessionStart`, `PreToolUse`, `PostToolUse`, `PostToolUseFailure`,
-`SessionEnd`. `UserPromptSubmit` was registered until decision 0036 (2026-11-14): the adapter
+`Stop`, `SessionEnd`. `Stop` (canonical phase `turn_end`, decision 0048) asks the agent once per
+session, after it changed files and where lore is on, to propose lore: ACS answers
+`{"decision":"block","reason":"<request>"}`, which gives the model one more turn, and nothing at
+every other `Stop`. `UserPromptSubmit` was registered until decision 0036 (2026-11-14): the adapter
 still parses and renders it, but nothing creates a notice to deliver before Phase 8, so the
-plugin does not ask for it. Events deliberately not registered: `Stop`, `StopFailure`,
+plugin does not ask for it. Events deliberately not registered: `StopFailure`,
 `SubagentStart`, `SubagentStop`, `PostToolBatch`, `PermissionRequest`, `PermissionDenied`,
 `Notification`, `PreCompact`, `PostCompact`, `CwdChanged`, `FileChanged`, `InstructionsLoaded`,
 `ConfigChange` and the rest. (`SessionStart` with `source: "compact"` is the compaction hook we
@@ -268,6 +271,7 @@ Design rules that follow:
 | `prompt_submit` | `{"hookSpecificOutput":{"hookEventName":"UserPromptSubmit","additionalContext":"..."}}`, or plain stdout. A top-level `{"decision":"block","reason":"..."}` would reject the prompt (the reason goes to the user, not the model); ACS never blocks prompts | [captured] context reached the model |
 | `post_tool` | `{"hookSpecificOutput":{"hookEventName":"PostToolUse" or "PostToolUseFailure","additionalContext":"..."}}`. The tool already ran: nothing can be denied. Exit 2 shows stderr to the model but ACS does not use it | [captured] context reached the model (`PostToolUse`); `PostToolUseFailure` [docs] |
 | `session_end` | print nothing; output is discarded (including `systemMessage`) | [docs] |
+| `turn_end` (`Stop`) | nothing, or `{"decision":"block","reason":"..."}`: Claude Code does not stop and gives the model the reason; ACS sends it at most once per seat (decision 0048) | [docs]; checked with `tests/e2e/real/lore_prompt.sh` |
 
 `warnings` from a `Decision` are rendered as `additionalContext` lines (SPEC section 3 says
 adapters render them as context). `systemMessage` shows a warning to the **user** only (not the
