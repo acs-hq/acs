@@ -75,6 +75,7 @@ fn a_record_gathers_the_seats_history() {
         path: path(p),
         pre_hash: pre,
         post_hash: post,
+        work_tree: None,
     };
     db.record_attributions(
         &id,

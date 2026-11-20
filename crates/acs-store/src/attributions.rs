@@ -4,6 +4,8 @@
 //! `pre_hash` and the last `post_hash` of each path of a seat; `acs blame` of uncommitted lines
 //! (WP4.2) finds the seat that last changed a path. Structural data only: paths and hashes.
 
+use std::path::{Path, PathBuf};
+
 use acs_core::{ContentHash, RepoPath, SeatId, Timestamp};
 use rusqlite::params;
 
@@ -44,6 +46,8 @@ pub struct Attribution {
     pub pre_hash: Option<ContentHash>,
     /// Hash after the change; `None` if the file no longer exists.
     pub post_hash: Option<ContentHash>,
+    /// The root of the work tree `path` is relative to; `None` leaves it unrecorded.
+    pub work_tree: Option<PathBuf>,
 }
 
 /// An attribution as read back.
@@ -63,6 +67,9 @@ pub struct StoredAttribution {
     pub at: Timestamp,
     /// How the path was found.
     pub via: AttributionSource,
+    /// The root of the work tree `path` is relative to; `None` for rows written before it was
+    /// recorded, which belong to whichever work tree reads them.
+    pub work_tree: Option<PathBuf>,
 }
 
 impl StateDb {
@@ -84,8 +91,8 @@ impl StateDb {
         }
         self.write(|tx| {
             let mut stmt = tx.prepare_cached(
-                "INSERT INTO attributions (seat_id, path, pre_hash, post_hash, at, via) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                "INSERT INTO attributions (seat_id, path, pre_hash, post_hash, at, via, work_tree) \
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             )?;
             for change in changes {
                 stmt.execute(params![
@@ -95,6 +102,7 @@ impl StateDb {
                     change.post_hash.as_ref().map(ContentHash::as_str),
                     to_db(now),
                     via.as_str(),
+                    change.work_tree.as_deref().and_then(Path::to_str),
                 ])?;
             }
             Ok(())
@@ -111,7 +119,7 @@ impl StateDb {
         seat_id: &SeatId,
     ) -> Result<Vec<StoredAttribution>, StoreError> {
         let mut stmt = self.conn.prepare_cached(
-            "SELECT id, seat_id, path, pre_hash, post_hash, at, via FROM attributions \
+            "SELECT id, seat_id, path, pre_hash, post_hash, at, via, work_tree FROM attributions \
              WHERE seat_id = ?1 ORDER BY id",
         )?;
         collect(&mut stmt, params![seat_id.as_str()])
@@ -125,7 +133,7 @@ impl StateDb {
     /// Any [`StoreError`].
     pub fn path_attributions(&self, path: &RepoPath) -> Result<Vec<StoredAttribution>, StoreError> {
         let mut stmt = self.conn.prepare_cached(
-            "SELECT id, seat_id, path, pre_hash, post_hash, at, via FROM attributions \
+            "SELECT id, seat_id, path, pre_hash, post_hash, at, via, work_tree FROM attributions \
              WHERE path = ?1 ORDER BY id DESC",
         )?;
         collect(&mut stmt, params![path.as_str()])
@@ -140,6 +148,7 @@ type RawRow = (
     Option<String>,
     i64,
     String,
+    Option<String>,
 );
 
 fn collect(
@@ -156,11 +165,12 @@ fn collect(
                 row.get(4)?,
                 row.get(5)?,
                 row.get(6)?,
+                row.get(7)?,
             ))
         })?
         .collect::<Result<_, _>>()?;
     rows.into_iter()
-        .map(|(id, seat, path, pre, post, at, via)| {
+        .map(|(id, seat, path, pre, post, at, via, work_tree)| {
             Ok(StoredAttribution {
                 id,
                 seat_id: id_from_db(seat)?,
@@ -175,6 +185,7 @@ fn collect(
                     .map_err(|e| StoreError::invalid("hash", e))?,
                 at: from_db(at)?,
                 via: AttributionSource::parse(&via)?,
+                work_tree: work_tree.map(PathBuf::from),
             })
         })
         .collect()

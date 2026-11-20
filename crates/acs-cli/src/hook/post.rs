@@ -61,6 +61,7 @@ pub fn run(ctx: &RepoContext, event: &ToolEvent, now: Timestamp, scan: &ScanOpti
             path: o.path.clone(),
             pre_hash: o.pre_hash.clone(),
             post_hash: o.post_hash.clone(),
+            work_tree: Some(ctx.layout.work_tree.clone()),
         })
         .collect();
     let _ = db.record_attributions(&info.seat.seat_id, &changes, source, now);

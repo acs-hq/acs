@@ -82,7 +82,13 @@ pub fn capture_pre(
         .iter()
         .map(|(rel, abs)| (rel.clone(), abs.as_path()))
         .collect();
-    match store.capture(session, SnapshotKind::Pre, &borrowed, now) {
+    match store.capture_in(
+        session,
+        SnapshotKind::Pre,
+        Some(&ctx.layout.work_tree),
+        &borrowed,
+        now,
+    ) {
         Ok(_) => Vec::new(),
         Err(err) => vec![format!("ACS could not take pre-images: {err}")],
     }
@@ -144,12 +150,20 @@ pub fn observe(
     // one that did.
     let previous: Vec<Option<Option<ContentHash>>> = items
         .iter()
-        .map(|(rel, _)| match store.post_image(session, rel) {
-            Ok(Some(entry)) => Some(hash_of(&entry.state)),
-            _ => None,
-        })
+        .map(
+            |(rel, _)| match store.post_image_in(session, &ctx.layout.work_tree, rel) {
+                Ok(Some(entry)) => Some(hash_of(&entry.state)),
+                _ => None,
+            },
+        )
         .collect();
-    let Ok(results) = store.capture(session, SnapshotKind::Post, &borrowed, now) else {
+    let Ok(results) = store.capture_in(
+        session,
+        SnapshotKind::Post,
+        Some(&ctx.layout.work_tree),
+        &borrowed,
+        now,
+    ) else {
         return Vec::new();
     };
     let mut changed = Vec::new();
@@ -159,7 +173,7 @@ pub fn observe(
         if previous[index].as_ref() == Some(&post) {
             continue; // Same as the session left it last time: nothing new to attribute.
         }
-        match store.pre_image(session, &path) {
+        match store.pre_image_in(session, &ctx.layout.work_tree, &path) {
             Ok(Some(pre)) => {
                 let pre_hash = hash_of(&pre.state);
                 if pre_hash != post {
@@ -208,7 +222,12 @@ pub fn record_baselines(
     let Some(repo) = &ctx.repo_home else { return };
     let missing: Vec<&RepoPath> = paths
         .iter()
-        .filter(|p| matches!(store.pre_image(session, p), Ok(None)))
+        .filter(|p| {
+            matches!(
+                store.pre_image_in(session, &ctx.layout.work_tree, p),
+                Ok(None)
+            )
+        })
         .take(MAX_BASELINES)
         .collect();
     if missing.is_empty() {
@@ -259,7 +278,13 @@ pub fn record_baselines(
         .iter()
         .map(|(rel, abs)| (rel.clone(), abs.as_path()))
         .collect();
-    let _ = store.capture(session, SnapshotKind::Pre, &borrowed, now);
+    let _ = store.capture_in(
+        session,
+        SnapshotKind::Pre,
+        Some(&ctx.layout.work_tree),
+        &borrowed,
+        now,
+    );
     for file in temp_files {
         let _ = fs::remove_file(file);
     }

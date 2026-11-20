@@ -137,6 +137,7 @@ fn lines_are_attributed_to_human_agent_multi_session_and_uncommitted_work() {
             path: "notes.txt".parse().unwrap(),
             pre_hash: None,
             post_hash: None,
+            work_tree: None,
         }],
         AttributionSource::Tool,
         now,
