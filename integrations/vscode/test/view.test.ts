@@ -2,7 +2,7 @@ import { strict as assert } from "node:assert";
 import { test } from "node:test";
 
 import type { ClaimView, StatusView } from "../src/cli";
-import { age, describe, fileKey, holder, othersByFile, statusBarText } from "../src/view";
+import { age, describe, fileKey, holder, othersByFile, proposalsLine, statusBarText } from "../src/view";
 
 function claim(path: string, more: Partial<ClaimView> = {}): ClaimView {
   return {
@@ -53,4 +53,11 @@ test("holders and ages read naturally", () => {
 test("the status bar counts others' claims and yours", () => {
   assert.equal(statusBarText(2, 0), "ACS $(lock) 2");
   assert.equal(statusBarText(0, 1), "ACS $(lock) 0  $(person) 1");
+  assert.equal(statusBarText(1, 0, 2), "ACS $(lock) 1  $(lightbulb) 2");
+});
+
+test("lore proposals waiting for review get a tooltip line", () => {
+  assert.equal(proposalsLine(0), undefined);
+  assert.equal(proposalsLine(1), "1 lore proposal from agents waits for review: run `acs lore review`.");
+  assert.equal(proposalsLine(3), "3 lore proposals from agents wait for review: run `acs lore review`.");
 });

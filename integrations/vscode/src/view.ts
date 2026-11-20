@@ -69,13 +69,25 @@ export function describe(claims: ClaimView[], nowMs: number): string {
     .join("\n");
 }
 
-/** The status bar text: claims held by others, and by you. */
-export function statusBarText(others: number, mine: number): string {
+/** The status bar text: claims held by others, by you, and lore proposals waiting for review. */
+export function statusBarText(others: number, mine: number, proposals = 0): string {
   const parts = [`$(lock) ${others}`];
   if (mine > 0) {
     parts.push(`$(person) ${mine}`);
   }
+  if (proposals > 0) {
+    parts.push(`$(lightbulb) ${proposals}`);
+  }
   return `ACS ${parts.join("  ")}`;
+}
+
+/** The tooltip line for lore proposals waiting for review, or nothing when there are none. */
+export function proposalsLine(proposals: number): string | undefined {
+  if (proposals <= 0) {
+    return undefined;
+  }
+  const what = proposals === 1 ? "1 lore proposal from agents waits" : `${proposals} lore proposals from agents wait`;
+  return `${what} for review: run \`acs lore review\`.`;
 }
 
 function harnessName(harness: string): string {

@@ -606,7 +606,9 @@ fn lore_propose_text(reply: &LoreProposeReply) -> String {
         .map_or_else(|| "The owner".to_owned(), |r| format!("Its owner ({r})"));
     format!(
         "Proposed {what} for {} as {}. {reviewer} reviews it with `acs lore review`; it is not \
-         shown to anyone until accepted. Nothing else to do.",
+         shown to anyone until accepted. Mention it in your closing message to your pilot (what \
+         you proposed, and that `acs lore review` accepts or rejects it), so it does not wait \
+         unseen.",
         ticked(&reply.scope, LIST_LIMIT),
         reply.proposal_id
     )
@@ -933,6 +935,12 @@ Use X."
         assert!(out.text.contains("sara@example.com"), "{}", out.text);
         assert!(
             out.text.contains("not shown to anyone until accepted"),
+            "{}",
+            out.text
+        );
+        assert!(
+            out.text
+                .contains("Mention it in your closing message to your pilot"),
             "{}",
             out.text
         );

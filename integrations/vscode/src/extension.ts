@@ -10,7 +10,7 @@ import * as vscode from "vscode";
 
 import { AcsCli, AcsError, type ClaimView, type StatusView } from "./cli";
 import { ClaimTracker, DEFAULT_OPTIONS, type TrackerOptions } from "./tracker";
-import { claimFile, describe, fileKey, holder, othersByFile, statusBarText, age } from "./view";
+import { claimFile, describe, fileKey, holder, othersByFile, proposalsLine, statusBarText, age } from "./view";
 
 /** A note about the same file is repeated at most this often. */
 const NOTE_EVERY_MS = 10 * 60_000;
@@ -309,18 +309,24 @@ class Controller implements vscode.Disposable {
     let others = 0;
     let mine = 0;
     let off = false;
+    let proposals = 0;
     let unavailable: string | undefined;
     for (const repo of this.repos.values()) {
       others += repo.status.other_claims.length;
       mine += repo.status.my_claims.length;
+      proposals += repo.status.lore_proposals ?? 0;
       off ||= repo.status.gate_off;
       unavailable ??= repo.status.state_unavailable;
     }
-    this.statusItem.text = statusBarText(others, mine) + (off ? " (off)" : "");
+    this.statusItem.text = statusBarText(others, mine, proposals) + (off ? " (off)" : "");
     const lines = [
       `${others} file(s) claimed by agents or other people`,
       `${mine} file(s) claimed by you`,
     ];
+    const waiting = proposalsLine(proposals);
+    if (waiting) {
+      lines.push(waiting);
+    }
     if (off) {
       lines.push("`acs off` is active: claims are not enforced.");
     }
