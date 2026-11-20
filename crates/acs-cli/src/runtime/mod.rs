@@ -30,7 +30,7 @@ pub mod sync;
 pub use context::{OpenError, RepoContext};
 pub use ops::{
     COLLISION_WINDOW_HOURS, ClaimOutcome, ClaimView, CollisionView, MAX_INTENT_CHARS, OverrideItem,
-    ReleaseReport, RemoteView, SeatSummary, StatusView, claim_paths, last_decision,
+    ReleaseReport, RemoteView, SeatSummary, StatusView, claim_paths, last_decision, lore_tool_name,
     record_collision, release_paths, set_intent, status, tool_names,
 };
 

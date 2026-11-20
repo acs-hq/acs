@@ -124,14 +124,20 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_block_is_valid_toml_with_the_server_and_four_hooks() {
+    fn the_block_is_valid_toml_with_the_server_and_five_hooks() {
         let table: toml::Table = toml::from_str(BLOCK).expect("toml");
         assert_eq!(table["mcp_servers"]["acs"]["command"].as_str(), Some("acs"));
         let hooks = table["hooks"].as_table().expect("hooks");
         let events: Vec<&str> = hooks.keys().map(String::as_str).collect();
         assert_eq!(
             events,
-            ["PostToolUse", "PreToolUse", "SessionEnd", "SessionStart"]
+            [
+                "PostToolUse",
+                "PreToolUse",
+                "SessionEnd",
+                "SessionStart",
+                "Stop"
+            ]
         );
         for (_, groups) in hooks {
             let handler = &groups[0]["hooks"][0];

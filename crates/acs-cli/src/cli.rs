@@ -96,6 +96,9 @@ pub enum PhaseArg {
     /// A session ended.
     #[value(name = "session_end", alias = "session-end")]
     SessionEnd,
+    /// The agent is about to end its turn.
+    #[value(name = "turn_end", alias = "turn-end")]
+    TurnEnd,
 }
 
 impl From<PhaseArg> for Phase {
@@ -106,6 +109,7 @@ impl From<PhaseArg> for Phase {
             PhaseArg::SessionStart => Self::SessionStart,
             PhaseArg::PromptSubmit => Self::PromptSubmit,
             PhaseArg::SessionEnd => Self::SessionEnd,
+            PhaseArg::TurnEnd => Self::TurnEnd,
         }
     }
 }
@@ -265,6 +269,7 @@ mod tests {
     fn phase_names_map_to_the_spec_phases() {
         assert_eq!(Phase::from(PhaseArg::PromptSubmit), Phase::PromptSubmit);
         assert_eq!(Phase::from(PhaseArg::SessionStart), Phase::SessionStart);
+        assert_eq!(Phase::from(PhaseArg::TurnEnd), Phase::TurnEnd);
     }
 
     #[test]

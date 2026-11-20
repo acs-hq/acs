@@ -24,7 +24,7 @@ fn parse(name: &str) -> ToolEvent {
 const CWD: &str = r"C:\Users\dev\project";
 
 /// Events the plugin does not register: the adapter refuses them.
-const UNSUPPORTED: &[&str] = &["permission_request.mcp", "stop"];
+const UNSUPPORTED: &[&str] = &["permission_request.mcp"];
 
 /// Fixture, phase, tool name, kind, paths, command.
 type Case = (
@@ -147,6 +147,10 @@ fn session_and_prompt_fixtures() {
     let end = parse("session_end");
     assert_eq!(end.phase, Phase::SessionEnd);
     assert_eq!(start.harness_session_id, end.harness_session_id);
+    // `Stop` ends a turn (decision 0048).
+    let stop = parse("stop");
+    assert_eq!(stop.phase, Phase::TurnEnd);
+    assert_eq!(start.harness_session_id, stop.harness_session_id);
 }
 
 #[test]

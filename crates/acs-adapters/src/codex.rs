@@ -6,7 +6,7 @@
 //!
 //! - **Input** (stdin): one JSON object, Claude Code's shape with Codex extensions (`turn_id`,
 //!   `model`). `hook_event_name` selects the phase (`SessionStart`, `UserPromptSubmit`,
-//!   `PreToolUse`, `PostToolUse`, `SessionEnd`); other events are an [`AdapterError`].
+//!   `PreToolUse`, `PostToolUse`, `Stop`, `SessionEnd`); other events are an [`AdapterError`].
 //! - **Tools**: `Bash` runs a shell command (`tool_input.command`). Codex runs it with PowerShell
 //!   on Windows, so a `Bash` call whose `cwd` is a Windows path becomes a `PowerShell` tool here
 //!   (the original name stays in `raw.tool_name`). `apply_patch` carries the whole patch in
@@ -66,6 +66,7 @@ impl Adapter for Codex {
             Some("PreToolUse") => Phase::PreTool,
             Some("PostToolUse") => Phase::PostTool,
             Some("SessionEnd") => Phase::SessionEnd,
+            Some("Stop") => Phase::TurnEnd,
             Some(other) => return Err(fail(format!("unsupported hook event {other:?}"))),
             None => phase.ok_or_else(|| fail("payload has no hook_event_name".to_owned()))?,
         };
@@ -109,7 +110,7 @@ impl Adapter for Codex {
             Phase::PromptSubmit => {
                 event.prompt = text(map, "prompt").map(str::to_owned);
             }
-            Phase::SessionStart | Phase::SessionEnd => {}
+            Phase::SessionStart | Phase::SessionEnd | Phase::TurnEnd => {}
         }
         Ok(event)
     }
@@ -133,7 +134,22 @@ impl Adapter for Codex {
             Phase::PromptSubmit => context_output("UserPromptSubmit", &everything(decision)),
             // SessionEnd output cannot steer Codex.
             Phase::SessionEnd => HookOutput::default(),
+            Phase::TurnEnd => render_turn_end(decision),
         }
+    }
+}
+
+/// `Stop`: nothing lets the agent stop; a request is `decision: "block"` with the request as
+/// `reason`, which Codex hands the model as a prompt to carry on with. The pipeline asks at
+/// most once per seat.
+fn render_turn_end(decision: &Decision) -> HookOutput {
+    let Some(request) = super::turn_end_request(decision) else {
+        return HookOutput::default();
+    };
+    HookOutput {
+        stdout: json_output(&json!({"decision": "block", "reason": cap(request)})),
+        stderr: Vec::new(),
+        exit_code: 0,
     }
 }
 
@@ -549,9 +565,9 @@ mod tests {
 
     #[test]
     fn other_events_are_unsupported_and_raw_stays_small() {
-        let stop =
-            r#"{"session_id":"s","cwd":"/r","hook_event_name":"Stop","stop_hook_active":false}"#;
-        assert!(Codex.parse(None, stop.as_bytes()).is_err());
+        let request = r#"{"session_id":"s","cwd":"/r","hook_event_name":"PermissionRequest",
+            "tool_name":"Bash","tool_input":{"command":"ls"}}"#;
+        assert!(Codex.parse(None, request.as_bytes()).is_err());
         let start = r#"{"session_id":"s","cwd":"/r","hook_event_name":"SessionStart","source":"startup",
             "transcript_path":"/x/rollout.jsonl","model":"m","permission_mode":"default"}"#;
         let event = event(start);
@@ -561,6 +577,24 @@ mod tests {
 
     fn decision(outcome: Outcome, message: &str) -> Decision {
         Decision::new(outcome, ReasonCode::Ok, message)
+    }
+
+    #[test]
+    fn stop_is_a_turn_end_and_a_request_keeps_the_agent_going() {
+        let stop = event(
+            r#"{"session_id":"s","turn_id":"t","cwd":"/r","hook_event_name":"Stop",
+            "stop_hook_active":false,"last_assistant_message":"Done."}"#,
+        );
+        assert_eq!(stop.phase, Phase::TurnEnd);
+        let mut silent = decision(Outcome::Allow, "");
+        silent.warnings.push("careful".into());
+        assert_eq!(Codex.render(Some(&stop), &silent), HookOutput::default());
+        let mut asks = decision(Outcome::Allow, "");
+        asks.context.push("Propose lore.".into());
+        let out = Codex.render(Some(&stop), &asks);
+        assert_eq!(out.exit_code, 0);
+        let doc: Value = serde_json::from_slice(&out.stdout).expect("json");
+        assert_eq!(doc, json!({"decision": "block", "reason": "Propose lore."}));
     }
 
     #[test]

@@ -66,7 +66,7 @@ Adapters translate each harness payload into a `ToolEvent`. Schema: [`tool_event
 | `spec` | yes | `"acs/0.1"` |
 | `harness` | yes | Free-form harness name (`claude-code`, `antigravity`, ...). `canonical` marks synthetic events. New harnesses need no schema change. |
 | `harness_session_id` | yes | The harness's own session identifier. One harness session is one seat. |
-| `phase` | yes | `pre_tool`, `post_tool`, `session_start`, `prompt_submit` or `session_end` |
+| `phase` | yes | `pre_tool`, `post_tool`, `session_start`, `prompt_submit`, `session_end` or `turn_end` |
 | `cwd` | yes | Absolute working directory when the event was raised |
 | `tool` | for `pre_tool`, `post_tool` | `{name, kind}`: the harness's tool name and its classification |
 | `paths` | no | Raw path strings the tool touches; for `move`, source then destination |
@@ -78,7 +78,7 @@ Adapters translate each harness payload into a `ToolEvent`. Schema: [`tool_event
 
 `tool.kind` is one of `read`, `write`, `edit`, `delete`, `move`, `shell`, `other`. Adapters classify conservatively: a tool that may change files and cannot be classified is `shell` or `other`, never `read`.
 
-Session phases: `session_start` creates the seat and may return a short status as context; `prompt_submit` may return pending notices as context; `session_end` releases the seat's claims and finalizes its session record.
+Session phases: `session_start` creates the seat and may return a short status as context; `prompt_submit` may return pending notices as context; `session_end` releases the seat's claims and finalizes its session record; `turn_end` (the agent is about to end its turn) may return context, which the adapter renders as the harness's "keep going" answer, so an implementation MUST return context at `turn_end` at most once per seat.
 
 ## 3. Decision and reason codes
 

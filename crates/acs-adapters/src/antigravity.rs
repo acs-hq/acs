@@ -172,7 +172,7 @@ impl Adapter for Antigravity {
             Phase::SessionStart | Phase::PromptSubmit => {
                 event.prompt = text(map, "lastUserInput");
             }
-            Phase::SessionEnd => {}
+            Phase::SessionEnd | Phase::TurnEnd => {}
         }
         Ok(event)
     }
@@ -185,6 +185,11 @@ impl Adapter for Antigravity {
             Phase::PreTool => render_pre_tool(decision),
             Phase::SessionStart | Phase::PromptSubmit => render_pre_invocation(decision),
             Phase::PostTool | Phase::SessionEnd => json!({}),
+            // `continue` keeps the agent running with the reason; `{}` lets it stop.
+            Phase::TurnEnd => super::turn_end_request(decision).map_or_else(
+                || json!({}),
+                |request| json!({"decision": "continue", "reason": request}),
+            ),
         };
         // A `Value` of this shape always serializes; fall back to the safe pre-tool answer
         // rather than panic or print nothing (an empty answer blocks the tool).
@@ -288,14 +293,15 @@ fn working_dir(map: &Map<String, Value>) -> Option<String> {
 }
 
 /// The phase named by `hookEventName` (sent since 1.5.4), for hooks installed without
-/// `--phase`. `Stop` is the end of a turn, not of the session, and `PostInvocation` is not
-/// used, so neither maps to a phase.
+/// `--phase`. `Stop` is the end of a turn, not of the session (`turn_end`); `PostInvocation`
+/// is not used, so it maps to no phase.
 fn named_phase(map: &Map<String, Value>) -> Option<Phase> {
     match text(map, "hookEventName")?.as_str() {
         "PreToolUse" => Some(Phase::PreTool),
         "PostToolUse" => Some(Phase::PostTool),
         "SessionStart" => Some(Phase::SessionStart),
         "PreInvocation" => Some(Phase::PromptSubmit),
+        "Stop" => Some(Phase::TurnEnd),
         _ => None,
     }
 }
@@ -639,7 +645,7 @@ mod tests {
             Phase::PromptSubmit
         );
         // A turn end is not a session end.
-        assert!(phase("Stop", "").is_err());
+        assert_eq!(phase("Stop", "").unwrap(), Phase::TurnEnd);
         assert!(phase("PostInvocation", "").is_err());
         // The command line wins.
         let json = r#"{"conversationId":"c","hookEventName":"PostToolUse","toolCall":{"name":"read_file","args":{}}}"#;
@@ -892,9 +898,22 @@ mod tests {
 
     #[test]
     fn other_phases_print_an_empty_object() {
-        for phase in [Phase::PostTool, Phase::SessionEnd] {
+        for phase in [Phase::PostTool, Phase::SessionEnd, Phase::TurnEnd] {
             assert_eq!(render(phase, &decision(Outcome::Allow, "")), json!({}));
         }
+    }
+
+    #[test]
+    fn a_turn_end_request_is_a_continue_with_the_reason() {
+        let mut silent = decision(Outcome::Allow, "");
+        silent.warnings.push("careful".into());
+        assert_eq!(render(Phase::TurnEnd, &silent), json!({}));
+        let mut asks = decision(Outcome::Allow, "");
+        asks.context.push("Propose lore.".into());
+        assert_eq!(
+            render(Phase::TurnEnd, &asks),
+            json!({"decision": "continue", "reason": "Propose lore."})
+        );
     }
 
     #[test]

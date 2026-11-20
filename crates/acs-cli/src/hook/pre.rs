@@ -5,10 +5,10 @@ use acs_core::{
 };
 use acs_store::{LastDecision, NewEvent, SeatInfo};
 
-use super::intent;
 use super::markers::{self, CommitMarker, ToolMarker};
 use super::redact::redact_command;
 use super::snapshots::capture_pre;
+use super::{intent, lore_prompt};
 use crate::runtime::gate::{GateParams, run_gate};
 use crate::runtime::paths::{NormalizeOptions, absolute_cwd, normalize};
 use crate::runtime::{RepoContext, lore, roots, seats};
@@ -74,6 +74,7 @@ pub fn run(ctx: &RepoContext, event: &ToolEvent, now: Timestamp) -> Decision {
             decision
                 .context
                 .extend(intent::before_tool(db, info, event, now));
+            lore_prompt::after_change(ctx, db, info, event, !norm.predicted.is_empty(), now);
             leave_markers(ctx, event, info, &norm, now);
         }
     }

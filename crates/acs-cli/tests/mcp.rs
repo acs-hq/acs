@@ -665,6 +665,8 @@ struct Told {
     descriptions: String,
     status: String,
     start: String,
+    /// What the agent is told at the end of a turn after it changed a file.
+    turn_end: String,
 }
 
 fn told_with(features: &str) -> Told {
@@ -685,6 +687,8 @@ fn told_with(features: &str) -> Told {
     let tools = listed["result"]["tools"].as_array().unwrap().clone();
     let status = text(&server.call("acs_status", json!({})));
     server.finish();
+    agent.pre_edit("src/util.rs");
+    let turn_end = agent.send("turn_end", json!({})).context.join("\n");
     Told {
         instructions: init["instructions"].as_str().unwrap_or_default().to_owned(),
         tools: tools
@@ -698,6 +702,7 @@ fn told_with(features: &str) -> Told {
             .join("\n"),
         status,
         start,
+        turn_end,
     }
 }
 
@@ -751,8 +756,8 @@ fn what_an_agent_is_told_follows_every_switch() {
         let told = told_with(features);
         assert_eq!(told.tools, tools, "[{features}]");
         let everything = format!(
-            "{}\n{}\n{}\n{}",
-            told.instructions, told.descriptions, told.status, told.start
+            "{}\n{}\n{}\n{}\n{}",
+            told.instructions, told.descriptions, told.status, told.start, told.turn_end
         );
         for tool in ALL_TOOLS {
             assert!(
@@ -786,6 +791,25 @@ fn what_an_agent_is_told_follows_every_switch() {
                 );
                 assert!(!told.start.contains("Also switched off"), "{}", told.start);
             }
+        }
+        // Decision 0048: where lore is on, the start message has the agent load the tool and
+        // the end of a task asks for lore; where it is off, neither says a word about lore.
+        let lore = tools.contains(&"acs_lore_propose");
+        assert_eq!(
+            told.start.contains("acs_lore_propose"),
+            lore,
+            "[{features}] {}",
+            told.start
+        );
+        assert_eq!(
+            told.turn_end.contains("acs_lore_propose"),
+            lore,
+            "[{features}] {}",
+            told.turn_end
+        );
+        // (The start message still names `lore` among the parts switched off.)
+        if !lore {
+            assert!(told.turn_end.is_empty(), "[{features}] {}", told.turn_end);
         }
         let claims = tools.contains(&"acs_claim");
         for said in [&told.status, &told.start, &told.instructions] {

@@ -13,6 +13,7 @@
 //!   attribute it, store post-images, refresh heartbeats.
 //! - [`session`]: session start, prompt submit and session end.
 //! - [`intent`]: the one reminder for a session that changes files without an intent.
+//! - [`lore_prompt`]: the one request, at the end of a turn, to propose lore (`turn_end`).
 //! - [`markers`]: the small files in `pending/` that tie events together and talk to git hooks.
 //!
 //! A tool event that no switched-on feature needs ends early (decision 0035): [`unneeded`] says
@@ -20,6 +21,7 @@
 //! part of the policy, so this comes after the repository is opened.
 
 pub mod intent;
+pub mod lore_prompt;
 pub mod markers;
 pub mod post;
 pub mod pre;
@@ -144,6 +146,7 @@ fn handle(event: &ToolEvent, env: HookEnv) -> Decision {
         Phase::SessionStart => session::start(&ctx, event, env.now),
         Phase::PromptSubmit => session::prompt(&ctx, event, env.now),
         Phase::SessionEnd => session::end(&ctx, event, env.now),
+        Phase::TurnEnd => lore_prompt::at_turn_end(&ctx, event, env.now),
     }
 }
 

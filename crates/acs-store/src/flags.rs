@@ -42,6 +42,29 @@ impl StateDb {
             .optional()?)
     }
 
+    /// Changes a flag from `from` to `to` in one statement. Returns whether it held `from` (and
+    /// so whether this call changed it): of two processes racing to do the same, one gets
+    /// `true`.
+    ///
+    /// # Errors
+    ///
+    /// Any [`StoreError`].
+    pub fn replace_flag(
+        &self,
+        key: &str,
+        from: &str,
+        to: &str,
+        now: Timestamp,
+    ) -> Result<bool, StoreError> {
+        let changed = self
+            .conn
+            .prepare_cached(
+                "UPDATE repo_flags SET value = ?3, updated_at = ?4 WHERE key = ?1 AND value = ?2",
+            )?
+            .execute(params![key, from, to, to_db(now)])?;
+        Ok(changed > 0)
+    }
+
     /// Clears a flag. Returns whether it was set.
     ///
     /// # Errors

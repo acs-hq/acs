@@ -408,6 +408,140 @@ fn antigravity_gets_the_intent_reminder_with_its_next_invocation() {
     assert!(d.context.is_empty(), "{d:?}");
 }
 
+/// Decision 0048: the first turn end after a session changed files asks once for lore; a
+/// session that only read is never asked, nor one where lore is off.
+#[test]
+fn the_end_of_a_task_asks_once_for_lore_after_files_changed() {
+    let world = World::new();
+    let claude = Agent::new(&world, "claude-code", "c1");
+    claude.start();
+    let turn_end = |agent: &Agent| agent.send("turn_end", json!({}));
+    // Reading earns nothing.
+    claude.pre_tool("Read", "read", &["src/lib.rs"]);
+    assert!(turn_end(&claude).context.is_empty());
+    // A change does, at the next turn end, with the tool's name in this harness.
+    claude.pre_edit("src/lib.rs");
+    let d = turn_end(&claude);
+    assert_eq!(d.context.len(), 1, "{d:?}");
+    assert!(d.context[0].contains("`acs_lore_propose`"), "{d:?}");
+    assert!(
+        d.context[0].contains("mcp__plugin_acs_acs__acs_lore_propose"),
+        "{d:?}"
+    );
+    assert!(d.context[0].contains("hand-off notes or issues"), "{d:?}");
+    // Once: not at the next turn end, not after more changes.
+    assert!(turn_end(&claude).context.is_empty());
+    claude.pre_edit("src/util.rs");
+    assert!(turn_end(&claude).context.is_empty());
+
+    // A denied change does not count.
+    let denied = Agent::new(&world, "claude-code", "c2");
+    denied.start();
+    assert_eq!(
+        denied.pre_edit(".acs/policy/guards.toml").outcome,
+        Outcome::Deny
+    );
+    assert!(turn_end(&denied).context.is_empty());
+
+    // A shell command that is expected to write counts; one that only reads does not.
+    let shell = Agent::new(&world, "codex", "x1");
+    shell.start();
+    shell.pre_shell("git status");
+    assert!(turn_end(&shell).context.is_empty());
+    shell.pre_shell("echo hi > notes.txt");
+    let d = turn_end(&shell);
+    assert_eq!(d.context.len(), 1, "{d:?}");
+    assert!(d.context[0].contains("mcp__acs__acs_lore_propose"), "{d:?}");
+
+    // A session with no seat, or none that changed anything, is not asked.
+    assert!(
+        turn_end(&Agent::new(&world, "claude-code", "never-started"))
+            .context
+            .is_empty()
+    );
+
+    // Session end forgets the flag.
+    claude.end();
+    assert!(
+        world
+            .db()
+            .flag(&format!("lore_prompt:{}", claude.seat_id()))
+            .unwrap()
+            .is_none()
+    );
+}
+
+#[test]
+fn with_lore_off_the_end_of_a_task_asks_nothing() {
+    let world = World::new();
+    world.write(
+        ".acs/policy/config.toml",
+        "spec = \"acs/0.1\"\n\n[features]\nlore = false\n",
+    );
+    let agent = Agent::new(&world, "claude-code", "c1");
+    let start = agent.start().context.join("\n");
+    assert!(!start.contains("acs_lore_propose"), "{start}");
+    agent.pre_edit("src/lib.rs");
+    assert!(agent.send("turn_end", json!({})).context.is_empty());
+}
+
+/// The harness's own `Stop` payload through each adapter: the request is that harness's
+/// "keep going" answer, once; the next `Stop` gets the answer that lets the agent stop.
+#[test]
+fn stop_through_each_adapter_asks_once_and_then_lets_the_agent_stop() {
+    let world = World::new();
+    let repo = world.repo.to_string_lossy().into_owned();
+    let cases = [
+        (
+            "claude-code",
+            json!({"session_id": "cc", "cwd": repo, "hook_event_name": "Stop",
+                   "stop_hook_active": false}),
+            "block",
+            "",
+        ),
+        (
+            "codex",
+            json!({"session_id": "cx", "turn_id": "t", "cwd": repo, "hook_event_name": "Stop",
+                   "stop_hook_active": false}),
+            "block",
+            "",
+        ),
+        (
+            "antigravity",
+            json!({"conversationId": "ag", "cwd": repo, "workspacePaths": [repo],
+                   "hookEventName": "Stop", "terminationReason": "NO_TOOL_CALL"}),
+            "continue",
+            "{}\n",
+        ),
+    ];
+    for (harness, stop, keep_going, lets_stop) in cases {
+        let session = match harness {
+            "claude-code" => "cc",
+            "codex" => "cx",
+            _ => "ag",
+        };
+        let agent = Agent::new(&world, harness, session);
+        agent.start();
+        agent.pre_edit("src/lib.rs");
+        agent.post_edit("src/lib.rs");
+        let run = || {
+            let out = world.run(&["hook", harness], stop.to_string().as_bytes(), &world.repo);
+            assert!(out.status.success(), "{harness}: {out:?}");
+            String::from_utf8(out.stdout).unwrap()
+        };
+        let first = run();
+        let doc: serde_json::Value =
+            serde_json::from_str(&first).unwrap_or_else(|e| panic!("{harness}: {e}: {first}"));
+        assert_eq!(doc["decision"], keep_going, "{harness}: {first}");
+        assert!(
+            doc["reason"].as_str().unwrap().contains("acs_lore_propose"),
+            "{harness}: {first}"
+        );
+        assert_eq!(run(), lets_stop, "{harness}: asked twice");
+        agent.end();
+    }
+}
+
 #[test]
 fn prompt_submit_returns_context_only_for_new_notices() {
     let world = World::new();

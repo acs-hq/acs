@@ -259,7 +259,10 @@ impl StatusView {
         }];
         if let Some(seat) = self.seat.as_ref().filter(|seat| seat.harness != "human") {
             match &seat.intent {
-                None => lines.extend(first_calls(&seat.harness)),
+                None => {
+                    let lore = !self.features_off.contains(&Feature::Lore);
+                    lines.extend(first_calls(&seat.harness, lore));
+                }
                 Some(intent) => lines.push(format!(
                     "Your intent on record: \"{}\". Call `acs_intent` again when your task \
                      changes.",
@@ -334,8 +337,10 @@ impl StatusView {
 }
 
 /// The calls ACS asks of a session that has given no intent yet, with the names the tools have
-/// in `harness` (an agent that has to guess a tool's name often does not call it).
-fn first_calls(harness: &str) -> Vec<String> {
+/// in `harness` (an agent that has to guess a tool's name often does not call it). Where `lore`
+/// is on, a harness that loads tools on demand is told to load `acs_lore_propose` with them, so
+/// the tool is at hand when the end of a task asks for it (decision 0048).
+fn first_calls(harness: &str, lore: bool) -> Vec<String> {
     let mut lines = vec![
         "Before you start on the user's request, whatever it is, make these two tool calls. \
          Once per session is enough: do not repeat them with every message."
@@ -345,10 +350,35 @@ fn first_calls(harness: &str) -> Vec<String> {
          see it. Call it again when your task changes."
             .to_owned(),
     ];
-    if let Some(names) = tool_names(harness) {
+    if lore && harness == "claude-code" {
+        lines.push(
+            "In Claude Code they are `mcp__plugin_acs_acs__acs_status` and \
+             `mcp__plugin_acs_acs__acs_intent`. If they are not loaded yet, load them with \
+             ToolSearch, together with `mcp__plugin_acs_acs__acs_lore_propose`, which ACS may \
+             ask you to use when you finish a task \
+             (`select:mcp__plugin_acs_acs__acs_status,mcp__plugin_acs_acs__acs_intent,mcp__plugin_acs_acs__acs_lore_propose`, \
+             or search for `acs`)."
+                .to_owned(),
+        );
+    } else if let Some(names) = tool_names(harness) {
         lines.push(names.to_owned());
     }
     lines
+}
+
+/// What `acs_lore_propose` is called in `harness`, and how to load it where tools are loaded on
+/// demand, for the harnesses whose plugin ACS ships.
+#[must_use]
+pub fn lore_tool_name(harness: &str) -> Option<&'static str> {
+    match harness {
+        "claude-code" => Some(
+            "In Claude Code it is `mcp__plugin_acs_acs__acs_lore_propose`; if it is not loaded, \
+             load it with ToolSearch (`select:mcp__plugin_acs_acs__acs_lore_propose`).",
+        ),
+        "antigravity" => Some("In Antigravity it is `mcp_acs_acs_acs_lore_propose`."),
+        "codex" => Some("In Codex it is `mcp__acs__acs_lore_propose`."),
+        _ => None,
+    }
 }
 
 /// Where `harness` lists the two tools, for the harnesses whose plugin ACS ships.

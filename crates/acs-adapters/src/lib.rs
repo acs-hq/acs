@@ -27,6 +27,23 @@ pub struct HookOutput {
     pub exit_code: i32,
 }
 
+/// What a `turn_end` decision asks of the agent before it stops: its context, joined, or
+/// `None` when there is none.
+///
+/// Only the context counts. Every harness renders this text as "keep going", so a warning
+/// (the repository could not be opened, say) must not turn into one more turn.
+#[must_use]
+pub fn turn_end_request(decision: &Decision) -> Option<String> {
+    let text = decision
+        .context
+        .iter()
+        .map(|part| part.trim())
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n");
+    (!text.is_empty()).then_some(text)
+}
+
 /// A payload an adapter could not parse into a [`ToolEvent`].
 ///
 /// Carries whatever could still be recovered from the payload, so the pipeline can log the

@@ -19,6 +19,11 @@ pub enum Phase {
     PromptSubmit,
     /// A session ended. No tool is involved.
     SessionEnd,
+    /// The agent is about to end its turn (the harness's `Stop` event). No tool is involved.
+    /// Context in the decision is a request the agent gets before it stops; adapters render it
+    /// as the harness's "continue" answer, so a handler returns context here at most once per
+    /// seat.
+    TurnEnd,
 }
 
 /// What a tool does, as far as ACS is concerned. Adapters map each harness tool onto one kind.
