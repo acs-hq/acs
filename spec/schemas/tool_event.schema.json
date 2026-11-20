@@ -45,6 +45,11 @@
           "const": "session_end",
           "description": "A session ended. No tool is involved.",
           "type": "string"
+        },
+        {
+          "const": "turn_end",
+          "description": "The agent is about to end its turn (the harness's `Stop` event). No tool is involved.\nContext in the decision is a request the agent gets before it stops; adapters render it\nas the harness's \"continue\" answer, so a handler returns context here at most once per\nseat.",
+          "type": "string"
         }
       ]
     },

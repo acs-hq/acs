@@ -26,6 +26,8 @@ export interface StatusView {
   seat?: { seat_id: string; pilot: string; harness: string };
   my_claims: ClaimView[];
   other_claims: ClaimView[];
+  /** Lore proposals from agents waiting for `acs lore review` (absent from older `acs`). */
+  lore_proposals?: number;
 }
 
 /** What `acs claim --json` answers. */

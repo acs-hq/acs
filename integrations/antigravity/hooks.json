@@ -18,6 +18,9 @@
     ],
     "PreInvocation": [
       { "type": "command", "command": "acs hook antigravity --phase prompt_submit", "timeout": 10 }
+    ],
+    "Stop": [
+      { "type": "command", "command": "acs hook antigravity --phase turn_end", "timeout": 10 }
     ]
   }
 }

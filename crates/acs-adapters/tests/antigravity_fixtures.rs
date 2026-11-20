@@ -459,11 +459,13 @@ fn real_1_5_9_captures_parse_as_expected() {
         parse("real159_session_start", None).phase,
         Phase::SessionStart
     );
-    // `Stop` ends a turn, not the session: it names no phase, and ACS registers no hook for it.
-    assert!(Antigravity.parse(None, &read("real159_stop")).is_err());
-    let stop = parse("real159_stop", Some(Phase::SessionEnd));
-    assert_eq!(stop.raw["fullyIdle"], false);
-    assert_eq!(stop.cwd, w);
+    // `Stop` ends a turn, not the session (decision 0048).
+    for given in [Some(Phase::TurnEnd), None] {
+        let stop = parse("real159_stop", given);
+        assert_eq!(stop.phase, Phase::TurnEnd);
+        assert_eq!(stop.raw["fullyIdle"], false);
+        assert_eq!(stop.cwd, w);
+    }
 }
 
 #[test]
@@ -677,24 +679,20 @@ fn the_plugin_hooks_run_this_adapter_with_known_phases() {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../integrations/antigravity");
     let hooks: Value = serde_json::from_slice(&fs::read(path.join("hooks.json")).unwrap()).unwrap();
     let group = &hooks["acs"];
-    assert!(
-        group.get("Stop").is_none(),
-        "no Stop hook: it fires at every turn end"
-    );
+    assert_eq!(group.as_object().unwrap().len(), 4, "{group}");
     let mut seen = Vec::new();
     for (event, expected_phase) in [
         ("PreToolUse", "pre_tool"),
         ("PostToolUse", "post_tool"),
         ("PreInvocation", "prompt_submit"),
+        // A turn end, not a session end (decision 0048).
+        ("Stop", "turn_end"),
     ] {
         let entry = &group[event][0];
         // Tool events take matcher groups, the others a flat list.
-        let handler = if event == "PreInvocation" {
-            entry
-        } else {
-            &entry["hooks"][0]
-        };
-        if event != "PreInvocation" {
+        let flat = matches!(event, "PreInvocation" | "Stop");
+        let handler = if flat { entry } else { &entry["hooks"][0] };
+        if !flat {
             assert_eq!(entry["matcher"], ".*");
         }
         assert_eq!(handler["type"], "command");
@@ -706,7 +704,7 @@ fn the_plugin_hooks_run_this_adapter_with_known_phases() {
         );
         seen.push(expected_phase);
     }
-    assert_eq!(seen.len(), 3);
+    assert_eq!(seen.len(), 4);
     let manifest: Value =
         serde_json::from_slice(&fs::read(path.join("plugin.json")).unwrap()).unwrap();
     assert_eq!(manifest["name"], "acs");

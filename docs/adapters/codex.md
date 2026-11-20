@@ -26,12 +26,14 @@ working directory). MCP servers are `[mcp_servers.<name>]` tables in the same `c
 ACS uses `config.toml` only (`acs plugin install codex`, `crates/acs-cli/src/commands/codex_config.rs`):
 one text block between `# >>> acs` and `# <<< acs`, appended to the project's
 `.codex/config.toml` (default) or the user's `$CODEX_HOME/config.toml` (`--scope user`). The block is
-`integrations/codex/config.toml`. It registers `SessionStart`, `PreToolUse`, `PostToolUse` and
-`SessionEnd`, each running `acs hook codex`, and `[mcp_servers.acs]` running
+`integrations/codex/config.toml`. It registers `SessionStart`, `PreToolUse`, `PostToolUse`, `Stop`
+and `SessionEnd`, each running `acs hook codex`, and `[mcp_servers.acs]` running
 `acs mcp --harness codex` with `default_tools_approval_mode = "approve"`: without that, an ACS
 tool call in `codex exec` fails with "MCP tool call requires approval, but approval policy is
-never". `UserPromptSubmit` is not registered (decision 0036), nor `PermissionRequest`, `Stop` and
-the rest, which ACS has no use for.
+never". `UserPromptSubmit` is not registered (decision 0036), nor `PermissionRequest` and the
+rest, which ACS has no use for. `Stop` is the canonical `turn_end` (decision 0048): ACS answers
+`{"decision":"block","reason":"..."}` once per session, after the agent changed files and where
+lore is on, to ask it to propose lore, and nothing otherwise.
 
 Codex has plugins, but a plugin is installed from a marketplace inside the TUI (`/plugins`), and
 the docs say plugin hooks are supported "for plugins installed manually in Codex desktop". A

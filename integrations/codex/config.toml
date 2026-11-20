@@ -24,6 +24,12 @@ type = "command"
 command = "acs hook codex"
 timeout = 30
 
+[[hooks.Stop]]
+[[hooks.Stop.hooks]]
+type = "command"
+command = "acs hook codex"
+timeout = 20
+
 [[hooks.SessionEnd]]
 [[hooks.SessionEnd.hooks]]
 type = "command"

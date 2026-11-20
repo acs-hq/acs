@@ -28,6 +28,13 @@
         ]
       }
     ],
+    "Stop": [
+      {
+        "hooks": [
+          { "type": "command", "command": "acs", "args": ["hook", "claude-code"], "timeout": 20 }
+        ]
+      }
+    ],
     "SessionEnd": [
       {
         "hooks": [

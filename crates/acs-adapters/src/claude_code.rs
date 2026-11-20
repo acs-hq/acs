@@ -5,7 +5,7 @@
 //!
 //! - **Input** (stdin): one JSON object whose `hook_event_name` selects the phase
 //!   (`SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PostToolUseFailure`,
-//!   `SessionEnd`). Any other event, or a payload without a session id, a working directory or
+//!   `Stop`, `SessionEnd`). Any other event, or a payload without a session id, a working directory or
 //!   the fields its event needs, is an [`AdapterError`] carrying whatever could be recovered.
 //! - **Output**: allow is an empty stdout (never `permissionDecision: "allow"`, which would skip
 //!   the user's own permission prompt) or an `additionalContext` document; deny is the JSON deny
@@ -53,6 +53,7 @@ impl Adapter for ClaudeCode {
             Some("PreToolUse") => Phase::PreTool,
             Some("PostToolUse" | "PostToolUseFailure") => Phase::PostTool,
             Some("SessionEnd") => Phase::SessionEnd,
+            Some("Stop") => Phase::TurnEnd,
             Some(other) => return Err(fail(format!("unsupported hook event {other:?}"))),
             None => phase.ok_or_else(|| fail("payload has no hook_event_name".to_owned()))?,
         };
@@ -100,7 +101,7 @@ impl Adapter for ClaudeCode {
             Phase::PromptSubmit => {
                 event.prompt = text(map, "prompt").map(str::to_owned);
             }
-            Phase::SessionStart | Phase::SessionEnd => {}
+            Phase::SessionStart | Phase::SessionEnd | Phase::TurnEnd => {}
         }
         Ok(event)
     }
@@ -129,7 +130,22 @@ impl Adapter for ClaudeCode {
             Phase::PromptSubmit => context_output("UserPromptSubmit", &everything(decision)),
             // SessionEnd output is discarded by Claude Code.
             Phase::SessionEnd => HookOutput::default(),
+            Phase::TurnEnd => render_turn_end(decision),
         }
+    }
+}
+
+/// `Stop`: nothing lets the agent stop; a request is `decision: "block"` with the request as
+/// `reason`, which Claude Code gives the model as the reason to carry on for one more turn.
+/// The pipeline asks at most once per seat, so this never keeps an agent from stopping twice.
+fn render_turn_end(decision: &Decision) -> HookOutput {
+    let Some(request) = super::turn_end_request(decision) else {
+        return HookOutput::default();
+    };
+    HookOutput {
+        stdout: json_output(&json!({"decision": "block", "reason": cap(request)})),
+        stderr: Vec::new(),
+        exit_code: 0,
     }
 }
 
@@ -643,6 +659,33 @@ mod tests {
     }
 
     #[test]
+    fn stop_is_a_turn_end_and_a_request_keeps_the_agent_going_once() {
+        let payload = br#"{"session_id":"s1","transcript_path":"/t.jsonl","cwd":"/w",
+            "permission_mode":"default","hook_event_name":"Stop","stop_hook_active":false,
+            "last_assistant_message":"Done."}"#;
+        let event = ClaudeCode.parse(None, payload).expect("parse");
+        assert_eq!(event.phase, Phase::TurnEnd);
+        assert!(event.tool.is_none());
+
+        let mut silent = Decision::new(Outcome::Allow, ReasonCode::Ok, "");
+        // A warning alone must not keep the agent from stopping.
+        silent
+            .warnings
+            .push("ACS could not open this repository".into());
+        assert_eq!(
+            ClaudeCode.render(Some(&event), &silent),
+            HookOutput::default()
+        );
+
+        let mut asks = Decision::new(Outcome::Allow, ReasonCode::Ok, "");
+        asks.context.push("Propose lore.".into());
+        let out = ClaudeCode.render(Some(&event), &asks);
+        assert_eq!(out.exit_code, 0);
+        let doc: Value = serde_json::from_slice(&out.stdout).expect("json");
+        assert_eq!(doc, json!({"decision": "block", "reason": "Propose lore."}));
+    }
+
+    #[test]
     fn bad_payloads_recover_what_they_can() {
         let adapter = ClaudeCode;
         let err = adapter.parse(None, b"not json").unwrap_err();
@@ -654,7 +697,7 @@ mod tests {
         let err = adapter
             .parse(
                 None,
-                br#"{"session_id":"s1","cwd":"/w","hook_event_name":"Stop"}"#,
+                br#"{"session_id":"s1","cwd":"/w","hook_event_name":"SubagentStop"}"#,
             )
             .unwrap_err();
         assert!(err.message.contains("unsupported hook event"), "{err}");
@@ -931,7 +974,8 @@ mod tests {
                 "PostToolUseFailure",
                 "PreToolUse",
                 "SessionEnd",
-                "SessionStart"
+                "SessionStart",
+                "Stop"
             ]
         );
         for (event, groups) in hooks {

@@ -465,6 +465,19 @@ New in Phase 4:
    what you started.
 6. **A `cat > file` with no input waits forever** in the Bash tool; it cost a 2-minute timeout.
 
+New with issue 80 (decision 0048, `turn_end`):
+
+1. **A patch script written by Python on Windows writes CRLF** unless it writes bytes (or passes
+   `newline="\n"`); three docs came out with CRLF and had to be converted back. Check
+   `git diff --stat` for whole-file diffs after a scripted edit.
+2. **Self-protection stops a session here from running `acs lore review --list`,** even on a
+   scratch repository. To see proposals from a real run, read
+   `<ACS_HOME>/repos/<id>/pending/lore/*.json`; the real-agent scripts may call it because they run
+   as their own process.
+3. **A `turn_end` answer keeps the agent going.** Anything new that returns context at
+   `turn_end` must also be once per seat (SPEC section 3), or an agent can never stop. The
+   adapters render only `decision.context` there, never warnings.
+
 ## 3. Must-know items for the next phases
 
 **WP8.2 and WP8.3 (notices)** — the Claude Code plugin does not register

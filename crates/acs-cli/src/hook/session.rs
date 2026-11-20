@@ -3,7 +3,7 @@
 use acs_core::{Decision, Outcome, ReasonCode, Timestamp, ToolEvent};
 use acs_store::NewEvent;
 
-use super::{intent, keep_alive, markers};
+use super::{intent, keep_alive, lore_prompt, markers};
 use crate::runtime::{RepoContext, seats, status, sync};
 
 fn allow() -> Decision {
@@ -119,6 +119,7 @@ pub fn end(ctx: &RepoContext, event: &ToolEvent, now: Timestamp) -> Decision {
         });
     }
     intent::forget(db, &info);
+    lore_prompt::forget(db, &info);
     let _ = db.end_seat(&info.seat.seat_id, now);
     markers::clear_tool_marker(ctx, &info.seat.seat_id);
     // The claims just released would otherwise block other machines until their TTL: there may
