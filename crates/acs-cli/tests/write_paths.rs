@@ -162,7 +162,6 @@ fn w1_a_file_the_session_created_and_then_edited_is_still_deleted() {
 /// and leaves the worktree's file changed (or, when the main copy differs, merges the reverse
 /// change into a file the session never touched).
 #[test]
-#[ignore = "W2 is still open (issue 74); remove this when it is fixed"]
 fn w2_undo_acts_on_the_worktree_the_session_changed() {
     let world = World::new();
     let wt = nested_worktree(&world);
@@ -186,6 +185,80 @@ fn w2_undo_acts_on_the_worktree_the_session_changed() {
         fs::read_to_string(world.repo.join("src/lib.rs")).unwrap(),
         "pub fn lib() {}\n"
     );
+}
+
+/// A session started in the main checkout that changes `src/lib.rs` of the worktree
+/// `.claude/worktrees/wp`; returns the worktree's root and the session id.
+fn w2_session(world: &World) -> (PathBuf, String) {
+    let wt = nested_worktree(world);
+    let agent = Agent::new(world, "claude-code", "w2");
+    agent.start();
+    let target = wt.join("src/lib.rs");
+    agent.pre_edit(&target.to_string_lossy());
+    fs::write(
+        &target,
+        "pub fn changed_in_the_worktree() {}
+",
+    )
+    .unwrap();
+    agent.post_edit(".claude/worktrees/wp/src/lib.rs");
+    agent.end();
+    (wt, session_id(&agent))
+}
+
+/// W2, run from the worktree itself: the same file is undone, and the main checkout's copy is
+/// left alone.
+#[test]
+fn w2_undo_run_in_the_worktree_acts_on_its_file() {
+    let world = World::new();
+    let (wt, sid) = w2_session(&world);
+    let out = world.run(&["undo", &sid, "--apply"], b"", &wt);
+    assert!(out.status.success(), "{out:?}");
+    assert_eq!(
+        fs::read_to_string(wt.join("src/lib.rs")).unwrap(),
+        "pub fn lib() {}
+",
+        "{}",
+        stdout(&out)
+    );
+    assert_eq!(
+        fs::read_to_string(world.repo.join("src/lib.rs")).unwrap(),
+        "pub fn lib() {}
+"
+    );
+}
+
+/// W2, the worktree removed since: undo writes nothing, not even into the main checkout's file
+/// of the same name (here equal to what the session left, which undo used to "restore"), and
+/// says why.
+#[test]
+fn w2_undo_leaves_files_of_a_removed_worktree_alone() {
+    let world = World::new();
+    let (_wt, sid) = w2_session(&world);
+    git(
+        &world.repo,
+        &world.git_config,
+        &["worktree", "remove", "--force", ".claude/worktrees/wp"],
+    );
+    let main_copy = world.repo.join("src/lib.rs");
+    fs::write(
+        &main_copy,
+        "pub fn changed_in_the_worktree() {}
+",
+    )
+    .unwrap();
+
+    let out = undo(&world, &[&sid, "--apply"]);
+    assert_eq!(
+        fs::read_to_string(&main_copy).unwrap(),
+        "pub fn changed_in_the_worktree() {}
+",
+        "{}",
+        stdout(&out)
+    );
+    let text = stdout(&out);
+    assert!(text.contains(".claude/worktrees/wp/src/lib.rs"), "{text}");
+    assert!(text.contains("no longer a worktree"), "{text}");
 }
 
 /// W3 (surprising). With `core.autocrlf = true` (the Git for Windows default) the work tree has

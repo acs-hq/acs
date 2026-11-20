@@ -9,14 +9,15 @@
 //! that most recently changed files in this repository, by when it ended. If that session is still
 //! running, `--last` says so and stops instead of picking an older one.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fmt::Write as _;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 use acs_core::{RepoPath, SessionId, Timestamp};
 use acs_git::merge::{CommitOutcome, MergeOutcome};
 use acs_store::SeatInfo;
-use acs_store::undo::{self, Applied, MergeResult, PlanInputs, UndoAction, UndoPlan};
+use acs_store::undo::{self, Applied, MergeResult, PlanInputs, UndoAction, UndoItem, UndoPlan};
 use clap::{ArgGroup, Args};
 use serde_json::{Value, json};
 
@@ -262,10 +263,12 @@ fn execute(args: &UndoArgs) -> Result<ExitCode, CliError> {
         }
         Err(err) => MergeResult::Conflict(format!("could not merge: {err}")),
     };
+    let locate = |recorded: &Path| locate_tree(&ctx, recorded);
     let plan = undo::plan(
         &PlanInputs {
             session: &session,
             work_tree: &ctx.layout.work_tree,
+            locate: &locate,
             snapshots: store,
             attributions: &attributions,
             holder: &holder,
@@ -288,31 +291,43 @@ fn execute(args: &UndoArgs) -> Result<ExitCode, CliError> {
     }
 
     let mut applied: Vec<Applied> = Vec::new();
-    let mut committed = Committed::NotNeeded;
+    let mut commits: Vec<(PathBuf, Committed)> = Vec::new();
     if args.apply {
         // Which restored files can go into a new commit: the session committed them and the file
-        // is exactly what HEAD holds, so the undo is a clean revert of committed work.
-        let committable = committable_paths(&ctx, &plan, session.as_str());
-        applied = undo::apply(store, &ctx.layout.work_tree, &plan);
+        // is exactly what HEAD holds, so the undo is a clean revert of committed work. Each work
+        // tree has its own HEAD, so each gets its own commit.
+        let committable = committable_paths(&plan, session.as_str());
+        applied = undo::apply(store, &plan);
         let done = undo::applied_paths(&applied);
-        let to_commit: Vec<String> = committable
-            .into_iter()
-            .filter(|p| p.parse::<RepoPath>().is_ok_and(|p| done.contains(&p)))
-            .collect();
-        committed = commit(&ctx, &session, &to_commit);
+        for (tree, paths) in committable {
+            let to_commit: Vec<String> = paths
+                .into_iter()
+                .filter(|p| {
+                    p.parse::<RepoPath>()
+                        .is_ok_and(|p| done.contains(&(tree.clone(), p)))
+                })
+                .collect();
+            match commit(&tree, &session, &to_commit) {
+                Committed::NotNeeded => {}
+                outcome => commits.push((tree, outcome)),
+            }
+        }
     }
 
     let failures = applied.iter().filter(|a| a.result.is_err()).count();
     let conflicts = plan.count(UndoAction::Conflict);
-    let failed =
-        args.apply && (failures > 0 || conflicts > 0 || matches!(committed, Committed::Failed(_)));
+    let commit_failed = commits
+        .iter()
+        .any(|(_, c)| matches!(c, Committed::Failed(_)));
+    let failed = args.apply && (failures > 0 || conflicts > 0 || commit_failed);
 
     let view = View {
         seat: &seat,
         pick,
+        here: &ctx.layout.work_tree,
         plan: &plan,
         applied: &applied,
-        committed: &committed,
+        commits: &commits,
         apply: args.apply,
         live,
     };
@@ -328,33 +343,54 @@ fn execute(args: &UndoArgs) -> Result<ExitCode, CliError> {
     })
 }
 
-/// The changed paths the session committed that are exactly as `HEAD` has them now.
-fn committable_paths(ctx: &RepoContext, plan: &UndoPlan, session: &str) -> Vec<String> {
-    let changing: Vec<_> = plan
-        .items
-        .iter()
-        .filter(|i| i.action.changes_file())
-        .collect();
-    if changing.is_empty() {
-        return Vec::new();
-    }
-    let Ok(committed) = acs_git::merge::session_commit_paths(&ctx.layout.work_tree, session) else {
-        return Vec::new();
-    };
-    changing
-        .into_iter()
-        .filter(|i| committed.contains(i.path.as_str()))
-        // Through git, not by raw bytes: with `core.autocrlf` (the Git for Windows default) the
-        // work tree holds CRLF and `HEAD` holds LF (W3 in docs/security/write-paths.md).
-        .filter(|i| {
-            acs_git::merge::worktree_matches_head(&ctx.layout.work_tree, i.path.as_str())
-                .unwrap_or(false)
+/// Where a work tree recorded in the session's snapshots is now: the same root, still a work tree
+/// of this repository. Anything else (removed, or a plain folder or another repository in its
+/// place) is refused, so undo never writes a file into a checkout the session did not change.
+fn locate_tree(ctx: &RepoContext, recorded: &Path) -> Result<PathBuf, String> {
+    acs_git::discover(recorded)
+        .ok()
+        // Roots are recorded as `discover` names them (canonical), so equal roots compare equal.
+        .filter(|layout| layout.common_dir == ctx.layout.common_dir && layout.work_tree == recorded)
+        .map(|layout| layout.work_tree)
+        .ok_or_else(|| {
+            format!(
+                "the session changed it in the worktree `{}`, which is no longer a worktree of \
+                 this repository; undo does not write it anywhere else",
+                recorded.display()
+            )
         })
-        .map(|i| i.path.as_str().to_owned())
-        .collect()
 }
 
-fn commit(ctx: &RepoContext, session: &SessionId, paths: &[String]) -> Committed {
+/// The changed paths the session committed that are exactly as `HEAD` has them now, by work tree.
+fn committable_paths(plan: &UndoPlan, session: &str) -> BTreeMap<PathBuf, Vec<String>> {
+    let mut changing: BTreeMap<&Path, Vec<&str>> = BTreeMap::new();
+    for item in plan.items.iter().filter(|i| i.action.changes_file()) {
+        changing
+            .entry(item.work_tree.as_path())
+            .or_default()
+            .push(item.path.as_str());
+    }
+    let mut out = BTreeMap::new();
+    for (tree, paths) in changing {
+        let Ok(committed) = acs_git::merge::session_commit_paths(tree, session) else {
+            continue;
+        };
+        let paths: Vec<String> = paths
+            .into_iter()
+            .filter(|p| committed.contains(*p))
+            // Through git, not by raw bytes: with `core.autocrlf` (the Git for Windows default)
+            // the work tree holds CRLF and `HEAD` holds LF (W3 in docs/security/write-paths.md).
+            .filter(|p| acs_git::merge::worktree_matches_head(tree, p).unwrap_or(false))
+            .map(str::to_owned)
+            .collect();
+        if !paths.is_empty() {
+            out.insert(tree.to_path_buf(), paths);
+        }
+    }
+    out
+}
+
+fn commit(work_tree: &Path, session: &SessionId, paths: &[String]) -> Committed {
     if paths.is_empty() {
         return Committed::NotNeeded;
     }
@@ -362,7 +398,7 @@ fn commit(ctx: &RepoContext, session: &SessionId, paths: &[String]) -> Committed
     for path in paths {
         let _ = writeln!(message, "- {path}");
     }
-    match acs_git::merge::commit_only(&ctx.layout.work_tree, paths, &message) {
+    match acs_git::merge::commit_only(work_tree, paths, &message) {
         Ok(CommitOutcome::Committed(id)) => Committed::Made(id),
         Ok(CommitOutcome::NothingToCommit) => Committed::NotNeeded,
         Ok(CommitOutcome::Failed(why)) => Committed::Failed(why),
@@ -395,20 +431,62 @@ fn counts(plan: &UndoPlan) -> Value {
 struct View<'a> {
     seat: &'a SeatInfo,
     pick: Pick,
+    /// The work tree `acs undo` runs in.
+    here: &'a Path,
     plan: &'a UndoPlan,
     applied: &'a [Applied],
-    committed: &'a Committed,
+    /// The undo commits made or attempted, one per work tree.
+    commits: &'a [(PathBuf, Committed)],
     apply: bool,
     live: bool,
+}
+
+/// What happened to `item` when the plan was applied.
+fn outcome_of<'a>(applied: &'a [Applied], item: &UndoItem) -> Option<&'a Applied> {
+    applied
+        .iter()
+        .find(|a| a.path == item.path && a.work_tree == item.work_tree)
+}
+
+/// How a work tree is named to the person: relative to the one undo runs in when it is inside
+/// it (`.claude/worktrees/wp`), its full path otherwise.
+fn tree_name(here: &Path, tree: &Path) -> String {
+    match tree.strip_prefix(here) {
+        Ok(inner) => inner.to_string_lossy().replace('\\', "/"),
+        Err(_) => tree.display().to_string(),
+    }
+}
+
+/// The path of `item` as the person reading the plan finds it: as it is for the work tree undo
+/// runs in, and with its work tree in front for any other.
+fn shown_path(here: &Path, item: &UndoItem) -> String {
+    if item.work_tree == here {
+        item.path.as_str().to_owned()
+    } else {
+        format!(
+            "{}/{}",
+            tree_name(here, &item.work_tree).trim_end_matches('/'),
+            item.path
+        )
+    }
+}
+
+fn commit_json(committed: &Committed) -> Value {
+    match committed {
+        Committed::NotNeeded => json!({"status": "none"}),
+        Committed::Made(id) => json!({"status": "committed", "commit": id}),
+        Committed::Failed(why) => json!({"status": "failed", "error": why}),
+    }
 }
 
 fn json_view(view: &View<'_>) -> Value {
     let View {
         seat,
         pick,
+        here,
         plan,
         applied,
-        committed,
+        commits,
         apply,
         live,
     } = *view;
@@ -416,9 +494,11 @@ fn json_view(view: &View<'_>) -> Value {
         .items
         .iter()
         .map(|item| {
-            let outcome = applied.iter().find(|a| a.path == item.path);
+            let outcome = outcome_of(applied, item);
             json!({
                 "path": item.path,
+                "work_tree": item.work_tree,
+                "elsewhere": item.work_tree != here,
                 "action": item.action,
                 "detail": item.detail,
                 "applied": outcome.map(|a| a.result.is_ok()),
@@ -426,11 +506,25 @@ fn json_view(view: &View<'_>) -> Value {
             })
         })
         .collect();
-    let commit = match committed {
-        Committed::NotNeeded => json!({"status": "none"}),
-        Committed::Made(id) => json!({"status": "committed", "commit": id}),
-        Committed::Failed(why) => json!({"status": "failed", "error": why}),
-    };
+    // `commit` is the one undo commit, as before work trees were told apart; with commits in
+    // several work trees it is the first that failed, or else the first made. `commits` lists
+    // them all.
+    let commit = commits
+        .iter()
+        .find(|(_, c)| matches!(c, Committed::Failed(_)))
+        .or_else(|| commits.first())
+        .map_or_else(
+            || commit_json(&Committed::NotNeeded),
+            |(_, c)| commit_json(c),
+        );
+    let all_commits: Vec<Value> = commits
+        .iter()
+        .map(|(tree, c)| {
+            let mut value = commit_json(c);
+            value["work_tree"] = json!(tree);
+            value
+        })
+        .collect();
     json!({
         "ok": true,
         "session": plan.session,
@@ -445,6 +539,7 @@ fn json_view(view: &View<'_>) -> Value {
         "files": files,
         "summary": counts(plan),
         "commit": commit,
+        "commits": all_commits,
     })
 }
 
@@ -452,9 +547,10 @@ fn render(view: &View<'_>, now: Timestamp) -> String {
     let View {
         seat,
         pick,
+        here,
         plan,
         applied,
-        committed,
+        commits,
         apply,
         live,
     } = *view;
@@ -496,7 +592,7 @@ fn render(view: &View<'_>, now: Timestamp) -> String {
     }
     out.push('\n');
     for item in &plan.items {
-        let outcome = applied.iter().find(|a| a.path == item.path);
+        let outcome = outcome_of(applied, item);
         let label = match outcome {
             Some(a) if a.result.is_err() => "FAILED".to_owned(),
             Some(_) => format!("{} (done)", item.action.label()),
@@ -506,7 +602,7 @@ fn render(view: &View<'_>, now: Timestamp) -> String {
         let _ = writeln!(
             out,
             "  {:<budget$}  {label}",
-            ellipsize_start(item.path.as_str(), budget)
+            ellipsize_start(&shown_path(here, item), budget)
         );
         let detail = match outcome.and_then(|a| a.result.as_ref().err()) {
             Some(error) => Some(error.as_str()),
@@ -542,28 +638,35 @@ fn render(view: &View<'_>, now: Timestamp) -> String {
     out.push('\n');
     out.push_str(&wrap(&format!("Summary: {summary}."), "", "  "));
 
-    match committed {
-        Committed::Made(id) => {
-            out.push_str(&wrap(
-                &format!(
-                    "The session's changes were committed, so the undo is a new commit ({id}); \
-                     history is unchanged."
-                ),
-                "",
-                "",
-            ));
+    for (tree, committed) in commits {
+        let in_tree = if tree.as_path() == here {
+            String::new()
+        } else {
+            format!(" in the worktree `{}`", tree_name(here, tree))
+        };
+        match committed {
+            Committed::Made(id) => {
+                out.push_str(&wrap(
+                    &format!(
+                        "The session's changes were committed{in_tree}, so the undo is a new \
+                         commit there ({id}); history is unchanged."
+                    ),
+                    "",
+                    "",
+                ));
+            }
+            Committed::Failed(why) => {
+                out.push_str(&wrap(
+                    &format!(
+                        "!! The files are restored{in_tree} but the undo commit failed: {why}. \
+                         Commit them yourself when ready."
+                    ),
+                    "",
+                    "   ",
+                ));
+            }
+            Committed::NotNeeded => {}
         }
-        Committed::Failed(why) => {
-            out.push_str(&wrap(
-                &format!(
-                    "!! The files are restored but the undo commit failed: {why}. Commit them \
-                     yourself when ready."
-                ),
-                "",
-                "   ",
-            ));
-        }
-        Committed::NotNeeded => {}
     }
     if !apply {
         if changing > 0 {
