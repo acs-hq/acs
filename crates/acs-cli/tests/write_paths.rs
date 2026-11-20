@@ -248,7 +248,9 @@ fn w2_undo_leaves_files_of_a_removed_worktree_alone() {
     )
     .unwrap();
 
-    let out = undo(&world, &[&sid, "--apply"]);
+    // The reason is checked in the JSON: the text output wraps at a fixed width, so where a phrase
+    // breaks depends on the length of the temp path in front of it (it broke on Linux only).
+    let out = undo(&world, &[&sid, "--apply", "--json"]);
     assert_eq!(
         fs::read_to_string(&main_copy).unwrap(),
         "pub fn changed_in_the_worktree() {}
@@ -256,9 +258,22 @@ fn w2_undo_leaves_files_of_a_removed_worktree_alone() {
         "{}",
         stdout(&out)
     );
-    let text = stdout(&out);
-    assert!(text.contains(".claude/worktrees/wp/src/lib.rs"), "{text}");
-    assert!(text.contains("no longer a worktree"), "{text}");
+    let view: Value = serde_json::from_slice(&out.stdout)
+        .unwrap_or_else(|e| panic!("undo --json printed no JSON ({e}): {}", stdout(&out)));
+    let files = view["files"].as_array().expect("files");
+    assert_eq!(files.len(), 1, "{view}");
+    let file = &files[0];
+    assert_eq!(file["path"], "src/lib.rs", "{view}");
+    assert_eq!(file["action"], "unknown", "{view}");
+    assert_eq!(file["elsewhere"], true, "{view}");
+    let tree = file["work_tree"].as_str().expect("work_tree");
+    assert!(Path::new(tree).ends_with(".claude/worktrees/wp"), "{view}");
+    let detail = file["detail"].as_str().expect("detail");
+    assert!(
+        detail.contains("no longer a worktree of this repository"),
+        "{view}"
+    );
+    assert_eq!(view["summary"]["unknown"], 1, "{view}");
 }
 
 /// W3 (surprising). With `core.autocrlf = true` (the Git for Windows default) the work tree has
