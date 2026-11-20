@@ -17,6 +17,7 @@
 //! The calls of decision 0035 (tool calls that no switched-on feature needs) are measured too,
 //! without budgets.
 //!
+//! - `ACS_PERF_LORE_ENTRIES`: lore entries in the repository of the lore paths (default 50).
 //! - `ACS_PERF_NO_ASSERT=1`: print the numbers without failing.
 
 #![allow(clippy::unwrap_used, clippy::expect_used)]
@@ -400,6 +401,235 @@ claims = false",
     measured
 }
 
+fn read_of(path: &str) -> Value {
+    json!({"tool": {"name": "Read", "kind": "read"}, "paths": [path]})
+}
+
+/// Runs one hook call outside the measurements and returns what it printed.
+fn hook_output(world: &World, build: &Build, session: &str, phase: &str, extra: Value) -> String {
+    let out = Command::new(&build.bin)
+        .args(["hook", "--canonical", phase])
+        .current_dir(&world.repo)
+        .env("ACS_HOME", &build.home)
+        .env("GIT_CONFIG_GLOBAL", &world.git_config)
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .and_then(|mut child| {
+            child
+                .stdin
+                .take()
+                .unwrap()
+                .write_all(&event(world, session, phase, extra))?;
+            child.wait_with_output()
+        })
+        .unwrap();
+    assert!(out.status.success(), "acs hook {phase}");
+    String::from_utf8_lossy(&out.stdout).into_owned()
+}
+
+/// The text of lore entry `i`, so that a run can check it reached the agent.
+fn lore_body(i: usize) -> String {
+    format!("Lore entry {i}: amounts in this module are integer cents.")
+}
+
+/// The pre-tool hook in a repository with lore (issue 57), 50 entries unless
+/// `ACS_PERF_LORE_ENTRIES` says otherwise. Every pre-tool call loads and parses every entry,
+/// which has no compiled cache. The first call of a seat in a scope also runs `git rev-parse
+/// HEAD`, and measures the staleness of the entries it has not seen: four git processes per
+/// entry, cached per `HEAD`.
+///
+/// One entry covers `src/**` and the others `src/m<i>/**`, so a path in a module is in the scope
+/// of two entries and `docs/` is in none. The warm calls (entries already shown, or no entry
+/// in scope) carry the pre-tool budget; the first touches are measured without one. The end of
+/// a turn (decision 0048) is measured here too, where lore is on: it reads one flag.
+fn lore_calls(criterion: &mut Criterion) -> Vec<Measured> {
+    let entries: usize = std::env::var("ACS_PERF_LORE_ENTRIES")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .filter(|&n| n >= 3)
+        .unwrap_or(50);
+    const SAMPLES: usize = 200;
+    const TOUCH_SAMPLES: usize = 100;
+    let pre_tool_budget = (15.0, 40.0);
+
+    let world = World::new();
+    for i in 1..entries {
+        world.write(&format!("src/m{i}/f.rs"), "// one\n// two\n// three\n");
+    }
+    world.write("docs/guide.md", "guide\n");
+    git(&world.repo, &world.git_config, &["add", "-A"]);
+    git(
+        &world.repo,
+        &world.git_config,
+        &["commit", "-q", "-m", "modules"],
+    );
+    let since = String::from_utf8(
+        Command::new("git")
+            .args(["rev-parse", "HEAD"])
+            .current_dir(&world.repo)
+            .output()
+            .unwrap()
+            .stdout,
+    )
+    .unwrap()
+    .trim()
+    .to_owned();
+    for i in 0..entries {
+        let (file, scope) = if i == 0 {
+            ("root.md".to_owned(), "src/**".to_owned())
+        } else {
+            (format!("m{i}/module.md"), format!("src/m{i}/**"))
+        };
+        world.write(
+            &format!(".acs/policy/lore/{file}"),
+            &format!(
+                "+++\nid = \"lore_m{i}\"\nscope = [\"{scope}\"]\nowner = \"lina@example.com\"\n\
+                 written_against = \"{since}\"\n+++\n\n{}\n",
+                lore_body(i)
+            ),
+        );
+    }
+
+    let builds = builds(&world);
+    for build in &builds {
+        hook(&world, build, "perf", "session_start", json!({}));
+        // The first calls write the policy cache, claim the files, show every entry once and
+        // fill the staleness cache for this `HEAD`.
+        for i in 1..entries {
+            let path = format!("src/m{i}/f.rs");
+            let shown = hook_output(&world, build, "perf", "pre_tool", edit(&path));
+            assert!(
+                shown.contains(&lore_body(i)),
+                "the first edit in src/m{i} showed no lore: {shown}"
+            );
+        }
+        hook(&world, build, "perf", "turn_end", json!({}));
+    }
+
+    let mut measured = Vec::new();
+    let mut round = 0;
+    measured.push(bench(
+        criterion,
+        &format!("pre-tool file edit, {entries} lore entries, already shown"),
+        pre_tool_budget,
+        SAMPLES,
+        &builds,
+        |builds| {
+            round += 1;
+            let path = format!("src/m{}/f.rs", 1 + round % (entries - 1));
+            turn_about(builds, round, |build| {
+                hook(&world, build, "perf", "pre_tool", edit(&path))
+            })
+        },
+    ));
+    measured.push(bench(
+        criterion,
+        &format!("pre-tool read, {entries} lore entries, already shown"),
+        pre_tool_budget,
+        SAMPLES,
+        &builds,
+        |builds| {
+            round += 1;
+            let path = format!("src/m{}/f.rs", 1 + round % (entries - 1));
+            turn_about(builds, round, |build| {
+                hook(&world, build, "perf", "pre_tool", read_of(&path))
+            })
+        },
+    ));
+    measured.push(bench(
+        criterion,
+        &format!("pre-tool file edit, {entries} lore entries, none in scope"),
+        pre_tool_budget,
+        SAMPLES,
+        &builds,
+        |builds| {
+            round += 1;
+            turn_about(builds, round, |build| {
+                hook(&world, build, "perf", "pre_tool", edit("docs/guide.md"))
+            })
+        },
+    ));
+
+    // A new seat each round: its first read in a module shows two entries. The staleness of both
+    // comes from the cache written for this `HEAD`.
+    let check = |build: &Build, session: &str, path: &str, i: usize| {
+        hook(&world, build, session, "session_start", json!({}));
+        let shown = hook_output(&world, build, session, "pre_tool", read_of(path));
+        assert!(shown.contains(&lore_body(i)), "no lore: {shown}");
+    };
+    for build in &builds {
+        check(build, "check-cached", "src/m1/f.rs", 1);
+    }
+    measured.push(bench(
+        criterion,
+        "pre-tool read, first touch of 2 lore entries, HEAD cached",
+        (NO_BUDGET, NO_BUDGET),
+        TOUCH_SAMPLES,
+        &builds,
+        |builds| {
+            round += 1;
+            let session = format!("cached-{round}");
+            let path = format!("src/m{}/f.rs", 1 + round % (entries - 1));
+            turn_about(builds, round, |build| {
+                hook(&world, build, &session, "session_start", json!({}));
+                hook(&world, build, &session, "pre_tool", read_of(&path))
+            })
+        },
+    ));
+
+    // A commit and a new seat each round: the first read measures both entries against the new
+    // `HEAD`: for each, `git rev-parse` of its revision, `git hash-object` of the empty tree and two
+    // `git diff --numstat` runs.
+    let commit = |n: usize| {
+        world.write("a.txt", &format!("change {n}\n"));
+        git(&world.repo, &world.git_config, &["add", "a.txt"]);
+        git(
+            &world.repo,
+            &world.git_config,
+            &["-c", "gc.auto=0", "commit", "-q", "-m", "change"],
+        );
+    };
+    commit(0);
+    for build in &builds {
+        check(build, "check-new-head", "src/m2/f.rs", 2);
+    }
+    measured.push(bench(
+        criterion,
+        "pre-tool read, first touch of 2 lore entries, new HEAD",
+        (NO_BUDGET, NO_BUDGET),
+        TOUCH_SAMPLES,
+        &builds,
+        |builds| {
+            round += 1;
+            commit(round);
+            let session = format!("new-head-{round}");
+            let path = format!("src/m{}/f.rs", 1 + round % (entries - 1));
+            turn_about(builds, round, |build| {
+                hook(&world, build, &session, "session_start", json!({}));
+                hook(&world, build, &session, "pre_tool", read_of(&path))
+            })
+        },
+    ));
+
+    measured.push(bench(
+        criterion,
+        "turn_end, lore on, already asked",
+        (NO_BUDGET, NO_BUDGET),
+        SAMPLES,
+        &builds,
+        |builds| {
+            round += 1;
+            turn_about(builds, round, |build| {
+                hook(&world, build, "perf", "turn_end", json!({}))
+            })
+        },
+    ));
+    measured
+}
+
 /// Prints one path and returns what is wrong with it.
 fn judge(path: &Measured) -> Vec<String> {
     let (p50, p99) = (percentile(&path.head, 0.50), percentile(&path.head, 0.99));
@@ -445,6 +675,7 @@ fn main() -> ExitCode {
         status(&mut criterion),
     ];
     measured.extend(unneeded_calls(&mut criterion));
+    measured.extend(lore_calls(&mut criterion));
     criterion.final_summary();
     let problems: Vec<String> = measured.iter().flat_map(judge).collect();
     for problem in &problems {
