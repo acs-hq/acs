@@ -1,0 +1,114 @@
+{
+  "spec": "acs/0.1",
+  "session_id": "ses_2xza24w3qhekqeymojuefaix3q",
+  "seat": {
+    "seat_id": "seat_oqxuciyni6nz2v5b3vn6j6qjja",
+    "pilot": "andrewrizk412@gmail.com",
+    "harness": "claude-code",
+    "harness_session_id": "69c363cb-cd16-4694-943f-e4305cf7a1bc",
+    "worktree": "acs",
+    "branch": "acs-test",
+    "target_branch": "main",
+    "started_at": "2026-11-21T15:20:13.282743Z",
+    "last_seen_at": "2026-11-21T15:47:43.062436Z"
+  },
+  "intent": "Adding a section on the project's purpose to README.md (no commit).",
+  "claims": [
+    {
+      "claim_id": "clm_czqbm5st5cws5jnmdfy723uu7m",
+      "scope": {
+        "file": "README.md"
+      },
+      "acquired_at": "2026-11-21T15:21:23.694528Z",
+      "released_at": "2026-11-21T15:47:43.062436Z",
+      "release_reason": "session_end"
+    },
+    {
+      "claim_id": "clm_y4qa44t7y3scnyzdwcy53arsci",
+      "scope": {
+        "file": "Cargo.toml"
+      },
+      "acquired_at": "2026-11-21T15:30:19.287379Z",
+      "released_at": "2026-11-21T15:47:43.062436Z",
+      "release_reason": "session_end"
+    },
+    {
+      "claim_id": "clm_whihccg5ut3gfkb7ild6mdcno4",
+      "scope": {
+        "file": "crates/acs-git/src/blame.rs"
+      },
+      "acquired_at": "2026-11-21T15:34:48.219889Z",
+      "released_at": "2026-11-21T15:47:43.062436Z",
+      "release_reason": "session_end"
+    }
+  ],
+  "files_changed": [
+    {
+      "path": "README.md",
+      "pre_hash": "1b3949654b6921f8ce9c4d39e27ad63b4e66c87fd7241326514ad63061997522",
+      "post_hash": "2615ad6136126335cc0fb4c5f34bbbf6abb7961100a36179d720b5eb8c04ca44"
+    },
+    {
+      "path": "docs/wiki/Home.md",
+      "pre_hash": "bf3adeec97de721ea3b0569b43a0524db2844eb9180a39af15cf635adb25700a",
+      "post_hash": "1dec3e3660bbee71cf6358cf3180b1150799bc9abc1cac36ec19728ee41fa6b6"
+    },
+    {
+      "path": "Cargo.toml",
+      "pre_hash": "b9baac0dece942746914211ad68091956728af2c06469e03d8ceb53cacdce7bc",
+      "post_hash": "ed1b2101d0f03cbde073b1b058a200463d0b06f3633c09770eadc4e9d0378d91"
+    },
+    {
+      "path": "crates/acs-git/src/blame.rs",
+      "pre_hash": "cc32ec4c76535380b48e1e5149fda15369ff615aa84dcb32af19466f4014e974",
+      "post_hash": "bbd107d2f38406422b2ab9b844662b9872b0b07f57b196853b1098ebce83b23f"
+    }
+  ],
+  "guard_decisions": {
+    "counts": {
+      "ok": 19,
+      "claim_conflict": 2,
+      "owned_territory": 1
+    },
+    "notable": [
+      {
+        "at": "2026-11-21T15:24:11.863071Z",
+        "reason_code": "claim_conflict",
+        "outcome": "deny",
+        "path_or_command": "crates/acs-git/tests/sync.rs"
+      },
+      {
+        "at": "2026-11-21T15:27:51.166918Z",
+        "reason_code": "claim_conflict",
+        "outcome": "deny",
+        "path_or_command": "Cargo.toml"
+      },
+      {
+        "at": "2026-11-21T15:33:43.127171Z",
+        "reason_code": "owned_territory",
+        "outcome": "deny",
+        "path_or_command": "crates/acs-git/src/blame.rs"
+      }
+    ]
+  },
+  "commits": [],
+  "lore_loaded": [
+    "lore_geg7engp"
+  ],
+  "overrides": [
+    {
+      "override_id": "ovr_43puubsdoeyqlnd2zdte7e7ise",
+      "pattern": "crates/acs-git/**",
+      "mode": "once",
+      "granted_by": "andrewrizk412@gmail.com",
+      "granted_at": "2026-11-21T15:34:23.907271Z",
+      "paths": [
+        "crates/acs-git/src/blame.rs"
+      ]
+    }
+  ],
+  "started_at": "2026-11-21T15:20:13.282743Z",
+  "ended_at": "2026-11-21T15:47:43.062436Z",
+  "ended_reason": "clean",
+  "acs_version": "0.1.0"
+}
