@@ -1,0 +1,30 @@
+{
+  "spec": "acs/0.1",
+  "session_id": "ses_yibqnq7iqmdhsbp3bwidxchb4a",
+  "seat": {
+    "seat_id": "seat_shxno6pkwtvp3m4bxtntz4fc4y",
+    "pilot": "omarahmed3001@gmail.com",
+    "harness": "claude-code",
+    "harness_session_id": "59fa51ae-eccc-4b5e-99fc-73b627f86a68",
+    "worktree": "acs",
+    "branch": "main",
+    "target_branch": "main",
+    "started_at": "2026-11-21T13:40:43.241787Z",
+    "last_seen_at": "2026-11-21T13:46:22.523787Z"
+  },
+  "intent": "Reading the sync code to answer when team sync runs; no edits.",
+  "claims": [],
+  "files_changed": [],
+  "guard_decisions": {
+    "counts": {
+      "ok": 25
+    },
+    "notable": []
+  },
+  "commits": [],
+  "lore_loaded": [],
+  "started_at": "2026-11-21T13:40:43.241787Z",
+  "ended_at": "2026-11-21T13:46:22.523787Z",
+  "ended_reason": "crashed",
+  "acs_version": "0.1.0"
+}
