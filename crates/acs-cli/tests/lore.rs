@@ -158,6 +158,49 @@ fn lore_comes_once_per_session_most_specific_first() {
     assert!(loaded.iter().all(|l| !l.stale));
 }
 
+/// An entry with two globs is filed under the first one's folder, but an agent whose first file
+/// is under the second glob is shown it too, and then not again under the first.
+#[test]
+fn an_entry_with_two_globs_comes_under_either_of_them() {
+    let world = World::new();
+    world.write("app/tests/undo.rs", "fn t() {}\n");
+    world.write("tests/e2e/main.rs", "fn main() {}\n");
+    world.write("app/src/lib.rs", "pub fn lib() {}\n");
+    commit_all(&world, "code");
+    let since = head(&world);
+    world.write(
+        ".acs/policy/lore/app/tests/wrap.md",
+        &format!(
+            "+++\nid = \"lore_wrap\"\nscope = [\"app/tests/**\", \"tests/e2e/**\"]\n\
+             owner = \"lina@example.com\"\nwritten_against = \"{since}\"\n+++\n\n\
+             Assert on the JSON output, not the wrapped text.\n"
+        ),
+    );
+    commit_all(&world, "lore");
+
+    // First file under the second glob: the entry comes, naming both globs.
+    let sara = Agent::new(&world, "claude-code", "cc-sara");
+    sara.start();
+    let read = sara.pre_tool("Read", "read", &["tests/e2e/main.rs"]);
+    assert_eq!(lore_ids(&read), ["lore_wrap"], "{:?}", read.context);
+    assert!(
+        read.context[0].starts_with("ACS lore for `app/tests/**`, `tests/e2e/**` (lore_wrap,"),
+        "{:?}",
+        read.context
+    );
+    assert!(read.context[0].contains("Assert on the JSON output"));
+    // Once per session: not again under the first glob.
+    assert!(lore_ids(&sara.pre_tool("Read", "read", &["app/tests/undo.rs"])).is_empty());
+
+    // Under the first glob it comes to a session that has not had it; outside both, never.
+    let omar = Agent::new(&world, "claude-code", "cc-omar");
+    assert!(lore_ids(&omar.pre_tool("Read", "read", &["app/src/lib.rs"])).is_empty());
+    assert_eq!(
+        lore_ids(&omar.pre_tool("Read", "read", &["app/tests/undo.rs"])),
+        ["lore_wrap"]
+    );
+}
+
 #[test]
 fn shell_commands_bring_lore_for_the_files_they_name() {
     let world = world();

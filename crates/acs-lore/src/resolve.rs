@@ -160,6 +160,41 @@ mod tests {
         assert!(resolve(&LoreSet::default(), &["a"]).is_empty());
     }
 
+    /// An entry with several globs applies under each of them, not only under the first, which
+    /// is the one `acs lore review` files it under.
+    #[test]
+    fn every_glob_of_a_scope_counts_not_only_the_first() {
+        let text = "+++\nid = \"lore_two\"\nscope = [\"crates/cli/tests/**\", \"tests/e2e/**\"]\n\
+                    owner = \"sara@example.com\"\nwritten_against = \"a1b2c3d\"\n+++\n\
+                    Assert on the JSON output.\n";
+        let set = LoreSet::from_parsed(vec![
+            entry("lore_all", "**", "Everything."),
+            LoreEntry::parse(".acs/policy/lore/crates/cli/tests/two.md", text, false),
+        ]);
+        for path in ["tests/e2e/main.rs", "crates/cli/tests/undo.rs"] {
+            let found = resolve(&set, &[path]);
+            // Ranked by the glob that matched, so ahead of the catch-all under either glob.
+            assert_eq!(ids(&found), ["lore_two", "lore_all"], "{path}");
+            assert_eq!(found[0].path, path);
+        }
+        assert_eq!(
+            ids(&resolve(&set, &["crates/cli/src/main.rs"])),
+            ["lore_all"]
+        );
+
+        let items = [Served {
+            entry: resolve(&set, &["tests/e2e/main.rs"])[0].entry,
+            staleness: None,
+        }];
+        let out = render(&items, 4000);
+        assert!(
+            out.blocks[0]
+                .starts_with("ACS lore for `crates/cli/tests/**`, `tests/e2e/**` (lore_two,"),
+            "{}",
+            out.blocks[0]
+        );
+    }
+
     #[test]
     fn render_fits_the_cap_and_defers_the_rest() {
         let set = LoreSet::from_parsed(vec![
