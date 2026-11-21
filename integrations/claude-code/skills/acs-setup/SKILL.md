@@ -31,22 +31,24 @@ harness yet, only Claude Code and Antigravity.
 
 ## 2. Install the `acs` binary
 
-Skip this step if `acs --version` already works.
+Skip this step if `acs --version` already works and your pilot did not ask for the newest `acs`.
 
-macOS and Linux:
+ACS has no release yet, so build it from the `main` branch. This needs Rust 1.97 or later: run
+`cargo --version`. If `cargo` is missing, stop and tell your pilot to install Rust from
+https://rustup.rs (on Windows, with the C++ build tools its installer offers), then to ask you
+again. If it is older than 1.97, run `rustup update stable`. Then:
 
 ```sh
-curl --proto '=https' --tlsv1.2 -LsSf https://github.com/acs-hq/acs/releases/latest/download/acs-cli-installer.sh | sh
+cargo install --git https://github.com/acs-hq/acs --branch main --locked --force acs-cli
 ```
 
-Windows:
+The build takes several minutes: give the command at least 15 minutes before you call it stuck.
+Running the same line again later updates `acs` to the newest `main`. (From the first release on,
+this step becomes the installers `acs-cli-installer.sh` and `acs-cli-installer.ps1` from
+https://github.com/acs-hq/acs/releases/latest.)
 
-```powershell
-powershell -ExecutionPolicy Bypass -c "irm https://github.com/acs-hq/acs/releases/latest/download/acs-cli-installer.ps1 | iex"
-```
-
-The installer puts `acs` in `$CARGO_HOME/bin` (normally `~/.cargo/bin`) and adds it to `PATH` for
-new terminals, but not for this session. In a POSIX shell, start every later command in this
+`cargo install` puts `acs` in `$CARGO_HOME/bin` (normally `~/.cargo/bin`). If rustup was installed
+just now, that folder is on `PATH` for new terminals, but not for this session. In a POSIX shell, start every later command in this
 session with `export PATH="$HOME/.cargo/bin:$PATH" && `. In PowerShell, start it with
 `$env:Path = "$HOME\.cargo\bin;$env:Path"; `. Then check that `acs --version` works. Remember that
 you installed it here: step 6 needs to know.
