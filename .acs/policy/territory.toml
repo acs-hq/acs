@@ -20,3 +20,13 @@ kind = "open"
 # Teams are referenced from `owners` as "team:<name>".
 # [teams]
 # platform = ["omar@example.com", "lina@example.com"]
+
+
+
+# crates/acs-git/: owned by Omar for testing
+[[zone]]
+paths = ["crates/acs-git/**"]
+kind = "owned"
+owners = ["omarahmed3001@gmail.com"]
+
+
