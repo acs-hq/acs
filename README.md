@@ -66,28 +66,22 @@ branch. You only approve prompts.
 
 <br>
 
-macOS and Linux:
+ACS has no release yet, so build it from the `main` branch. You need Rust 1.97 or later: install
+it from [rustup.rs](https://rustup.rs), or run `rustup update stable`.
 
 ```sh
-curl --proto '=https' --tlsv1.2 -LsSf https://github.com/acs-hq/acs/releases/latest/download/acs-cli-installer.sh | sh
+cargo install --git https://github.com/acs-hq/acs --branch main --locked --force acs-cli
 ```
 
-Windows:
-
-```powershell
-powershell -ExecutionPolicy Bypass -c "irm https://github.com/acs-hq/acs/releases/latest/download/acs-cli-installer.ps1 | iex"
-```
-
-Or with a package manager:
+Run the same line again whenever you want the newest `main`. If you use Claude Code, update its
+plugin as well, then restart it:
 
 ```sh
-scoop install https://github.com/acs-hq/acs/releases/latest/download/acs.json
-npm install --global @acs-hq/acs
+claude plugin marketplace update acs-plugins
+claude plugin update acs@acs-plugins
 ```
 
-Prefer the installers or Scoop for a repository you gate: with npm, every hook call starts Node,
-which is much slower. `npx @acs-hq/acs` is fine for trying the commands, but hooks need `acs`
-installed on `PATH`.
+Installers and package managers come with the first release.
 
 Then, in the repository:
 
