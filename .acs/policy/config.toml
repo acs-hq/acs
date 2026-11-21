@@ -14,3 +14,22 @@ spec = "acs/0.1"
 # [ledger]
 # Store the text of user prompts in the session ledger.
 # store_prompts = false
+
+# Which parts of ACS run in this repository. Set one to false to switch it off (or run
+# `acs features <name> on|off`). The values below are the defaults. Only people can change
+# them: ACS's protection of its own files, hooks and state is always on.
+[features]
+# One writer per file: a file another session holds is blocked.
+claims = true
+# Sealed paths, banned commands, protected branches, delete limits.
+guards = true
+# The zones of territory.toml (owned, open, sealed).
+territory = true
+# Lore shown to agents, and their proposals.
+lore = true
+# Copies for `acs undo`, session records (`acs log`, `acs blame`, `acs stats`), the ACS-Session commit trailer.
+history = true
+# Git hooks that reject commits and pushes.
+commit_checks = true
+# Claims and session records shared through the git remote.
+sync = true

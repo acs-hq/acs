@@ -4,7 +4,8 @@
 # needed), sealed (no agent).
 #
 # Proposed by `acs init` from folder names and the last 12 months of git history. It is
-# only a starting point: edit it freely.
+# only a starting point: edit it freely. Only the owners' agents may change an `owned`
+# zone; a person can let another agent in with `acs override`.
 
 # docs/: folder name
 [[zone]]

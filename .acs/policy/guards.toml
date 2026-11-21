@@ -1,12 +1,14 @@
 # ACS guards: paths and commands agents may never touch.
 # Without this file (or a key in it) the built-in defaults below apply. Setting a key REPLACES
-# its default, so copy the defaults you want to keep.
+# its default, so copy the defaults you want to keep; `sealed` is the exception (see below).
 
-# Globs of paths no agent may write.
+# Globs of paths no agent may write. Globs listed here are added to the built-in ones below,
+# which always apply. The built-in `**/.env*` leaves out example files, whose names end in
+# .example, .sample, .template or .dist (such as .env.example). CI workflows are not sealed by
+# default; to keep agents out of them, add ".github/workflows/**" to this list.
 # sealed = [
 #   ".git/**",
 #   ".acs/**",
-#   ".github/workflows/**",
 #   "**/.env*",
 #   "**/.claude/settings*.json",
 #   "**/.claude/hooks/**",
@@ -16,11 +18,18 @@
 #   "**/.agent/plugins/**",
 #   "**/.agents/plugins.json",
 #   "**/.agent/plugins.json",
+#   "**/.codex/config.toml",
+#   "**/.codex/hooks.json",
 #   ".husky/**",
 # ]
 
 # Branches on which history rewrites and force pushes are denied.
 # protected_branches = ["main", "release/*"]
+
+# Ask before an agent writes or deletes outside the repository. Off by default: ACS guards the
+# repository. Paths it cannot resolve, and paths outside that link back into the repository, are
+# asked about either way; ACS's own state and harness settings are always denied.
+# protect_outside_repo = false
 
 # [destructive]
 # Files a command may delete outside the seat's claims (0 denies any such delete).

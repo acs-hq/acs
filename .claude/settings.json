@@ -2,9 +2,6 @@
   "attribution": {
     "sessionUrl": false
   },
-  "enabledPlugins": {
-    "acs@acs-plugins": true
-  },
   "extraKnownMarketplaces": {
     "acs-plugins": {
       "source": {
@@ -12,5 +9,8 @@
         "repo": "acs-hq/acs"
       }
     }
+  },
+  "enabledPlugins": {
+    "acs@acs-plugins": true
   }
 }
