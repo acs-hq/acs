@@ -94,7 +94,9 @@ acs doctor
 `acs plugin install` enables the plugin for this repository. With `--scope user` it gates every
 repository you open, even those that never adopted ACS. For Codex it adds ACS's hooks and MCP
 server to `.codex/config.toml`; Codex runs them once you trust the project and, in `/hooks`, the
-hooks. `acs init` writes the policy to
+hooks. It does not need the harness's own command line: if you use only a desktop app, it
+writes the same files and tells you the one step left to do in the app. `acs init` writes the
+policy to
 `.acs/policy/`, installs the git hooks and is safe to run again. In `acs doctor`, look for
 `0 failure(s)`.
 

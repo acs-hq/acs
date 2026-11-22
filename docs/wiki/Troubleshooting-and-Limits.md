@@ -24,6 +24,12 @@ acs plugin install claude-code
 
 The check only reads settings files, so it can warn about a plugin that is in fact installed somewhere it cannot see.
 
+**You use Claude Code only in the Claude desktop app.**
+Then there is no `claude` command, and `acs plugin install claude-code` writes the plugin into `.claude/settings.json` itself. Claude Code does not download a plugin that only that file turns on, so finish once on each machine: in the desktop app, open the repository in the Code tab, click **+** next to the prompt box, choose **Plugins**, then **Manage plugins**, add the marketplace `acs-hq/acs` if `acs` is not listed, and install `acs` for this project. With `--scope local` the download happens by itself once you trust the folder. `--scope user` needs the `claude` command, or the same steps in the app with "your user account" as the scope.
+
+**You use Antigravity or Codex only in their desktop apps.**
+`acs plugin install antigravity` and `acs plugin install codex` work without `agy` or `codex`. Antigravity loads `.agents/plugins/acs/` at the next session start. Codex reads `.codex/config.toml`; trust the project when the app asks, and if it never offers to review the ACS hooks, review them once in the Codex CLI's `/hooks`.
+
 **You fixed a problem, but ACS's tools still fail in Claude Code.**
 Claude Code remembers a failed connection to the ACS tools for 15 minutes, so a fixed problem can look broken for a while. Wait, then start a new session.
 
