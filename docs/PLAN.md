@@ -12,7 +12,7 @@ the sections below.
 
 **Built (on `main`):** Phases 0 to 7, the M1 parts of Phase 10, and the CLI part of the
 Antigravity gate. **Not built:** Phase 8, Phase 9, WP5.4 (instruction-file import), WP10.3 (threat
-model), and the rest of WP10.1 and WP10.2. No release has been tagged.
+model), and the rest of WP10.1 and WP10.2. The first release, `v1.0.0`, was tagged on 2026-11-23 (decision 0056).
 
 **Now:** getting ACS ready for its first testers (GitHub milestone "First testers").
 
@@ -35,6 +35,7 @@ model), and the rest of WP10.1 and WP10.2. No release has been tagged.
 | 2026-11-22 | WP5.2's channels lose npm (a launcher in front of `acs` on every hook call); the installers come first. The first release is `1.0.0`, not v0.1: release versions no longer follow the milestone labels of §8.3, whose gates stay. `acs` updates itself after a release tag (issue 79) | 0053 |
 | 2026-11-22 | WP5.2 gains a self-updater: release builds installed with the PowerShell installer on Windows replace themselves once a day, checked against a signing key compiled into `acs`; other installs get a notice | 0054 |
 | 2026-11-22 | WP10.1's CI perf job runs only on a release tag, a manual run, or a push with `[perf]` in a commit message, not on every push; its budgets and regression rule are unchanged | 0055 |
+| 2026-11-23 | The first release, `v1.0.0`, is tagged for the first testers before the §9.1 manual check and the Antigravity gate; the README and the setup skill install from the release again | 0056 |
 
 Open work is in GitHub issues, not in this file. Decisions are in `docs/decisions/`.
 

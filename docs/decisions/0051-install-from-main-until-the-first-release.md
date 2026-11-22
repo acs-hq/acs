@@ -1,6 +1,6 @@
 # 0051 — Install from `main` until the first release
 
-Date: 2026-11-21. Status: accepted.
+Date: 2026-11-21. Status: ended with `v1.0.0` (2026-11-23): the README and the setup skill install from the release again (decision 0056).
 
 Decided by: the human, that someone following the README must get the newest `main`, not an old
 build; Claude, for how: `cargo install --git` from `main` in the README and the setup skill.

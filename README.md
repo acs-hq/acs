@@ -74,22 +74,33 @@ branch. You only approve prompts.
 
 <br>
 
-ACS has no release yet, so build it from the `main` branch. You need Rust 1.97 or later: install
-it from [rustup.rs](https://rustup.rs), or run `rustup update stable`.
+Install the latest release. On Windows, in PowerShell:
+
+```powershell
+irm https://github.com/acs-hq/acs/releases/latest/download/acs-cli-installer.ps1 | iex
+```
+
+On macOS and Linux:
+
+```sh
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/acs-hq/acs/releases/latest/download/acs-cli-installer.sh | sh
+```
+
+On Windows, `acs` installed this way keeps itself up to date (see [Updates](docs/wiki/Updates.md));
+elsewhere, run the installer again for a new release. With Scoop:
+`scoop install https://github.com/acs-hq/acs/releases/latest/download/acs.json`. To build from
+source, with Rust 1.97 or later:
 
 ```sh
 cargo install --git https://github.com/acs-hq/acs --branch main --locked --force acs-cli
 ```
 
-Run the same line again whenever you want the newest `main`. If you use Claude Code, update its
-plugin as well, then restart it:
+If you use Claude Code, update its plugin when a new version comes out, then restart it:
 
 ```sh
 claude plugin marketplace update acs-plugins
 claude plugin update acs@acs-plugins
 ```
-
-Installers and package managers come with the first release.
 
 Then, in the repository:
 
