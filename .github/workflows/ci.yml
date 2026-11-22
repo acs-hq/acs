@@ -39,8 +39,14 @@ jobs:
   # The budgets of plan section 4.7, and no p99 over 20% worse than the commit before, measured turn
   # about on one runner. A failure has to happen twice: shared runners have bad minutes. Linux is the
   # gate; the other systems report only until the budgets are settled for them (decision 0023).
+  # It takes about 35 minutes, so it runs only on request (decision 0055): a release tag, a manual
+  # run of this workflow, or a push with `[perf]` in one of its commit messages.
   perf:
     name: perf (${{ matrix.os }})
+    if: >-
+      startsWith(github.ref, 'refs/tags/') ||
+      github.event_name == 'workflow_dispatch' ||
+      contains(join(github.event.commits.*.message, ' '), '[perf]')
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false

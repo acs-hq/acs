@@ -39,6 +39,13 @@ cargo test --workspace --locked --no-fail-fast   # without it, stops at the firs
   (source in `tests/e2e/`).
 - Latency benchmarks: `cargo bench -p acs-cli --bench hook_paths` (about 20 minutes on Windows;
   `ACS_PERF_FILES=2000` to try a change, not for reported numbers).
+- The benchmarks run only for a change that could move hook latency (decision 0055): what a hook
+  call runs (`acs-cli/src/hook`, `runtime`, `acs-core`, `acs-store`, `acs-paths`, `acs-shell`,
+  `acs-policy`, `acs-lore`, `acs-git`, `acs-os`, `acs-adapters`), the processes a hook path starts,
+  dependencies or build profiles, or `benches/`. Docs, tests, workflows and commands no hook runs
+  do not need them. For such a change, run them locally and put `[perf]` in a commit message of
+  the merge; CI's perf job runs only then, on a release tag, or by hand
+  (`gh workflow run CI --ref main`).
 - Regenerated outputs: `ACS_UPDATE_SCHEMAS=1 cargo test -p acs-core --test schemas` after changing
   doc comments on `acs-core` types (they feed `spec/schemas/`); `ACS_SHELL_BLESS=1` fills
   shell-corpus cases that have no `>` lines yet.
