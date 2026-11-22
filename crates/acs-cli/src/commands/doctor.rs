@@ -4,7 +4,7 @@
 //! Checks: `ACS_HOME` and its permissions, repository id, the state database (opens, passes
 //! `integrity_check`), the size of the copies kept for undo against their budget, the policy files,
 //! whether `default_target_branch` names a branch that exists, the compiled-policy cache, git
-//! hooks, `acs` on `PATH`,
+//! hooks, `acs` on `PATH`, how `acs` updates itself,
 //! the plugin of each detected harness, and whether the gate is off.
 //!
 //! Exit status is 1 when any check fails (after repairs), 0 otherwise; warnings do not fail.
@@ -166,6 +166,7 @@ pub fn run_checks(cwd: &Path, fix: bool) -> Vec<Check> {
             ),
         ));
         checks.push(check_acs_on_path(false));
+        checks.push(check_update(&home));
         return checks;
     };
     checks.extend(id_check);
@@ -222,6 +223,7 @@ pub fn run_checks(cwd: &Path, fix: bool) -> Vec<Check> {
             .hint(format!("install it with: {}", found.install.join(" && "))),
         });
     }
+    checks.push(check_update(&home));
     checks.push(check_gate(repo_home.as_ref(), db_usable));
     checks
 }
@@ -748,6 +750,22 @@ fn check_hooks(layout: &RepoLayout, fix: bool) -> Check {
             Check::fail(ID, TITLE, why).hint("run `acs doctor --fix` or `acs init`")
         }
         HooksHealth::Unknown(why) => Check::warn(ID, TITLE, why),
+    }
+}
+
+/// How this `acs` updates itself, from the settings and state files (decision 0054). Never
+/// touches the network. A failed check or a newer version that will not be installed on its own
+/// is a warning, not a failure.
+fn check_update(home: &Result<AcsHome, HomeError>) -> Check {
+    use crate::update::status::{Level, summarize};
+    let report = summarize(home.as_ref().ok()).report(crate::update::check::now_secs());
+    let check = match report.level {
+        Level::Pass => Check::pass("update", "Updates", report.message),
+        Level::Warn => Check::warn("update", "Updates", report.message),
+    };
+    match report.hint {
+        Some(hint) => check.hint(hint),
+        None => check,
     }
 }
 

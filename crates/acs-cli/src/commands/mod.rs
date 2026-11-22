@@ -28,5 +28,6 @@ mod support;
 pub mod sync;
 pub mod undo;
 pub mod uninstall;
+pub mod update;
 pub mod verify;
 pub mod watch;

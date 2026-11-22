@@ -117,6 +117,12 @@ fn handle(event: &ToolEvent, env: HookEnv) -> Decision {
     } else {
         absolute_cwd(&event.cwd)
     };
+    // The daily update check starts with a session, in any directory and whatever the
+    // repository's features are. It reads one small file, or nothing for a build that does not
+    // update itself, and never prints (decision 0054).
+    if event.phase == Phase::SessionStart {
+        crate::update::check::spawn_if_due(env.home.as_ref().ok(), env.now.as_second());
+    }
     // Not a repository ACS manages: nothing to coordinate.
     let Ok(session) = acs_git::discover(&cwd) else {
         return Decision::new(Outcome::Allow, ReasonCode::Ok, "");
