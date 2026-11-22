@@ -89,6 +89,15 @@ fn expand_home(raw: &str, var: impl Fn(&str) -> Option<std::ffi::OsString>) -> O
                 ("%acs_home%", "ACS_HOME"),
                 ("$claude_config_dir", "CLAUDE_CONFIG_DIR"),
                 ("${claude_config_dir}", "CLAUDE_CONFIG_DIR"),
+                // Where the installer's receipt lives (decision 0054).
+                ("$localappdata", "LOCALAPPDATA"),
+                ("${localappdata}", "LOCALAPPDATA"),
+                ("$env:localappdata", "LOCALAPPDATA"),
+                ("%localappdata%", "LOCALAPPDATA"),
+                ("$xdg_config_home", "XDG_CONFIG_HOME"),
+                ("${xdg_config_home}", "XDG_CONFIG_HOME"),
+                ("$env:xdg_config_home", "XDG_CONFIG_HOME"),
+                ("%xdg_config_home%", "XDG_CONFIG_HOME"),
             ];
             let (prefix, name) = candidates.iter().find(|(prefix, _)| {
                 lower.starts_with(prefix)
@@ -479,6 +488,24 @@ mod tests {
             expand_home("$ACS_HOME/repos", env).as_deref(),
             Some("/state/repos")
         );
+        let receipt_env = |name: &str| match name {
+            "LOCALAPPDATA" => Some("C:\\Users\\me\\AppData\\Local".into()),
+            "XDG_CONFIG_HOME" => Some("/home/me/.config".into()),
+            _ => None,
+        };
+        assert_eq!(
+            expand_home("$env:LOCALAPPDATA\\acs-cli", receipt_env).as_deref(),
+            Some("C:\\Users\\me\\AppData\\Local\\acs-cli")
+        );
+        assert_eq!(
+            expand_home("%LOCALAPPDATA%\\acs-cli", receipt_env).as_deref(),
+            Some("C:\\Users\\me\\AppData\\Local\\acs-cli")
+        );
+        assert_eq!(
+            expand_home("$XDG_CONFIG_HOME/acs-cli", receipt_env).as_deref(),
+            Some("/home/me/.config/acs-cli")
+        );
+        assert_eq!(expand_home("$LOCALAPPDATA/x", env), None, "unset");
         assert_eq!(expand_home("$HOMER/x", env), None);
         assert_eq!(expand_home("$HOME/$X", env), None);
         assert_eq!(expand_home("$OTHER/x", env), None);

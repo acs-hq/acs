@@ -53,7 +53,8 @@ impl OverrideView for StoreOverrides {
 
 /// The locations outside the work tree that agents may never write or delete: `ACS_HOME`, git
 /// directories outside the work tree (the common directory of a linked worktree), and the
-/// user-level configuration of Claude Code, Antigravity and Codex that can turn ACS off. For
+/// folder of the installer's receipt (`%LOCALAPPDATA%\acs-cli`, or `%XDG_CONFIG_HOME%\acs-cli`),
+/// the user-level configuration of Claude Code, Antigravity and Codex that can turn ACS off. For
 /// Codex that is its whole home folder (`$CODEX_HOME`, default `~/.codex`): besides
 /// `config.toml` and `hooks.json`, a profile there (`<name>.config.toml`) can switch hooks off.
 #[must_use]
@@ -80,6 +81,11 @@ pub fn outside_seals(ctx: &RepoContext) -> Vec<OutsideSeal> {
         if !canonical_prefix(dir).starts_with(&work_tree) {
             add(dir.clone(), "the repository's git directory", true);
         }
+    }
+    // The PowerShell installer's receipt: whoever edits it can change which directory the
+    // updater treats as its own (decision 0054).
+    for folder in crate::update::install::receipt_dirs() {
+        add(folder, "ACS install receipt", true);
     }
     let claude = std::env::var_os("CLAUDE_CONFIG_DIR")
         .filter(|v| !v.is_empty())

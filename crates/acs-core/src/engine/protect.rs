@@ -36,6 +36,7 @@ const STATEFUL: &[&str] = &[
     "override",
     "watch",
     "undo",
+    "update",
 ];
 
 /// Paths inside the repository that a command with unknown effects must not mention: ACS's
@@ -465,6 +466,10 @@ mod tests {
         for (line, shown) in [
             ("acs off", "acs off"),
             ("acs on", "acs on"),
+            ("acs update", "acs update"),
+            ("acs update off", "acs update"),
+            ("acs update pin 1.0.0", "acs update"),
+            ("xargs acs update", "acs update"),
             ("acs override --path x --once", "acs override"),
             ("acs claim a.rs", "acs claim"),
             ("acs release --all", "acs release"),

@@ -26,6 +26,31 @@ deny: acs lore review --accept prop_abc
 deny: acs lore review --reject prop_abc --json
 deny: acs some-future-command
 
+# ---- The updater: switching it, running it, and its install receipt (decision 0054) ----------
+deny: acs update
+deny: acs update --json
+deny: acs update off
+deny: acs update on
+deny: acs update pin 1.0.0
+deny: acs update unpin
+deny: acs update --background
+deny: xargs acs update
+deny: xargs -I{} acs update off
+deny: bash -c 'acs update off'
+deny: nohup acs update &
+deny: cargo run -p acs-cli -- update pin 0.1.0
+deny: ./target/debug/acs update off
+deny-ps: acs update off
+deny-ps: Start-Process acs -ArgumentList update
+deny: rm "$LOCALAPPDATA/acs-cli/acs-cli-receipt.json"
+deny: echo '{}' > "$LOCALAPPDATA/acs-cli/acs-cli-receipt.json"
+deny: rm -rf "$XDG_CONFIG_HOME/acs-cli"
+deny: cp evil.json "$XDG_CONFIG_HOME/acs-cli/acs-cli-receipt.json"
+deny: rm -rf "$ACS_HOME/update"
+deny: echo 'auto = true' > "$ACS_HOME/update/settings.toml"
+deny-ps: Remove-Item $env:LOCALAPPDATA\acs-cli\acs-cli-receipt.json
+deny-ps: Set-Content -Path $env:LOCALAPPDATA\acs-cli\acs-cli-receipt.json -Value '{}'
+
 # ---- ... that look like help but do something else (decision 0038) ---------------------------
 deny: acs override --path --help --once
 deny: acs override --path --help
@@ -137,6 +162,9 @@ allow: acs status
 allow: acs status --json
 allow: acs sync
 allow: acs doctor
+allow: acs doctor --json
+allow: acs update --help
+allow: acs update pin --help
 allow: acs lore list
 allow: acs lore show src/lib.rs
 allow: acs lore stale --json
