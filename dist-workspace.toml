@@ -8,7 +8,7 @@ cargo-dist-version = "0.33.1"
 # CI backends to support
 ci = "github"
 # The installers to generate for each app
-installers = ["shell", "powershell", "npm", "homebrew"]
+installers = ["shell", "powershell", "homebrew"]
 # Target platforms to build apps for (Rust target-triple syntax)
 targets = ["aarch64-apple-darwin", "aarch64-unknown-linux-gnu", "aarch64-pc-windows-msvc", "x86_64-apple-darwin", "x86_64-unknown-linux-gnu", "x86_64-unknown-linux-musl", "x86_64-pc-windows-msvc"]
 # Path that installers should place binaries in
@@ -21,12 +21,9 @@ pr-run-mode = "skip"
 tap = "acs-hq/homebrew-tap"
 # The Homebrew formula name (the package is `acs-cli`, the command is `acs`)
 formula = "acs"
-# The npm package: @acs-hq/acs, which installs the `acs` command
-npm-scope = "@acs-hq"
-npm-package = "acs"
-# Publish jobs to run in CI. The Homebrew formula is built but not published until the tap exists
-# (docs/releases/README.md says how to turn it on)
-publish-jobs = ["npm"]
+# Publish jobs to run in CI. None: npm is not a channel (decision 0053), and the Homebrew formula
+# is built but not published until the tap exists (docs/releases/README.md says how to turn it on)
+publish-jobs = []
 # Adds the Scoop manifest to the release's files
 global-artifacts-jobs = ["./scoop-manifest"]
 # Tries every installer of the published release on a clean machine

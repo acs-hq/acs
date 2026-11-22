@@ -14,7 +14,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: The release tag, for example v0.1.0
+        description: The release tag, for example v1.0.0
         required: true
         type: string
 
@@ -82,17 +82,6 @@ jobs:
           & "$env:USERPROFILE\scoop\shims\scoop.cmd" install "$env:RELEASE/$env:TAG/acs.json"
       - shell: bash
         run: sh .github/smoke.sh "$TAG"
-
-  npm:
-    name: npm
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-      - run: npx --yes "@acs-hq/acs@${TAG#v}" --version
-      - run: npm install --global "@acs-hq/acs@${TAG#v}"
-      - run: sh .github/smoke.sh "$TAG"
 
   plugin:
     name: acs plugin install, real Claude Code
