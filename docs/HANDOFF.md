@@ -6,6 +6,22 @@ written after Phase 1; that version is in git history (`git show 49c2cf0:docs/HA
 its process lessons still apply (summarized in section 2). Read this with the implementation plan
 and `docs/decisions/` before starting the next phase.
 
+**`acs` updates itself (2026-11-22, decision 0054, issue 79; branch `issue-79-self-update`).**
+`crates/acs-cli/src/update/` (version rules, signature, install method, settings and state under
+`ACS_HOME\update\`, curl/tar, swap, the check) and `acs update [on|off|pin|unpin]`. Only builds with
+the cargo feature `self-update` act (`dist` turns it on in `Cargo.toml`); a test build can
+redirect everything through `ACS_UPDATE_TEST_*` variables that exist only in debug builds (listed in
+`update/mod.rs`, used by `tests/self_update.rs`, Windows only). The session-start hook calls
+`update::check::spawn_if_due` from `hook::handle` (before the repository is looked at, so it needs
+no repository). **The compiled-in release key is all zeros** (`update/signature.rs`): every update is
+refused until the human creates the key and sets `ACS_RELEASE_SIGNING_KEY` (`docs/releases/README.md`,
+"Signing"); the message format lives in `.github/sign-release-message.sh` and a test keeps it
+equal to the Rust builder. Self-protection: `update` is in `STATEFUL`, the installer's receipt
+folder is an outside seal, and `%LOCALAPPDATA%` / `%XDG_CONFIG_HOME%` expand in shell words. In
+the integration tests a fake server must write in small pieces (one huge write is cut off by the
+close and resets curl on Windows). **Reinstall `acs` after merging**; no schema change. Not run:
+the real rc.1 to rc.2 update (human).
+
 **Tracking moved (2026-11-11).** The plan is `docs/PLAN.md` (no longer in the human's Downloads
 folder), open work is in GitHub issues, and `CLAUDE.md` says how sessions keep both current.
 Decision 0031 puts first testers before Phase 8, Phase 9 and Spec 1.0.

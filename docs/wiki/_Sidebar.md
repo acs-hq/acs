@@ -8,5 +8,6 @@
 - [Working with ACS](Working-with-ACS)
 - [Lore](Lore)
 - [History and undo](History-and-Undo)
+- [Updates](Updates)
 - [Troubleshooting and limits](Troubleshooting-and-Limits)
 - [Removing ACS](Removing-ACS)

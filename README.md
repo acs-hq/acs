@@ -43,6 +43,14 @@ agent or twenty, yours or a teammate's, the rules are the same.
 | --- | --- | --- |
 | A single static `acs` program. No daemon and no hosted service. Teams share state through the git remote they already have. | Every decision is plain code over your policy files. The same call gets the same answer every time. | A check is a fresh process with a 15 ms budget, so the agent doesn't notice it. |
 
+The one thing that leaves your machine, besides your own git remote: a release build of `acs`
+contacts github.com once a day to check for a newer release. It does this from a background
+process, never from a hook, and an agent never sees it. Only installs made by the PowerShell
+installer on Windows replace themselves, within the same major version and only after checking a
+signature; Scoop, macOS and Linux installs are only told that a new version exists. Turn it off
+with `acs update off`, or install with `ACS_CLI_DISABLE_UPDATE=1` set. See
+[Updates](docs/wiki/Updates.md).
+
 When ACS blocks a call, the agent is told why and what to do instead:
 
 ```text
@@ -173,6 +181,7 @@ never rewritten.
 | `acs lore` | Read the repository's lore and review what agents suggest |
 | `acs log` · `acs blame` · `acs undo` | See past sessions, who wrote a line, and take a session back by id or with `--last` |
 | `acs verify` · `acs stats` | Check the records are unaltered. Count what ACS prevented. |
+| `acs update` | Check for a new release and install it now. `on` · `off` · `pin <version>` · `unpin` change how `acs` updates itself. |
 | `acs uninstall` | Take ACS out of a repository |
 
 Every command takes `--json` and `--help`. An extension for VS Code claims the files you edit and
