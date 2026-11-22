@@ -219,6 +219,15 @@ jobs:
     with:
       plan: ${{ needs.plan.outputs.val }}
     secrets: inherit
+
+  custom-sign-release:
+    needs:
+      - plan
+      - build-local-artifacts
+    uses: ./.github/workflows/sign-release.yml
+    with:
+      plan: ${{ needs.plan.outputs.val }}
+    secrets: inherit
   # Determines if we should publish/announce
   host:
     needs:
@@ -226,8 +235,9 @@ jobs:
       - build-local-artifacts
       - build-global-artifacts
       - custom-scoop-manifest
+      - custom-sign-release
     # Only run if we're "publishing", and only if plan, local and global didn't fail (skipped is fine)
-    if: ${{ always() && needs.plan.result == 'success' && needs.plan.outputs.publishing == 'true' && (needs.build-global-artifacts.result == 'skipped' || needs.build-global-artifacts.result == 'success') && (needs.custom-scoop-manifest.result == 'skipped' || needs.custom-scoop-manifest.result == 'success') && (needs.build-local-artifacts.result == 'skipped' || needs.build-local-artifacts.result == 'success') }}
+    if: ${{ always() && needs.plan.result == 'success' && needs.plan.outputs.publishing == 'true' && (needs.build-global-artifacts.result == 'skipped' || needs.build-global-artifacts.result == 'success') && (needs.custom-scoop-manifest.result == 'skipped' || needs.custom-scoop-manifest.result == 'success') && (needs.custom-sign-release.result == 'skipped' || needs.custom-sign-release.result == 'success') && (needs.build-local-artifacts.result == 'skipped' || needs.build-local-artifacts.result == 'success') }}
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     runs-on: "ubuntu-22.04"

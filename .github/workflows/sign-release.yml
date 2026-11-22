@@ -1,0 +1,67 @@
+# Signs every release archive with the project's Ed25519 key, so that `acs update` can check what
+# it downloads (decision 0054). `dist` calls this from release.yml (`global-artifacts-jobs`), and
+# every artifact named `artifacts-*` ends up on the GitHub Release.
+#
+# The key is the repository secret ACS_RELEASE_SIGNING_KEY (a PEM private key); the human creates
+# it, the commands are in docs/releases/README.md. Each archive gets `<archive>.sig`: the 64-byte
+# signature, base64, one line, over the message `.github/sign-release-message.sh` prints.
+name: Sign release
+
+on:
+  workflow_call:
+    inputs:
+      plan:
+        required: true
+        type: string
+
+jobs:
+  sign:
+    runs-on: ubuntu-22.04
+    env:
+      PLAN: ${{ inputs.plan }}
+      SIGNING_KEY: ${{ secrets.ACS_RELEASE_SIGNING_KEY }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Fetch the archives
+        uses: actions/download-artifact@v8
+        with:
+          pattern: artifacts-build-local-*
+          path: target/distrib/
+          merge-multiple: true
+      - name: Sign the archives
+        run: |
+          set -eu
+          if [ -z "$SIGNING_KEY" ]; then
+            echo "::error::The secret ACS_RELEASE_SIGNING_KEY is not set, so the release cannot be signed (docs/releases/README.md)."
+            exit 1
+          fi
+          tag=$(echo "$PLAN" | jq --raw-output '.announcement_tag')
+          umask 077
+          key="$RUNNER_TEMP/release-signing-key.pem"
+          pub="$RUNNER_TEMP/release-signing-key.pub"
+          trap 'rm -f "$key" "$pub"' EXIT
+          printf '%s\n' "$SIGNING_KEY" > "$key"
+          openssl pkey -in "$key" -pubout -out "$pub"
+          mkdir -p target/signatures
+          count=0
+          for archive in target/distrib/acs-cli-*.zip target/distrib/acs-cli-*.tar.xz; do
+            [ -e "$archive" ] || continue
+            name=$(basename "$archive")
+            sh .github/sign-release-message.sh "$tag" "$archive" > "$RUNNER_TEMP/message"
+            openssl pkeyutl -sign -rawin -inkey "$key" -in "$RUNNER_TEMP/message" -out "$RUNNER_TEMP/signature"
+            openssl pkeyutl -verify -rawin -pubin -inkey "$pub" -in "$RUNNER_TEMP/message" -sigfile "$RUNNER_TEMP/signature"
+            { base64 -w0 "$RUNNER_TEMP/signature"; echo; } > "target/signatures/$name.sig"
+            count=$((count + 1))
+          done
+          if [ "$count" -eq 0 ]; then
+            echo "::error::No archives found to sign in target/distrib/."
+            exit 1
+          fi
+          echo "Signed $count archives for $tag"
+          ls -l target/signatures
+      - uses: actions/upload-artifact@v7
+        with:
+          name: artifacts-signatures
+          path: target/signatures/*.sig

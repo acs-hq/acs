@@ -193,6 +193,35 @@ mod tests {
         );
     }
 
+    /// The release workflow builds the message with the shell script; its `printf` format must
+    /// produce exactly what [`message`] does, or no release would ever verify.
+    #[test]
+    fn the_signing_script_and_the_workflow_agree_with_the_message_builder() {
+        let script = include_str!("../../../../.github/sign-release-message.sh");
+        let line = script
+            .lines()
+            .find(|l| l.trim_start().starts_with("printf "))
+            .expect("the script has a printf line");
+        let format = line.split('\'').nth(1).expect("a single-quoted format");
+        let args: Vec<&str> = line.split('\'').nth(2).unwrap().split_whitespace().collect();
+        assert_eq!(args, ["\"$tag\"", "\"$name\"", "\"$sum\""]);
+        let mut parts = format.split("%s");
+        let mut built = parts.next().unwrap().to_owned();
+        for (value, rest) in ["v1.2.3", "a.zip", "00ff"].iter().zip(parts) {
+            built.push_str(value);
+            built.push_str(rest);
+        }
+        let built = built.replace("\\n", "\n");
+        assert_eq!(built, message("v1.2.3", "a.zip", "00ff"));
+        assert!(script.contains("sha256sum"));
+
+        let workflow = include_str!("../../../../.github/workflows/sign-release.yml");
+        assert!(workflow.contains("sh .github/sign-release-message.sh \"$tag\" \"$archive\""));
+        assert!(workflow.contains("openssl pkeyutl -sign -rawin"));
+        assert!(workflow.contains("ACS_RELEASE_SIGNING_KEY"));
+        assert!(workflow.contains("name: artifacts-signatures"));
+    }
+
     #[test]
     fn sha256_matches_the_known_digest() {
         assert_eq!(
