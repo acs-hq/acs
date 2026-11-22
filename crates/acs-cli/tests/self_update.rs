@@ -34,6 +34,16 @@ fn tag() -> String {
     format!("v{VERSION}")
 }
 
+/// The version the running copy pretends to be: older than [`VERSION`] in an earlier major, and a
+/// pre-release when [`VERSION`] is one, because only a pre-release build follows pre-releases.
+fn old() -> String {
+    if VERSION.contains('-') {
+        "0.9.0-rc.0".to_owned()
+    } else {
+        "0.9.0".to_owned()
+    }
+}
+
 fn archive_name() -> String {
     format!("acs-cli-{}.zip", target_triple().unwrap())
 }
@@ -315,11 +325,11 @@ fn built() -> Vec<u8> {
 fn an_old_build_updates_itself_and_records_it() {
     let rig = Rig::installer();
     let server = serve(release_routes(&rig.work(), &tag(), 1));
-    let out = rig.run(&["update", "--json"], &server.url(), 1, "0.9.0");
+    let out = rig.run(&["update", "--json"], &server.url(), 1, &old());
     assert!(out.status.success(), "{out:?}");
     let report = json_of(&out);
     assert_eq!(report["result"], "updated", "{report}");
-    assert_eq!(report["details"]["from"], "0.9.0");
+    assert_eq!(report["details"]["from"], old());
     assert_eq!(report["details"]["to"], VERSION);
 
     assert_eq!(
@@ -336,7 +346,7 @@ fn an_old_build_updates_itself_and_records_it() {
     );
 
     let state = rig.state().unwrap();
-    assert_eq!(state["last_update"]["from"], "0.9.0");
+    assert_eq!(state["last_update"]["from"], old());
     assert_eq!(state["last_update"]["to"], VERSION);
     assert_eq!(state["newest_known"], VERSION);
     assert!(state.get("last_error").is_none(), "{state}");
@@ -369,7 +379,7 @@ fn the_background_check_updates_within_the_major_version() {
 fn the_background_check_only_notices_a_newer_major_version() {
     let rig = Rig::installer();
     let server = serve(release_routes(&rig.work(), &tag(), 1));
-    let out = rig.run(&["update", "--background"], &server.url(), 1, "0.9.0");
+    let out = rig.run(&["update", "--background"], &server.url(), 1, &old());
     assert!(out.status.success(), "{out:?}");
     assert_eq!(rig.installed(), rig.old_bytes);
     let state = rig.state().unwrap();
@@ -382,7 +392,7 @@ fn a_bad_signature_is_refused_and_doctor_shows_it() {
     let rig = Rig::installer();
     // Signed by a different key than the one the build trusts.
     let server = serve(release_routes(&rig.work(), &tag(), 2));
-    let out = rig.run(&["update", "--json"], &server.url(), 1, "0.9.0");
+    let out = rig.run(&["update", "--json"], &server.url(), 1, &old());
     assert!(!out.status.success(), "{out:?}");
     let report = json_of(&out);
     assert_eq!(report["ok"], false);
@@ -400,7 +410,7 @@ fn a_bad_signature_is_refused_and_doctor_shows_it() {
         "{state}"
     );
 
-    let doctor = rig.run(&["doctor", "--json"], &server.url(), 1, "0.9.0");
+    let doctor = rig.run(&["doctor", "--json"], &server.url(), 1, &old());
     let report = json_of(&doctor);
     let check = report["checks"]
         .as_array()
@@ -428,7 +438,7 @@ fn a_tampered_archive_is_refused() {
         .unwrap();
     zip_route.1.push(0);
     let server = serve(routes);
-    let out = rig.run(&["update", "--json"], &server.url(), 1, "0.9.0");
+    let out = rig.run(&["update", "--json"], &server.url(), 1, &old());
     assert!(!out.status.success(), "{out:?}");
     assert_eq!(rig.installed(), rig.old_bytes);
     assert!(rig.leftovers().is_empty());
@@ -447,7 +457,7 @@ fn a_signature_for_another_release_tag_is_refused() {
         (format!("/download/{tag}/{name}"), zip),
         (format!("/download/{tag}/{name}.sig"), sig),
     ]);
-    let out = rig.run(&["update", "--json"], &server.url(), 1, "0.9.0");
+    let out = rig.run(&["update", "--json"], &server.url(), 1, &old());
     assert!(!out.status.success(), "{out:?}");
     assert_eq!(rig.installed(), rig.old_bytes);
 }
@@ -467,7 +477,7 @@ fn the_built_in_release_key_refuses_an_archive_signed_by_another_key() {
         .env_remove("ACS_UPDATE_TEST_PUBLIC_KEY")
         .env("ACS_UPDATE_TEST_BASE_URL", server.url())
         .env("ACS_UPDATE_TEST_RELEASE_BUILD", "1")
-        .env("ACS_UPDATE_TEST_RUNNING_VERSION", "0.9.0")
+        .env("ACS_UPDATE_TEST_RUNNING_VERSION", old())
         .output()
         .unwrap();
     assert!(!out.status.success(), "{out:?}");
@@ -485,7 +495,7 @@ fn the_built_in_release_key_refuses_an_archive_signed_by_another_key() {
 #[test]
 fn offline_changes_nothing_and_records_the_failure() {
     let rig = Rig::installer();
-    let out = rig.run(&["update", "--json"], &offline_url(), 1, "0.9.0");
+    let out = rig.run(&["update", "--json"], &offline_url(), 1, &old());
     assert!(!out.status.success(), "{out:?}");
     assert_eq!(rig.installed(), rig.old_bytes);
     assert!(rig.leftovers().is_empty());
@@ -505,19 +515,19 @@ fn offline_changes_nothing_and_records_the_failure() {
 fn auto_off_makes_no_request_from_the_background_path() {
     let rig = Rig::installer();
     let server = serve(release_routes(&rig.work(), &tag(), 1));
-    let out = rig.run(&["update", "off"], &server.url(), 1, "0.9.0");
+    let out = rig.run(&["update", "off"], &server.url(), 1, &old());
     assert!(out.status.success(), "{out:?}");
     let settings = fs::read_to_string(rig.home.join("update").join("settings.toml")).unwrap();
     assert!(settings.contains("auto = false"), "{settings}");
 
-    let out = rig.run(&["update", "--background"], &server.url(), 1, "0.9.0");
+    let out = rig.run(&["update", "--background"], &server.url(), 1, &old());
     assert!(out.status.success(), "{out:?}");
     assert!(server.hits().is_empty(), "{:?}", server.hits());
     assert!(rig.state().is_none());
     assert_eq!(rig.installed(), rig.old_bytes);
 
     // Doctor says so, without any request.
-    let doctor = rig.run(&["doctor", "--json"], &server.url(), 1, "0.9.0");
+    let doctor = rig.run(&["doctor", "--json"], &server.url(), 1, &old());
     let report = json_of(&doctor);
     let message = report["checks"]
         .as_array()
@@ -536,7 +546,7 @@ fn auto_off_makes_no_request_from_the_background_path() {
 fn a_pin_to_an_older_version_is_exactly_that_version() {
     let rig = Rig::installer();
     let server = serve(release_routes(&rig.work(), &tag(), 1));
-    let pin = rig.run(&["update", "pin", VERSION], &server.url(), 1, "0.9.0");
+    let pin = rig.run(&["update", "pin", VERSION], &server.url(), 1, &old());
     assert!(pin.status.success(), "{pin:?}");
     // Running a build that is already past the pin, the check goes back to it.
     let out = rig.run(&["update", "--json"], &server.url(), 1, "99.0.0");
@@ -551,7 +561,7 @@ fn a_pin_to_an_older_version_is_exactly_that_version() {
 fn a_scoop_install_gets_a_notice_and_no_change() {
     let rig = Rig::scoop();
     let server = serve(release_routes(&rig.work(), &tag(), 1));
-    let out = rig.run(&["update", "--json"], &server.url(), 1, "0.9.0");
+    let out = rig.run(&["update", "--json"], &server.url(), 1, &old());
     assert!(out.status.success(), "{out:?}");
     let report = json_of(&out);
     assert_eq!(report["result"], "notice", "{report}");
@@ -578,7 +588,7 @@ fn a_release_no_newer_than_the_running_version_changes_nothing() {
         "/releases".to_owned(),
         releases_json(&["v0.5.0", "v0.4.0"]),
     )]);
-    let out = rig.run(&["update", "--json"], &server.url(), 1, "0.9.0");
+    let out = rig.run(&["update", "--json"], &server.url(), 1, &old());
     assert!(out.status.success(), "{out:?}");
     assert_eq!(json_of(&out)["result"], "up_to_date");
     assert_eq!(rig.installed(), rig.old_bytes);
@@ -588,12 +598,12 @@ fn a_release_no_newer_than_the_running_version_changes_nothing() {
 fn a_second_background_check_is_not_started_within_a_day() {
     let rig = Rig::installer();
     let server = serve(release_routes(&rig.work(), &tag(), 1));
-    let out = rig.run(&["update", "--background"], &server.url(), 1, "0.9.0");
+    let out = rig.run(&["update", "--background"], &server.url(), 1, &old());
     assert!(out.status.success(), "{out:?}");
     let hits = server.hits().len();
     assert!(hits >= 1);
     // Started just now: not due again.
-    let out = rig.run(&["update", "--background"], &server.url(), 1, "0.9.0");
+    let out = rig.run(&["update", "--background"], &server.url(), 1, &old());
     assert!(out.status.success(), "{out:?}");
     assert_eq!(server.hits().len(), hits);
 }
