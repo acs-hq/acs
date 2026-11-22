@@ -42,8 +42,11 @@ Then store the PEM somewhere safe and delete it from the working folder. Releasi
 whose `RELEASE_PUBLIC_KEY` does not match the secret produces releases that nobody can update to;
 the Windows run below catches that.
 
-The updater is tried with pre-release tags: tag `v1.0.0-rc.1`, install it with the PowerShell
-installer, tag `v1.0.0-rc.2`, and see `acs` replace itself (`acs update` does it at once; the daily
+The updater is tried with pre-release tags. `dist` only releases a tag that equals the version in
+`Cargo.toml`, so each tag needs a commit that sets the version first (in `Cargo.toml` and
+`integrations/antigravity/plugin.json`, then `cargo metadata` to refresh `Cargo.lock`): set
+`1.0.0-rc.1`, tag `v1.0.0-rc.1`, install it with the PowerShell installer, set `1.0.0-rc.2`, tag
+`v1.0.0-rc.2`, and see `acs` replace itself (`acs update` does it at once; the daily
 check does it by itself). A release candidate follows release candidates, and the first stable
 `v1.0.0` after them. Record that run as `docs/releases/v1.0.0-updater.md`. If your antivirus
 blocks the new file, `acs doctor` shows it; add an exception only if the run shows one is needed.
