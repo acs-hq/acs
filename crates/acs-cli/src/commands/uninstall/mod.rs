@@ -19,8 +19,6 @@
 //! were before `init`. The plan is shown before anything changes; `--dry-run` shows it only.
 //! Agents may not run it (it is not in the read-only list of `acs_core::engine::protect`).
 
-pub mod settings;
-
 use std::fmt::Write as _;
 use std::io::{BufRead as _, IsTerminal as _, Write as _};
 use std::path::{Path, PathBuf};
@@ -32,7 +30,7 @@ use acs_store::{AcsHome, RepoIdentity};
 use clap::Args;
 use serde::Serialize;
 
-use self::settings::Edit;
+use super::claude_settings::{self as settings, Edit};
 use super::codex_config;
 use super::init::harness::{
     CLAUDE_CODE_PLUGIN, claude_code_project_settings, claude_code_user_settings,
