@@ -19,8 +19,11 @@ a test pins it to the base64 the human pasted, so a change to it is deliberate).
 equal to the Rust builder. Self-protection: `update` is in `STATEFUL`, the installer's receipt
 folder is an outside seal, and `%LOCALAPPDATA%` / `%XDG_CONFIG_HOME%` expand in shell words. In
 the integration tests a fake server must write in small pieces (one huge write is cut off by the
-close and resets curl on Windows). **Reinstall `acs` after merging**; no schema change. Not run:
-the real rc.1 to rc.2 update (human).
+close and resets curl on Windows). **Reinstall `acs` after merging**; no schema change. The real
+update ran on 2026-11-22: `v1.0.0-rc.2` installed with the PowerShell installer replaced itself with
+`v1.0.0-rc.3` (`docs/releases/v1.0.0-updater.md`). `v1.0.0-rc.1` exists as a tag only (its Apple
+Silicon build had no runner). Every version commit needs the whole test suite: the updater tests
+depend on whether the version is a pre-release.
 
 **Tracking moved (2026-11-11).** The plan is `docs/PLAN.md` (no longer in the human's Downloads
 folder), open work is in GitHub issues, and `CLAUDE.md` says how sessions keep both current.
