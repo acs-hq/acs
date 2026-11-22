@@ -143,7 +143,7 @@ pub fn b64_encode(bytes: &[u8]) -> String {
 #[must_use]
 pub fn b64_decode(text: &str) -> Option<Vec<u8>> {
     let bytes = text.as_bytes();
-    if bytes.is_empty() || bytes.len() % 4 != 0 {
+    if bytes.is_empty() || !bytes.len().is_multiple_of(4) {
         return None;
     }
     let mut out = Vec::new();
@@ -203,7 +203,12 @@ mod tests {
             .find(|l| l.trim_start().starts_with("printf "))
             .expect("the script has a printf line");
         let format = line.split('\'').nth(1).expect("a single-quoted format");
-        let args: Vec<&str> = line.split('\'').nth(2).unwrap().split_whitespace().collect();
+        let args: Vec<&str> = line
+            .split('\'')
+            .nth(2)
+            .unwrap()
+            .split_whitespace()
+            .collect();
         assert_eq!(args, ["\"$tag\"", "\"$name\"", "\"$sum\""]);
         let mut parts = format.split("%s");
         let mut built = parts.next().unwrap().to_owned();

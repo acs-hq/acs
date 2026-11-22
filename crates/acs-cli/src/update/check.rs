@@ -335,9 +335,8 @@ fn apply(ctx: &Context<'_>, exe: &Path, release: &Release) -> Result<(), String>
         let _ = fs::remove_file(&placed);
         return Err(why);
     }
-    swap::swap(exe, &placed, ctx.now).map_err(|why| {
+    swap::swap(exe, &placed, ctx.now).inspect_err(|_| {
         let _ = fs::remove_file(&placed);
-        why
     })?;
     Ok(())
 }
