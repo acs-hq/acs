@@ -235,6 +235,25 @@ mod tests {
         );
     }
 
+    /// Made with real OpenSSL 3.2 the way `sign-release.yml` signs, from a throwaway key:
+    /// `sign-release-message.sh v1.0.0-rc.1 acs-cli-x86_64-pc-windows-msvc.zip` over a file
+    /// holding `hello acs\n`, then `openssl pkeyutl -sign -rawin` and `base64 -w0`. The key is the
+    /// last 32 bytes of `openssl pkey -pubout -outform DER`, which is how the real key goes into
+    /// [`RELEASE_PUBLIC_KEY`].
+    #[test]
+    fn a_signature_made_by_openssl_verifies() {
+        let key = decode_hex32("66fc6a7d00b0b6c162723bc70cf8a535aaa73428f5ccb23fbd431523e61cf4a6")
+            .unwrap();
+        let sig = "UAz+ZledrObhVEDkSFveJErFrqGD/W2PWgTUiY9FvdB6DEMZMiLyURX9ZWfI3w6YgC+20XTFArbXH/lri2FHAw==\n";
+        let name = "acs-cli-x86_64-pc-windows-msvc.zip";
+        assert_eq!(
+            verify(&key, "v1.0.0-rc.1", name, b"hello acs\n", sig),
+            Ok(())
+        );
+        assert!(verify(&key, "v1.0.0-rc.2", name, b"hello acs\n", sig).is_err());
+        assert!(verify(&key, "v1.0.0-rc.1", name, b"hello acs!", sig).is_err());
+    }
+
     #[test]
     fn a_good_signature_verifies() {
         let sig = signed("v1.0.0", NAME, b"archive");
