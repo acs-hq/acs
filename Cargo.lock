@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "acs-adapters"
-version = "1.0.0"
+version = "1.0.0-rc.1"
 dependencies = [
  "acs-core",
  "serde_json",
@@ -12,7 +12,7 @@ dependencies = [
 
 [[package]]
 name = "acs-cli"
-version = "1.0.0"
+version = "1.0.0-rc.1"
 dependencies = [
  "acs-adapters",
  "acs-core",
@@ -41,7 +41,7 @@ dependencies = [
 
 [[package]]
 name = "acs-core"
-version = "1.0.0"
+version = "1.0.0-rc.1"
 dependencies = [
  "jiff",
  "jsonschema",
@@ -55,7 +55,7 @@ dependencies = [
 
 [[package]]
 name = "acs-git"
-version = "1.0.0"
+version = "1.0.0-rc.1"
 dependencies = [
  "acs-core",
  "acs-store",
@@ -68,7 +68,7 @@ dependencies = [
 
 [[package]]
 name = "acs-lore"
-version = "1.0.0"
+version = "1.0.0-rc.1"
 dependencies = [
  "acs-core",
  "acs-git",
@@ -81,7 +81,7 @@ dependencies = [
 
 [[package]]
 name = "acs-mcp"
-version = "1.0.0"
+version = "1.0.0-rc.1"
 dependencies = [
  "rmcp",
  "schemars",
@@ -93,14 +93,14 @@ dependencies = [
 
 [[package]]
 name = "acs-os"
-version = "1.0.0"
+version = "1.0.0-rc.1"
 dependencies = [
  "windows-sys",
 ]
 
 [[package]]
 name = "acs-paths"
-version = "1.0.0"
+version = "1.0.0-rc.1"
 dependencies = [
  "acs-core",
  "dunce",
@@ -111,7 +111,7 @@ dependencies = [
 
 [[package]]
 name = "acs-policy"
-version = "1.0.0"
+version = "1.0.0-rc.1"
 dependencies = [
  "acs-core",
  "globset",
@@ -124,11 +124,11 @@ dependencies = [
 
 [[package]]
 name = "acs-semantic"
-version = "1.0.0"
+version = "1.0.0-rc.1"
 
 [[package]]
 name = "acs-shell"
-version = "1.0.0"
+version = "1.0.0-rc.1"
 dependencies = [
  "acs-core",
  "serde",
@@ -139,7 +139,7 @@ dependencies = [
 
 [[package]]
 name = "acs-store"
-version = "1.0.0"
+version = "1.0.0-rc.1"
 dependencies = [
  "acs-core",
  "dunce",
