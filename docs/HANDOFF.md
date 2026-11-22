@@ -13,9 +13,9 @@ the cargo feature `self-update` act (`dist` turns it on in `Cargo.toml`); a test
 redirect everything through `ACS_UPDATE_TEST_*` variables that exist only in debug builds (listed in
 `update/mod.rs`, used by `tests/self_update.rs`, Windows only). The session-start hook calls
 `update::check::spawn_if_due` from `hook::handle` (before the repository is looked at, so it needs
-no repository). **The compiled-in release key is all zeros** (`update/signature.rs`): every update is
-refused until the human creates the key and sets `ACS_RELEASE_SIGNING_KEY` (`docs/releases/README.md`,
-"Signing"); the message format lives in `.github/sign-release-message.sh` and a test keeps it
+no repository). **The release key is real** since 2026-11-22: the human created it, stored the private half as the
+secret `ACS_RELEASE_SIGNING_KEY` and the public half is `RELEASE_PUBLIC_KEY` (`update/signature.rs`;
+a test pins it to the base64 the human pasted, so a change to it is deliberate). The message format lives in `.github/sign-release-message.sh` and a test keeps it
 equal to the Rust builder. Self-protection: `update` is in `STATEFUL`, the installer's receipt
 folder is an outside seal, and `%LOCALAPPDATA%` / `%XDG_CONFIG_HOME%` expand in shell words. In
 the integration tests a fake server must write in small pieces (one huge write is cut off by the
@@ -228,8 +228,8 @@ prompts and `/hooks` review, macOS and Linux, the Codex desktop app. No skills s
      Unmeasured leads: `current_human_seat` starts `git config` on every `acs status`, and post-tool
      has not been split into stages. The plan's fallback is a warm server (section 9.2), which only
      the human can approve.
-  2. The release setup only the human can do (`docs/releases/README.md`): name check and the
-     release signing key (decision 0054). There is no npm channel any more (decision 0053). Every
+  2. The release setup only the human can do (`docs/releases/README.md`): name check (the
+     release signing key exists since 2026-11-22, decision 0054). There is no npm channel any more (decision 0053). Every
      installer needs a public repository. Homebrew is built but not published until the human
      wants it (decision 0021). **The first release is `v1.0.0`** (decision 0053).
   3. The first tag, which is the first real run of `release.yml` and `installers.yml`.

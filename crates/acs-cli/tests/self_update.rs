@@ -453,16 +453,18 @@ fn a_signature_for_another_release_tag_is_refused() {
 }
 
 #[test]
-fn a_build_without_a_release_key_refuses_every_update() {
+fn the_built_in_release_key_refuses_an_archive_signed_by_another_key() {
     let rig = Rig::installer();
     let server = serve(release_routes(&rig.work(), &tag(), 1));
-    // The all-zero key is what the build carries until the human creates the real one.
+    // No key override: the build checks with the real release key, and the stand-in signs with a
+    // test key, so the archive is refused and the installed file is untouched.
     let out = Command::new(&rig.exe)
         .args(["update", "--json"])
         .current_dir(rig.tmp.path())
         .env("ACS_HOME", &rig.home)
         .env("LOCALAPPDATA", &rig.local)
         .env_remove("XDG_CONFIG_HOME")
+        .env_remove("ACS_UPDATE_TEST_PUBLIC_KEY")
         .env("ACS_UPDATE_TEST_BASE_URL", server.url())
         .env("ACS_UPDATE_TEST_RELEASE_BUILD", "1")
         .env("ACS_UPDATE_TEST_RUNNING_VERSION", "0.9.0")
@@ -474,12 +476,10 @@ fn a_build_without_a_release_key_refuses_every_update() {
         report["error"]["message"]
             .as_str()
             .unwrap()
-            .contains("no release key in this build"),
+            .contains("signature does not match"),
         "{report}"
     );
     assert_eq!(rig.installed(), rig.old_bytes);
-    // Refused before downloading anything.
-    assert_eq!(server.hits(), ["/releases"]);
 }
 
 #[test]

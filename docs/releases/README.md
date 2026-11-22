@@ -12,7 +12,7 @@ Code sessions, not across harnesses, until the Antigravity gate passes (decision
 | --- | --- |
 | Finish the name check (trademarks, package names) | The names `acs` and `acs-cli` are placeholders until then |
 | Make `acs-hq/acs` public | Every installer, the Scoop manifest and the setup skill's raw URL fetch public URLs |
-| Create the release signing key, store the private half as the secret `ACS_RELEASE_SIGNING_KEY` (a PEM) and put the public half in `RELEASE_PUBLIC_KEY` (`crates/acs-cli/src/update/signature.rs`); see "Signing" below | The release's `Sign release` job fails without the secret, and an `acs` built with the all-zero key refuses every update (decision 0054) |
+| Create the release signing key, store the private half as the secret `ACS_RELEASE_SIGNING_KEY` (a PEM) and put the public half in `RELEASE_PUBLIC_KEY` (`crates/acs-cli/src/update/signature.rs`); see "Signing" below | Done on 2026-11-22. The release's `Sign release` job fails without the secret, and an `acs` built with the all-zero key refuses every update (decision 0054). A new key means a new `acs` build, and installs on the old key can no longer update themselves |
 
 ACS is installed with the PowerShell and shell installers, or with Scoop. It is not published to
 npm: an npm package puts a launcher in front of `acs`, and every hook call would pay for it

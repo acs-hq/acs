@@ -18,10 +18,14 @@ use sha2::{Digest, Sha256};
 
 /// The release public key compiled into this build (32 bytes).
 ///
-/// All zeros means that no key was created yet: every update is refused with "no release key in
-/// this build". The human replaces it with the public half of the key stored in the secret
-/// `ACS_RELEASE_SIGNING_KEY` (the commands are in `docs/releases/README.md`).
-pub const RELEASE_PUBLIC_KEY: [u8; 32] = [0; 32];
+/// The public half of the key stored in the secret `ACS_RELEASE_SIGNING_KEY`, created by the human
+/// on 2026-11-22 (the commands are in `docs/releases/README.md`): the last 32 bytes of
+/// `MCowBQYDK2VwAyEAZBenlHhEgfCH8Nyp+Rxamd1EO9YLs1CYbgTiWsqs+8s=`. All zeros would mean no key:
+/// every update refused with "no release key in this build".
+pub const RELEASE_PUBLIC_KEY: [u8; 32] = [
+    0x64, 0x17, 0xa7, 0x94, 0x78, 0x44, 0x81, 0xf0, 0x87, 0xf0, 0xdc, 0xa9, 0xf9, 0x1c, 0x5a, 0x99,
+    0xdd, 0x44, 0x3b, 0xd6, 0x0b, 0xb3, 0x50, 0x98, 0x6e, 0x04, 0xe2, 0x5a, 0xca, 0xac, 0xfb, 0xcb,
+];
 
 /// The first line of the signed message; the version of the message format.
 pub const MESSAGE_HEADER: &str = "acs-release-v1";
@@ -241,6 +245,28 @@ mod tests {
     /// last 32 bytes of `openssl pkey -pubout -outform DER`, which is how the real key goes into
     /// [`RELEASE_PUBLIC_KEY`].
     #[test]
+    fn the_built_in_key_is_the_real_one() {
+        assert_ne!(RELEASE_PUBLIC_KEY, [0; 32]);
+        assert!(PublicKey::from_slice(&RELEASE_PUBLIC_KEY).is_ok());
+        let der = "302a300506032b6570032100";
+        let hex: String = RELEASE_PUBLIC_KEY
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect();
+        assert_eq!(
+            b64_encode(&decode_hex(&format!("{der}{hex}"))),
+            "MCowBQYDK2VwAyEAZBenlHhEgfCH8Nyp+Rxamd1EO9YLs1CYbgTiWsqs+8s="
+        );
+    }
+
+    fn decode_hex(text: &str) -> Vec<u8> {
+        (0..text.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&text[i..i + 2], 16).unwrap())
+            .collect()
+    }
+
+    #[test]
     fn a_signature_made_by_openssl_verifies() {
         let key = decode_hex32("66fc6a7d00b0b6c162723bc70cf8a535aaa73428f5ccb23fbd431523e61cf4a6")
             .unwrap();
@@ -304,7 +330,7 @@ mod tests {
             verify(&[0; 32], "v1.0.0", NAME, b"archive", &sig),
             Err(SignatureError::NoKey)
         );
-        assert_eq!(release_key(None), Err(SignatureError::NoKey));
+        assert_eq!(release_key(None), Ok(RELEASE_PUBLIC_KEY));
         assert_eq!(
             SignatureError::NoKey.to_string(),
             "no release key in this build"
