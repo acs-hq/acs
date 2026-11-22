@@ -155,13 +155,13 @@ fn spawn(ctx: &RepoContext, wait: bool) {
 }
 
 #[cfg(unix)]
-fn detach(command: &mut Command) {
+pub(crate) fn detach(command: &mut Command) {
     use std::os::unix::process::CommandExt;
     command.process_group(0);
 }
 
 #[cfg(windows)]
-fn detach(command: &mut Command) {
+pub(crate) fn detach(command: &mut Command) {
     use std::os::windows::process::CommandExt;
     const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
     // Not DETACHED_PROCESS: `git` is a console program, and with no console to share each one
@@ -171,4 +171,4 @@ fn detach(command: &mut Command) {
 }
 
 #[cfg(not(any(unix, windows)))]
-fn detach(_command: &mut Command) {}
+pub(crate) fn detach(_command: &mut Command) {}
