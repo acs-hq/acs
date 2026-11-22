@@ -64,6 +64,9 @@ acs plugin install <harness id>
 This installs the plugin for this repository only. Claude Code: it is enabled in
 `.claude/settings.json`; do not pass `--scope user` unless your pilot asks for it, because that
 gates every repository they open. Antigravity: the plugin is written to `.agents/plugins/acs/`.
+If the harness's own command line is missing (your pilot uses only its desktop app), the command
+still writes the files. When its output names a step left to do (`to_finish` in `--json`), give
+your pilot that step as printed: only they can click it in the app.
 
 ## 4. Set up the repository
 

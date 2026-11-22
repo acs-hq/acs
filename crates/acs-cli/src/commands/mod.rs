@@ -9,6 +9,7 @@
 
 pub mod blame;
 pub mod claim;
+mod claude_settings;
 mod codex_config;
 pub mod doctor;
 pub mod features;

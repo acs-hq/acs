@@ -426,7 +426,13 @@ integrations/claude-code/            # the plugin root (WP2.2 stage 2)
   only in exec form **[docs]**.
 - **Install.**
   - `acs plugin install claude-code` runs the marketplace steps below at project scope (decision
-    0021).
+    0021). Without `claude` on `PATH` (someone who has only the desktop app) it writes
+    `extraKnownMarketplaces."acs-plugins"` and `enabledPlugins."acs@acs-plugins"` into the project
+    or local settings file itself and names the step left to do (decision 0052). Claude Code
+    downloads a plugin that only the committed `.claude/settings.json` enables only after an
+    install on that machine (the desktop app's **+ → Plugins → Manage plugins**, or `claude plugin
+    install`); an enable in the untracked `settings.local.json` or the user settings is fetched
+    by itself, after the folder is trusted **[docs]**.
   - Development, one session: `claude --plugin-dir ./integrations/claude-code` **[captured]**.
   - Through a marketplace: a repository (or directory) with `.claude-plugin/marketplace.json`
     `{"name","owner":{"name"},"plugins":[{"name":"acs","source":"./integrations/claude-code","description":"..."}]}`;
