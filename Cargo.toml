@@ -15,6 +15,8 @@ homepage = "https://github.com/acs-hq/acs"
 clap = { version = "4.6.7", default-features = false, features = ["std", "derive", "help", "usage", "error-context", "suggestions"] }
 criterion = { version = "0.8.2", default-features = false, features = ["cargo_bench_support"] }
 dunce = "1.0.5"
+# Verifies the release signature (decision 0054). No default features: no randomness, no std glue.
+ed25519-compact = { version = "2.6.1", default-features = false }
 getrandom = "0.4.3"
 globset = { version = "0.4.18", default-features = false }
 jiff = { version = "0.2.38", default-features = false, features = ["std", "serde"] }
@@ -24,6 +26,7 @@ proptest = { version = "1.12.0", default-features = false, features = ["std"] }
 rmcp = { version = "3.9.0", default-features = false, features = ["server", "transport-io"] }
 rusqlite = { version = "0.41.1", features = ["bundled"] }
 schemars = { version = "1.2.3", features = ["jiff02"] }
+semver = "1.0.28"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = { version = "1.0.154", features = ["raw_value"] }
 sha2 = "0.11.1"
