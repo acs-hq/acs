@@ -10,7 +10,7 @@
     "branch": "main",
     "target_branch": "main",
     "started_at": "2026-11-22T17:33:47.473731Z",
-    "last_seen_at": "2026-11-22T17:36:49.276721Z"
+    "last_seen_at": "2026-11-22T23:03:16.828301Z"
   },
   "intent": "Reading GitHub issue 83 and the merged work for it to tell the human what remains to close it; no file edits.",
   "claims": [],
@@ -26,7 +26,7 @@
     "lore_z7ri6ia7"
   ],
   "started_at": "2026-11-22T17:33:47.473731Z",
-  "ended_at": "2026-11-22T17:36:49.276721Z",
-  "ended_reason": "crashed",
+  "ended_at": "2026-11-22T23:03:16.828301Z",
+  "ended_reason": "clean",
   "acs_version": "0.1.0"
 }
