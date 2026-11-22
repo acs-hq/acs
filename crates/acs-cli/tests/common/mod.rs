@@ -65,9 +65,12 @@ impl World {
         let home = base.join("acs-home");
         let git_config = base.join("gitconfig");
         fs::create_dir_all(&repo).unwrap();
+        // No automatic maintenance: `git commit` would start it in the background, and its
+        // `.git/objects/maintenance.lock` can come and go while a test compares the repository.
         fs::write(
             &git_config,
-            "[user]\n\temail = sara@example.com\n\tname = Sara\n",
+            "[user]\n\temail = sara@example.com\n\tname = Sara\n\
+             [maintenance]\n\tauto = false\n[gc]\n\tauto = 0\n",
         )
         .unwrap();
         git(&repo, &git_config, &["init", "-q", "-b", "main", "."]);
