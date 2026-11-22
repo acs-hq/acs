@@ -212,9 +212,10 @@ prompts and `/hooks` review, macOS and Linux, the Codex desktop app. No skills s
      Unmeasured leads: `current_human_seat` starts `git config` on every `acs status`, and post-tool
      has not been split into stages. The plan's fallback is a warm server (section 9.2), which only
      the human can approve.
-  2. The release setup only the human can do (`docs/releases/README.md`): name check, public
-     repository, npm scope and token. Every installer needs a public repository. Homebrew is built
-     but not published until the human wants it (decision 0021).
+  2. The release setup only the human can do (`docs/releases/README.md`): name check and the
+     release signing key (decision 0054). There is no npm channel any more (decision 0053). Every
+     installer needs a public repository. Homebrew is built but not published until the human
+     wants it (decision 0021). **The first release is `v1.0.0`** (decision 0053).
   3. The first tag, which is the first real run of `release.yml` and `installers.yml`.
 - **Then dogfooding.** The human runs `acs init` here (see section 2). No release exists yet, so
   `acs` comes from `cargo install --path crates/acs-cli --locked`.
@@ -630,8 +631,8 @@ skipped when no binary exists. SPEC section 6.2 states the rule for editor integ
   placeholder `acs-hq`), an icon, and a CI job running `npm ci && npm test` in `integrations/vscode`
   after building `acs` (`.github/workflows/` is sealed for agents). `acs watch` needs the reinstall
   (`cargo install --path crates/acs-cli --locked`).
-- Release setup: `docs/releases/README.md` (name check, public repository, npm scope
-  and token). The first tag is the first real run of `release.yml` and `installers.yml`.
+- Release setup: `docs/releases/README.md` (name check, the release signing key). The first tag
+  is the first real run of `release.yml` and `installers.yml`.
 - Still open from Phase 1: branch protection on `main`; CODEOWNERS for `.acs/policy/` and `spec/`;
   the home for the setup skill (the README uses the raw GitHub URL, which needs a public
   repository); governance. The GitHub default branch is already `main` (checked 2026-10-31).
