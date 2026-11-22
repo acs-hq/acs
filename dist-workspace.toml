@@ -28,3 +28,8 @@ publish-jobs = []
 global-artifacts-jobs = ["./scoop-manifest", "./sign-release"]
 # Tries every installer of the published release on a clean machine
 post-announce-jobs = ["./installers"]
+
+# GitHub no longer runs the `macos-14` image dist picks for Apple Silicon builds, and one failed
+# build stops the whole release from being published
+[dist.github-custom-runners]
+aarch64-apple-darwin = "macos-15"
