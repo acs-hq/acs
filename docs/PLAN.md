@@ -33,6 +33,7 @@ model), and the rest of WP10.1 and WP10.2. No release has been tagged.
 | 2026-11-19 | Codex (CLI 0.170) is supported ahead of WP9.4, at tier A: pre-tool gate, context and MCP through a block in `.codex/config.toml`; `.codex/config.toml`, `.codex/hooks.json` and `~/.codex` are sealed | 0047 |
 | 2026-11-20 | A new canonical phase `turn_end` (the harnesses' `Stop`): an agent that changed files is asked once, at the end of its turn, to propose lore; Claude Code loads `acs_lore_propose` at the start; the pilot is told about waiting proposals (issue 80) | 0048 |
 | 2026-11-22 | WP5.2's channels lose npm (a launcher in front of `acs` on every hook call); the installers come first. The first release is `1.0.0`, not v0.1: release versions no longer follow the milestone labels of §8.3, whose gates stay. `acs` updates itself after a release tag (issue 79) | 0053 |
+| 2026-11-22 | WP5.2 gains a self-updater: release builds installed with the PowerShell installer on Windows replace themselves once a day, checked against a signing key compiled into `acs`; other installs get a notice | 0054 |
 
 Open work is in GitHub issues, not in this file. Decisions are in `docs/decisions/`.
 

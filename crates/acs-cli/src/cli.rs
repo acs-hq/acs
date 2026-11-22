@@ -70,6 +70,8 @@ pub enum Command {
     Stats(commands::stats::StatsArgs),
     /// Install the ACS plugin into an agent harness.
     Plugin(commands::plugin::PluginArgs),
+    /// Check for a new release and install it; `on`, `off`, `pin` and `unpin` change how acs updates.
+    Update(commands::update::UpdateArgs),
     /// Run the MCP server on stdio: the tools `acs_status`, `acs_claim`, `acs_release`,
     /// `acs_intent`, `acs_why` and `acs_lore_propose` for agents.
     Mcp(McpArgs),
@@ -180,6 +182,7 @@ pub fn run(cli: Cli) -> ExitCode {
         Command::Verify(args) => commands::verify::run(&args),
         Command::Stats(args) => commands::stats::run(&args),
         Command::Plugin(args) => commands::plugin::run(&args),
+        Command::Update(args) => commands::update::run(&args),
         Command::Mcp(args) => mcp::run(&args),
         Command::GitHook(args) => git_hook::run(&args),
     }
@@ -283,6 +286,10 @@ mod tests {
             vec!["off", "--json"],
             vec!["on", "--json"],
             vec!["doctor", "--fix", "--json"],
+            vec!["update", "--json"],
+            vec!["update", "off", "--json"],
+            vec!["update", "pin", "1.0.1", "--json"],
+            vec!["update", "--background"],
             vec!["sync", "--json"],
             vec!["sync", "--wait", "--json"],
             vec!["plugin", "install", "claude-code", "--json"],

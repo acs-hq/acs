@@ -6,8 +6,10 @@
 //! - [`hook`]: the pre-tool, post-tool and session pipelines behind `acs hook`.
 //! - [`cli`]: the clap command tree and dispatch; `main.rs` only calls into it.
 //! - [`commands`]: one module per command, added by later work packages.
+//! - [`update`]: the self-updater behind `acs update` (decision 0054).
 
 pub mod cli;
 pub mod commands;
 pub mod hook;
 pub mod runtime;
+pub mod update;

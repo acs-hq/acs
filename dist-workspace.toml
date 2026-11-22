@@ -24,7 +24,7 @@ formula = "acs"
 # Publish jobs to run in CI. None: npm is not a channel (decision 0053), and the Homebrew formula
 # is built but not published until the tap exists (docs/releases/README.md says how to turn it on)
 publish-jobs = []
-# Adds the Scoop manifest to the release's files
-global-artifacts-jobs = ["./scoop-manifest"]
+# Adds the Scoop manifest and the archive signatures to the release's files
+global-artifacts-jobs = ["./scoop-manifest", "./sign-release"]
 # Tries every installer of the published release on a clean machine
 post-announce-jobs = ["./installers"]

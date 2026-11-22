@@ -12,12 +12,41 @@ Code sessions, not across harnesses, until the Antigravity gate passes (decision
 | --- | --- |
 | Finish the name check (trademarks, package names) | The names `acs` and `acs-cli` are placeholders until then |
 | Make `acs-hq/acs` public | Every installer, the Scoop manifest and the setup skill's raw URL fetch public URLs |
+| Create the release signing key, store the private half as the secret `ACS_RELEASE_SIGNING_KEY` (a PEM) and put the public half in `RELEASE_PUBLIC_KEY` (`crates/acs-cli/src/update/signature.rs`); see "Signing" below | The release's `Sign release` job fails without the secret, and an `acs` built with the all-zero key refuses every update (decision 0054) |
 
 ACS is installed with the PowerShell and shell installers, or with Scoop. It is not published to
 npm: an npm package puts a launcher in front of `acs`, and every hook call would pay for it
 (decision 0053).
 
 Run `dist generate` after changing `dist-workspace.toml`. Without it the `release plan` CI job fails.
+
+## Signing (the updater, decision 0054)
+
+`acs` updates itself from the GitHub Release, so every archive must carry a signature. The
+`Sign release` job (`.github/workflows/sign-release.yml`, listed in `global-artifacts-jobs`) writes
+`<archive>.sig` next to each `acs-cli-*.zip` and `acs-cli-*.tar.xz`: the 64-byte Ed25519 signature
+in base64 on one line, over the message `.github/sign-release-message.sh` prints (the tag, the file
+name and the file's SHA-256). The job fails if the secret is missing, so a release is never
+published unsigned.
+
+Create the key once, and keep the private half off every machine a session can read:
+
+```sh
+openssl genpkey -algorithm ed25519 -out acs-release-key.pem
+# the 32 bytes to paste into RELEASE_PUBLIC_KEY (the last 32 bytes of the public key's DER)
+openssl pkey -in acs-release-key.pem -pubout -outform DER | tail -c 32 | od -An -tx1 -v
+gh secret set ACS_RELEASE_SIGNING_KEY --repo acs-hq/acs < acs-release-key.pem
+```
+
+Then store the PEM somewhere safe and delete it from the working folder. Releasing from a build
+whose `RELEASE_PUBLIC_KEY` does not match the secret produces releases that nobody can update to;
+the Windows run below catches that.
+
+The updater is tried with pre-release tags: tag `v1.0.0-rc.1`, install it with the PowerShell
+installer, tag `v1.0.0-rc.2`, and see `acs` replace itself (`acs update` does it at once; the daily
+check does it by itself). A release candidate follows release candidates, and the first stable
+`v1.0.0` after them. Record that run as `docs/releases/v1.0.0-updater.md`. If your antivirus
+blocks the new file, `acs doctor` shows it; add an exception only if the run shows one is needed.
 
 ## Cut a release
 

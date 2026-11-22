@@ -68,6 +68,9 @@ fn decide(world: &World, user_home: &Path, tool: &str, command: &str) -> Decisio
         .env("ACS_HOME", &world.home)
         .env("HOME", user_home)
         .env("USERPROFILE", user_home)
+        // Where the installer's receipt would be (decision 0054).
+        .env("LOCALAPPDATA", user_home.join("AppData").join("Local"))
+        .env("XDG_CONFIG_HOME", user_home.join(".config"))
         .env_remove("CLAUDE_CONFIG_DIR")
         .env("GIT_CONFIG_GLOBAL", &world.git_config)
         .env("GIT_CONFIG_NOSYSTEM", "1")
@@ -184,5 +187,32 @@ fn every_adversarial_command_is_denied_and_the_controls_are_not() {
         failures.len(),
         cases.len(),
         failures.join("\n")
+    );
+}
+
+/// Decision 0054: an agent cannot run the updater or switch it, and cannot touch the installer's
+/// receipt (whoever edits it chooses which directory the updater treats as its own).
+#[test]
+fn an_agent_cannot_run_or_switch_the_updater_or_touch_its_receipt() {
+    let world = World::new();
+    let user_home = world.tmp.path().join("user-home");
+    fs::create_dir_all(&user_home).unwrap();
+    for command in ["acs update", "acs update off", "acs update pin 1.0.0"] {
+        let decision = decide(&world, &user_home, "Bash", command);
+        assert_eq!(decision.outcome, Outcome::Deny, "{command}");
+    }
+    let decision = decide(&world, &user_home, "Bash", "acs doctor");
+    assert_eq!(decision.outcome, Outcome::Allow);
+    let decision = decide(
+        &world,
+        &user_home,
+        "Bash",
+        "rm \"$LOCALAPPDATA/acs-cli/acs-cli-receipt.json\"",
+    );
+    assert_eq!(decision.outcome, Outcome::Deny);
+    assert!(
+        decision.message.contains("ACS install receipt"),
+        "{}",
+        decision.message
     );
 }
