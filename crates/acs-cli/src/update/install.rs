@@ -7,7 +7,7 @@
 //! - **Source**: a build without the cargo feature `self-update` (`cargo install --path`).
 //! - **Other**: everything else, Windows installs without a matching receipt included.
 
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 
@@ -98,16 +98,12 @@ pub fn receipt_matches(receipt_json: &str, exe_dir: &Path) -> bool {
     receipt_bin_dir(receipt_json).is_some_and(|dir| comparable(&dir) == comparable(exe_dir))
 }
 
-/// Whether `exe` lies under a `scoop\apps\` directory.
+/// Whether `exe` lies under a `scoop\apps\` directory. The path is split on both `\` and `/`, so
+/// the answer is the same on every platform the tests run on.
 #[must_use]
 pub fn is_scoop(exe: &Path) -> bool {
-    let parts: Vec<String> = exe
-        .components()
-        .filter_map(|c| match c {
-            Component::Normal(name) => Some(name.to_string_lossy().to_lowercase()),
-            _ => None,
-        })
-        .collect();
+    let text = exe.to_string_lossy().to_lowercase();
+    let parts: Vec<&str> = text.split(['\\', '/']).collect();
     parts.windows(2).any(|w| w[0] == "scoop" && w[1] == "apps")
 }
 
