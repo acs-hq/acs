@@ -11,9 +11,15 @@
 //! user-scope plugin changes how agents behave in repositories that never adopted ACS (decision
 //! 0021). Running it again changes nothing.
 //!
+//! None of the three needs its command line on `PATH`, because people who use only a harness's
+//! desktop app have none (issue 83, decision 0052). Claude Code's plugin is installed with
+//! `claude plugin ...` when `claude` is there; without it, ACS writes the two settings entries
+//! itself (project and local scope) and says what is left to do in the desktop app.
+//!
 //! Antigravity has no marketplace entry for ACS, so its plugin is built into the binary and
 //! written to the workspace plugin folder `.agents/plugins/acs/`, which Antigravity loads at the
-//! next session start. That folder is the project scope; the other scopes are not offered.
+//! next session start. That folder is the project scope; the other scopes are not offered. `agy`
+//! only validates the folder, and is skipped when it is missing.
 //!
 //! Codex has no plugin that the command line can install, so ACS adds a block of hooks and an
 //! MCP server to Codex's `config.toml`: the project's `.codex/config.toml`, or the user's
@@ -25,6 +31,7 @@ use std::process::{Command, ExitCode, Stdio};
 use clap::{Args, Subcommand, ValueEnum};
 use serde::Serialize;
 
+use super::claude_settings;
 use super::codex_config;
 use super::init::harness::{CLAUDE_CODE_PLUGIN, HARNESSES, Harness};
 use super::support::{
@@ -166,6 +173,10 @@ pub struct InstallReport {
     pub steps: Vec<Step>,
     /// Things that need attention.
     pub warnings: Vec<String>,
+    /// What is left to do by hand, when acs could not finish the install itself (Claude Code
+    /// without `claude` on `PATH`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub to_finish: Option<String>,
 }
 
 /// Runs `acs plugin`.
@@ -197,8 +208,9 @@ fn execute(args: &InstallArgs) -> Result<ExitCode, CliError> {
 /// # Errors
 ///
 /// `unknown_harness` and `unsupported_harness` for a harness this command does not cover,
-/// `acs_not_on_path`, `harness_not_found` when its command line is missing, `not_a_repo` for a
-/// repository scope outside a git work tree. Failing steps are reported, not returned.
+/// `acs_not_on_path`, `harness_not_found` for Claude Code at user scope without `claude` on
+/// `PATH`, `not_a_repo` for a repository scope outside a git work tree. Failing steps are
+/// reported, not returned.
 pub fn install(args: &InstallArgs) -> Result<InstallReport, CliError> {
     let harness = HARNESSES
         .iter()
@@ -217,9 +229,26 @@ pub fn install(args: &InstallArgs) -> Result<InstallReport, CliError> {
     match harness.id {
         "claude-code" => {
             require_acs_on_path(harness)?;
-            let claude = find_harness_cli(harness)?;
-            let dir = working_dir(args.scope)?;
-            Ok(install_claude_code(&claude, &dir, args))
+            match find_harness_cli(harness) {
+                Ok(claude) => {
+                    let dir = working_dir(args.scope)?;
+                    Ok(install_claude_code(&claude, &dir, args))
+                }
+                Err(err) if args.scope == Scope::User => Err(CliError::new(
+                    err.code,
+                    format!(
+                        "{} acs does not edit your user settings itself. Install the plugin from \
+                         the Claude desktop app instead: {DESKTOP_STEPS}, for your user account. \
+                         Or use `--scope project` or `--scope local`, which acs can write \
+                         without `claude`.",
+                        err.message
+                    ),
+                )),
+                Err(_) => {
+                    let dir = working_dir(args.scope)?;
+                    Ok(enable_claude_code_in_settings(&dir, args))
+                }
+            }
         }
         "antigravity" => {
             require_acs_on_path(harness)?;
@@ -233,9 +262,9 @@ pub fn install(args: &InstallArgs) -> Result<InstallReport, CliError> {
                     ),
                 ));
             }
-            let agy = find_harness_cli(harness)?;
+            let agy = find_harness_cli(harness).ok();
             let dir = working_dir(Scope::Project)?;
-            Ok(install_antigravity(&agy, &dir, args))
+            Ok(install_antigravity(agy.as_deref(), &dir, args))
         }
         "codex" => {
             require_acs_on_path(harness)?;
@@ -418,6 +447,7 @@ fn install_claude_code(claude: &Path, dir: &Path, args: &InstallArgs) -> Install
         version: None,
         steps: Vec::new(),
         warnings: Vec::new(),
+        to_finish: None,
     };
     if args.scope == Scope::User {
         report.warnings.push(
@@ -464,6 +494,124 @@ fn install_claude_code(claude: &Path, dir: &Path, args: &InstallArgs) -> Install
     report
 }
 
+/// How to install the plugin in the Claude desktop app's Code tab, as a clause.
+const DESKTOP_STEPS: &str = "open the repository in the Code tab, click + next to the prompt \
+                             box, choose Plugins, then Manage plugins, add the marketplace \
+                             acs-hq/acs if acs is not listed, and install acs";
+
+/// The settings file a repository scope writes, relative to the work tree root.
+fn claude_settings_file(scope: Scope) -> &'static str {
+    if scope == Scope::Local {
+        ".claude/settings.local.json"
+    } else {
+        ".claude/settings.json"
+    }
+}
+
+/// The `extraKnownMarketplaces` source for `--marketplace` as JSON text, in the shape and key
+/// order Claude Code writes: a git URL, a local folder (made absolute), or a GitHub `owner/repo`.
+fn marketplace_source(marketplace: &str, cwd: &Path) -> String {
+    let quote = |s: &str| serde_json::to_string(s).unwrap_or_else(|_| format!("\"{s}\""));
+    let looks_like_path = marketplace.starts_with(['.', '/', '\\', '~'])
+        || marketplace.chars().nth(1) == Some(':')
+        || cwd.join(marketplace).is_dir();
+    if marketplace.contains("://") || marketplace.starts_with("git@") {
+        format!(r#"{{"source": "git", "url": {}}}"#, quote(marketplace))
+    } else if looks_like_path || marketplace.matches('/').count() != 1 {
+        let path =
+            std::path::absolute(cwd.join(marketplace)).unwrap_or_else(|_| cwd.join(marketplace));
+        format!(
+            r#"{{"source": "directory", "path": {}}}"#,
+            quote(&path.to_string_lossy())
+        )
+    } else {
+        format!(r#"{{"source": "github", "repo": {}}}"#, quote(marketplace))
+    }
+}
+
+/// Claude Code without `claude` on `PATH` (issue 83): writes the plugin's two entries into the
+/// project or local settings file, which the CLI and the desktop app both read, and says what is
+/// left to do.
+fn enable_claude_code_in_settings(dir: &Path, args: &InstallArgs) -> InstallReport {
+    let rel = claude_settings_file(args.scope);
+    let mut report = InstallReport {
+        ok: false,
+        changed: false,
+        harness: "claude-code",
+        scope: args.scope,
+        plugin: CLAUDE_CODE_PLUGIN,
+        marketplace: args.marketplace.clone(),
+        version: None,
+        steps: Vec::new(),
+        warnings: vec![format!(
+            "`claude` is not on PATH, so acs wrote the plugin into {rel} itself instead of \
+             running `claude plugin install`."
+        )],
+        to_finish: Some(if args.scope == Scope::Local {
+            "Claude Code fetches the plugin when a session starts in this repository and the \
+             folder is trusted, in the CLI and in the desktop app's Code tab. Keep \
+             .claude/settings.local.json out of git."
+                .to_owned()
+        } else {
+            format!(
+                "Claude Code does not download a plugin that only the shared settings enable. \
+                 Finish it once on this machine in the Claude desktop app: {DESKTOP_STEPS}, for \
+                 this project. Or install the Claude Code CLI and run this command again."
+            )
+        }),
+    };
+    let file = dir.join(rel);
+    let existing = match std::fs::read_to_string(&file) {
+        Ok(text) => text,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(err) => {
+            report.steps.push(Step {
+                command: format!("read {rel}"),
+                ok: false,
+                output: Some(err.to_string()),
+            });
+            return report;
+        }
+    };
+    let cwd = std::env::current_dir().unwrap_or_else(|_| dir.to_path_buf());
+    let source = format!(
+        r#"{{"source": {}}}"#,
+        marketplace_source(&args.marketplace, &cwd)
+    );
+    let entries = [
+        ("extraKnownMarketplaces", "acs-plugins", source.as_str()),
+        ("enabledPlugins", CLAUDE_CODE_PLUGIN, "true"),
+    ];
+    let line = format!("add {CLAUDE_CODE_PLUGIN} and its marketplace to {rel}");
+    let new = match claude_settings::set_entries(&existing, &entries) {
+        Ok(None) => {
+            report.ok = true;
+            return report;
+        }
+        Ok(Some(new)) => new,
+        Err(err) => {
+            report.steps.push(Step {
+                command: line,
+                ok: false,
+                output: Some(format!("{rel}: {err}")),
+            });
+            return report;
+        }
+    };
+    let written = file
+        .parent()
+        .map_or(Ok(()), std::fs::create_dir_all)
+        .and_then(|()| std::fs::write(&file, new));
+    report.ok = written.is_ok();
+    report.changed = written.is_ok();
+    report.steps.push(Step {
+        command: line,
+        ok: written.is_ok(),
+        output: written.err().map(|err| err.to_string()),
+    });
+    report
+}
+
 // ---------------------------------------------------------------------------------------------
 // Antigravity
 // ---------------------------------------------------------------------------------------------
@@ -481,9 +629,10 @@ fn antigravity_plugin_version() -> Option<String> {
         .map(str::to_owned)
 }
 
-/// Writes the built-in plugin into `<dir>/.agents/plugins/acs/` and has `agy` validate it. Files
-/// that already hold the built-in content are left alone; other files in the folder are kept.
-fn install_antigravity(agy: &Path, dir: &Path, args: &InstallArgs) -> InstallReport {
+/// Writes the built-in plugin into `<dir>/.agents/plugins/acs/` and has `agy` validate it, when
+/// `agy` is on `PATH`. Files that already hold the built-in content are left alone; other files in
+/// the folder are kept.
+fn install_antigravity(agy: Option<&Path>, dir: &Path, args: &InstallArgs) -> InstallReport {
     let mut report = InstallReport {
         ok: false,
         changed: false,
@@ -494,6 +643,7 @@ fn install_antigravity(agy: &Path, dir: &Path, args: &InstallArgs) -> InstallRep
         version: antigravity_plugin_version(),
         steps: Vec::new(),
         warnings: Vec::new(),
+        to_finish: None,
     };
     if args.marketplace != DEFAULT_MARKETPLACE {
         report.warnings.push(
@@ -534,6 +684,15 @@ fn install_antigravity(agy: &Path, dir: &Path, args: &InstallArgs) -> InstallRep
     }
     report.changed = true;
 
+    let Some(agy) = agy else {
+        report.ok = true;
+        report.warnings.push(
+            "`agy` is not on PATH, so the plugin was not validated. Antigravity loads it from \
+             the folder all the same."
+                .to_owned(),
+        );
+        return report;
+    };
     let line = format!("agy plugin validate {ANTIGRAVITY_PLUGIN_DIR}");
     let step = match Command::new(agy)
         .args(["plugin", "validate"])
@@ -580,6 +739,7 @@ fn install_codex(file: &Path, args: &InstallArgs) -> InstallReport {
         version: None,
         steps: Vec::new(),
         warnings: Vec::new(),
+        to_finish: None,
     };
     if args.marketplace != DEFAULT_MARKETPLACE {
         report.warnings.push(
@@ -711,7 +871,10 @@ fn outcome(report: &InstallReport) -> String {
         if report.changed {
             text.push_str(
                 "Codex runs them only once you trust them: start `codex` here, accept the \
-                 project as trusted if asked, then review and trust the ACS hooks in /hooks.\n",
+                 project as trusted if asked, then review and trust the ACS hooks in /hooks.\n\
+                 The Codex app reads the same file: open this folder there and trust the \
+                 project when asked. If the app does not offer to review the hooks, review them \
+                 once in the CLI's /hooks.\n",
             );
             if report.scope == Scope::Project {
                 text.push_str("Commit .codex/config.toml so teammates get it too.\n");
@@ -719,13 +882,19 @@ fn outcome(report: &InstallReport) -> String {
         }
         return wrap(&text, "", "");
     }
-    let mut text = if report.changed {
-        format!(
+    let mut text = match (&report.to_finish, report.changed) {
+        (Some(to_finish), changed) => {
+            let file = claude_settings_file(report.scope);
+            let state = if changed { "now" } else { "already" };
+            format!("The ACS plugin is {state} enabled in {file} ({scope} scope).\n{to_finish}\n")
+        }
+        (None, true) => format!(
             "The ACS plugin is installed and enabled ({version}{scope} scope). Claude Code loads \
              it at the next session start or on /reload-plugins.\n"
-        )
-    } else {
-        format!("The ACS plugin is already enabled ({version}{scope} scope). Nothing to change.\n")
+        ),
+        (None, false) => format!(
+            "The ACS plugin is already enabled ({version}{scope} scope). Nothing to change.\n"
+        ),
     };
     if report.changed && report.scope == Scope::Project {
         text.push_str("Commit .claude/settings.json so teammates get it too.\n");
@@ -752,6 +921,28 @@ mod tests {
                 version: Some("0.1.0".to_owned())
             }
         );
+    }
+
+    #[test]
+    fn marketplace_sources_take_claude_codes_shapes() {
+        use serde_json::{Value, json};
+        let cwd = std::env::temp_dir();
+        let source =
+            |m: &str| -> Value { serde_json::from_str(&marketplace_source(m, &cwd)).unwrap() };
+        assert_eq!(
+            marketplace_source("acs-hq/acs", &cwd),
+            r#"{"source": "github", "repo": "acs-hq/acs"}"#
+        );
+        assert_eq!(
+            source("https://example.com/acs.git"),
+            json!({"source": "git", "url": "https://example.com/acs.git"})
+        );
+        assert_eq!(source("git@example.com:acs/acs.git")["source"], "git");
+        let local = source("./my-checkout");
+        assert_eq!(local["source"], "directory");
+        let path = PathBuf::from(local["path"].as_str().unwrap());
+        assert!(path.is_absolute(), "{path:?}");
+        assert!(path.ends_with("my-checkout"), "{path:?}");
     }
 
     #[test]

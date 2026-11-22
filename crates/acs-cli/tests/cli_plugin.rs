@@ -480,26 +480,135 @@ fn acs_must_be_on_path_before_any_plugin_is_enabled() {
     assert!(fake.calls().is_empty(), "nothing ran: {:?}", fake.calls());
 }
 
-#[cfg(unix)]
+/// `acs` and `git` only: a `PATH` where no harness command line resolves, as for someone who
+/// uses only a harness's desktop app (issue 83).
+fn path_without_harnesses() -> OsString {
+    let git_dir = std::env::split_paths(&std::env::var_os("PATH").unwrap())
+        .find(|dir| dir.join("git").is_file() || dir.join("git.exe").is_file())
+        .expect("git on PATH");
+    std::env::join_paths([cli_common::bin_dir(), git_dir]).unwrap()
+}
+
+fn acs_without_harnesses(world: &World, args: &[&str]) -> Output {
+    cli_common::run_with_path(world, &world.repo, &path_without_harnesses(), args)
+}
+
 #[test]
-fn a_missing_harness_is_named() {
+fn without_claude_the_project_settings_are_written_and_the_rest_is_explained() {
     let world = World::new();
-    let dir = world.tmp.path().join("acs-only");
-    fs::create_dir_all(&dir).unwrap();
-    std::os::unix::fs::symlink(acs_bin(), dir.join("acs")).unwrap();
-    let path = {
-        let mut dirs = vec![dir];
-        dirs.extend(std::env::split_paths(&cli_common::git_only_path(&world)));
-        std::env::join_paths(dirs).unwrap()
-    };
-    let out = cli_common::run_with_path(
+    let file = world.repo.join(".claude/settings.json");
+    fs::create_dir_all(file.parent().unwrap()).unwrap();
+    fs::write(
+        &file,
+        "{\n  \"permissions\": {\n    \"allow\": []\n  }\n}\n",
+    )
+    .unwrap();
+
+    let out = acs_without_harnesses(&world, &["plugin", "install", "claude-code", "--json"]);
+    assert_success(&out);
+    let report = json(&out);
+    assert_eq!(report["ok"], true, "{report}");
+    assert_eq!(report["changed"], true);
+    assert_eq!(report["scope"], "project");
+    assert!(
+        report["warnings"].to_string().contains("not on PATH"),
+        "{report}"
+    );
+    assert!(
+        report["to_finish"]
+            .as_str()
+            .unwrap()
+            .contains("Manage plugins"),
+        "{report}"
+    );
+    let settings: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&file).unwrap()).unwrap();
+    assert_eq!(settings["permissions"]["allow"], serde_json::json!([]));
+    assert_eq!(settings["enabledPlugins"]["acs@acs-plugins"], true);
+    assert_eq!(
+        settings["extraKnownMarketplaces"]["acs-plugins"]["source"],
+        serde_json::json!({"source": "github", "repo": "acs-hq/acs"})
+    );
+
+    // Again: nothing to write, but the step left to do is still named.
+    let before = fs::read_to_string(&file).unwrap();
+    let out = acs_without_harnesses(&world, &["plugin", "install", "claude-code"]);
+    assert_success(&out);
+    assert_eq!(fs::read_to_string(&file).unwrap(), before);
+    assert_fits_80(&stdout(&out));
+    let report = json(&acs_without_harnesses(
         &world,
-        &world.repo,
-        &path,
         &["plugin", "install", "claude-code", "--json"],
+    ));
+    assert_eq!(report["changed"], false);
+    assert!(report["to_finish"].is_string(), "{report}");
+}
+
+#[test]
+fn without_claude_local_scope_writes_the_local_settings() {
+    let world = World::new();
+    let out = acs_without_harnesses(
+        &world,
+        &[
+            "plugin",
+            "install",
+            "claude-code",
+            "--scope",
+            "local",
+            "--json",
+        ],
+    );
+    assert_success(&out);
+    let report = json(&out);
+    assert_eq!(report["changed"], true, "{report}");
+    assert!(!world.repo.join(".claude/settings.json").exists());
+    let settings: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(world.repo.join(".claude/settings.local.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(settings["enabledPlugins"]["acs@acs-plugins"], true);
+}
+
+#[test]
+fn without_claude_user_scope_stops_and_points_at_the_desktop_app() {
+    let world = World::new();
+    let out = acs_without_harnesses(
+        &world,
+        &[
+            "plugin",
+            "install",
+            "claude-code",
+            "--scope",
+            "user",
+            "--json",
+        ],
     );
     assert_failure(&out);
-    assert_eq!(json(&out)["error"]["code"], "harness_not_found");
+    let report = json(&out);
+    assert_eq!(report["error"]["code"], "harness_not_found");
+    let message = report["error"]["message"].as_str().unwrap();
+    assert!(message.contains("Manage plugins"), "{message}");
+    assert!(message.contains("--scope project"), "{message}");
+    assert!(!world.repo.join(".claude").exists());
+}
+
+#[test]
+fn without_agy_the_antigravity_plugin_is_written_unvalidated() {
+    let world = World::new();
+    let out = acs_without_harnesses(&world, &["plugin", "install", "antigravity", "--json"]);
+    assert_success(&out);
+    let report = json(&out);
+    assert_eq!(report["ok"], true, "{report}");
+    assert_eq!(report["changed"], true);
+    assert_eq!(report["steps"].as_array().unwrap().len(), 1, "{report}");
+    assert!(
+        report["warnings"].to_string().contains("not validated"),
+        "{report}"
+    );
+    assert_eq!(
+        fs::read_to_string(world.repo.join(".agents/plugins/acs/hooks.json")).unwrap(),
+        plugin_source("hooks.json")
+    );
 }
 
 fn codex_block() -> String {
